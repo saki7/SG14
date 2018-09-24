@@ -291,6 +291,39 @@ static void EraseRangeTest()
 }
 
 template<class SM>
+static void PartitionTest()
+{
+    using T = typename SM::mapped_type;
+    SM sm;
+    auto key3 = sm.insert(Monad<T>::from_value(3));
+    auto key1 = sm.insert(Monad<T>::from_value(1));
+    auto key4 = sm.insert(Monad<T>::from_value(4));
+    auto key5 = sm.insert(Monad<T>::from_value(5));
+    auto key9 = sm.insert(Monad<T>::from_value(9));
+    auto key2 = sm.insert(Monad<T>::from_value(2));
+    auto key6 = sm.insert(Monad<T>::from_value(6));
+
+    auto pivot = sm.partition([](const auto& elt) {
+        return Monad<T>::value_of(elt) >= 5;
+    });
+
+    for (auto it = sm.begin(); it != pivot; ++it) {
+        assert(Monad<T>::value_of(*it) >= 5);
+    }
+    for (auto it = pivot; it != sm.end(); ++it) {
+        assert(Monad<T>::value_of(*it) < 5);
+    }
+
+    assert(Monad<T>::value_of(*sm.find(key3)) == 3);
+    assert(Monad<T>::value_of(*sm.find(key1)) == 1);
+    assert(Monad<T>::value_of(*sm.find(key4)) == 4);
+    assert(Monad<T>::value_of(*sm.find(key5)) == 5);
+    assert(Monad<T>::value_of(*sm.find(key9)) == 9);
+    assert(Monad<T>::value_of(*sm.find(key2)) == 2);
+    assert(Monad<T>::value_of(*sm.find(key6)) == 6);
+}
+
+template<class SM>
 static void ReserveTest()
 {
     using T = typename SM::mapped_type;
@@ -523,6 +556,7 @@ TEST(slot_map, Basic)
     InsertEraseStressTest<slot_map_1>([i=3]() mutable { return ++i; });
     EraseInLoopTest<slot_map_1>();
     EraseRangeTest<slot_map_1>();
+    PartitionTest<slot_map_1>();
     ReserveTest<slot_map_1>();
     VerifyCapacityExists<slot_map_1>(true);
     GenerationsDontSkipTest<slot_map_1>();
@@ -539,6 +573,7 @@ TEST(slot_map, CustomKeyType)
     InsertEraseStressTest<slot_map_2>([i=5]() mutable { return ++i; });
     EraseInLoopTest<slot_map_2>();
     EraseRangeTest<slot_map_2>();
+    PartitionTest<slot_map_2>();
     ReserveTest<slot_map_2>();
     VerifyCapacityExists<slot_map_2>(true);
     GenerationsDontSkipTest<slot_map_2>();
@@ -553,6 +588,7 @@ TEST(slot_map, CustomKeyType)
     InsertEraseStressTest<slot_map_3>([i=3]() mutable { return ++i; });
     EraseInLoopTest<slot_map_3>();
     EraseRangeTest<slot_map_3>();
+    PartitionTest<slot_map_3>();
     ReserveTest<slot_map_3>();
     VerifyCapacityExists<slot_map_3>(true);
     GenerationsDontSkipTest<slot_map_3>();
@@ -570,6 +606,7 @@ TEST(slot_map, DequeContainer)
     InsertEraseStressTest<slot_map_4>([i=7]() mutable { return ++i; });
     EraseInLoopTest<slot_map_4>();
     EraseRangeTest<slot_map_4>();
+    PartitionTest<slot_map_4>();
     ReserveTest<slot_map_4>();
     VerifyCapacityExists<slot_map_4>(false);
     GenerationsDontSkipTest<slot_map_4>();
@@ -587,6 +624,7 @@ TEST(slot_map, CustomRAContainer)
     InsertEraseStressTest<slot_map_5>([i=7]() mutable { return ++i; });
     EraseInLoopTest<slot_map_5>();
     EraseRangeTest<slot_map_5>();
+    PartitionTest<slot_map_5>();
     ReserveTest<slot_map_5>();
     VerifyCapacityExists<slot_map_5>(false);
     GenerationsDontSkipTest<slot_map_5>();
@@ -605,6 +643,7 @@ TEST(slot_map, CustomBidiContainer)
     InsertEraseStressTest<slot_map_6>([i=7]() mutable { return ++i; });
     EraseInLoopTest<slot_map_6>();
     EraseRangeTest<slot_map_6>();
+    PartitionTest<slot_map_6>();
     ReserveTest<slot_map_6>();
     VerifyCapacityExists<slot_map_6>(false);
     GenerationsDontSkipTest<slot_map_6>();
@@ -626,6 +665,7 @@ TEST(slot_map, MoveOnlyValueType)
     InsertEraseStressTest<slot_map_7>([i=7]() mutable { return std::make_unique<int>(++i); });
     EraseInLoopTest<slot_map_7>();
     EraseRangeTest<slot_map_7>();
+    PartitionTest<slot_map_7>();
     ReserveTest<slot_map_7>();
     VerifyCapacityExists<slot_map_7>(false);
     GenerationsDontSkipTest<slot_map_7>();
