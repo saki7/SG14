@@ -14,6 +14,7 @@
 #include <type_traits>
 #include <utility>
 
+namespace {
 namespace TestKey {
 struct key_16_8_t {
     uint16_t index;
@@ -111,8 +112,10 @@ struct Monad<std::unique_ptr<T_>> {
     template<class U> static T from_value(const U& v) { return std::make_unique<T_>(v); }
 };
 
+} // namespace
+
 template<class T, class Key, template<class...> class Container>
-void print_slot_map(const stdext::slot_map<T, Key, Container>& sm)
+static void print_slot_map(const stdext::slot_map<T, Key, Container>& sm)
 {
     printf("%d slots:", (int)sm.slots_.size());
     for (auto&& slot : sm.slots_) {
@@ -129,7 +132,6 @@ void print_slot_map(const stdext::slot_map<T, Key, Container>& sm)
     }
     printf("\nnext_available_slot_index: %d\n", (int)sm.next_available_slot_index_);
 }
-
 
 template<class T, class U = std::conditional_t<std::is_copy_constructible<T>::value, const T&, T&&>>
 static U move_if_necessary(T& value) { return static_cast<U>(value); }
@@ -333,7 +335,7 @@ void VerifyCapacityExists(Bool expected)
     assert(sm.slot_count() >= 100);
 }
 
-static void TypedefTests()
+TEST(slot_map, MemberTypedefs)
 {
     if (true) {
         using SM = stdext::slot_map<int>;
@@ -510,10 +512,8 @@ static void IndexesAreUsedEvenlyTest()
 #endif
 }
 
-TEST(slot_map, all)
+TEST(slot_map, Basic)
 {
-    TypedefTests();
-
     // Test the most basic slot_map.
     using slot_map_1 = stdext::slot_map<int>;
     static_assert(std::is_nothrow_move_constructible<slot_map_1>::value, "preserve nothrow-movability of vector");
@@ -527,7 +527,10 @@ TEST(slot_map, all)
     VerifyCapacityExists<slot_map_1>(true);
     GenerationsDontSkipTest<slot_map_1>();
     IndexesAreUsedEvenlyTest<slot_map_1>();
+}
 
+TEST(slot_map, CustomKeyType)
+{
     // Test slot_map with a custom key type (C++14 destructuring).
     using slot_map_2 = stdext::slot_map<unsigned long, TestKey::key_16_8_t>;
     BasicTests<slot_map_2>(425, 375);
@@ -555,7 +558,10 @@ TEST(slot_map, all)
     GenerationsDontSkipTest<slot_map_3>();
     IndexesAreUsedEvenlyTest<slot_map_3>();
 #endif // __cplusplus >= 201703L
+}
 
+TEST(slot_map, DequeContainer)
+{
     // Test slot_map with a custom (but standard and random-access) container type.
     using slot_map_4 = stdext::slot_map<int, std::pair<unsigned, unsigned>, std::deque>;
     BasicTests<slot_map_4>(415, 315);
@@ -568,7 +574,10 @@ TEST(slot_map, all)
     VerifyCapacityExists<slot_map_4>(false);
     GenerationsDontSkipTest<slot_map_4>();
     IndexesAreUsedEvenlyTest<slot_map_4>();
+}
 
+TEST(slot_map, CustomRAContainer)
+{
     // Test slot_map with a custom (non-standard, random-access) container type.
     using slot_map_5 = stdext::slot_map<int, std::pair<unsigned, unsigned>, TestContainer::Vector>;
     static_assert(!std::is_nothrow_move_constructible<slot_map_5>::value, "preserve non-nothrow-movability of Vector");
@@ -582,7 +591,10 @@ TEST(slot_map, all)
     VerifyCapacityExists<slot_map_5>(false);
     GenerationsDontSkipTest<slot_map_5>();
     IndexesAreUsedEvenlyTest<slot_map_5>();
+}
 
+TEST(slot_map, CustomBidiContainer)
+{
     // Test slot_map with a custom (standard, bidirectional-access) container type.
     using slot_map_6 = stdext::slot_map<int, std::pair<unsigned, unsigned>, std::list>;
     static_assert(std::is_nothrow_move_constructible<slot_map_6>::value == std::is_nothrow_move_constructible<std::list<int>>::value,
@@ -597,7 +609,10 @@ TEST(slot_map, all)
     VerifyCapacityExists<slot_map_6>(false);
     GenerationsDontSkipTest<slot_map_6>();
     IndexesAreUsedEvenlyTest<slot_map_6>();
+}
 
+TEST(slot_map, MoveOnlyValueType)
+{
     // Test slot_map with a move-only value_type.
     // Sadly, standard containers do not propagate move-only-ness, so we must use our custom Vector instead.
     using slot_map_7 = stdext::slot_map<std::unique_ptr<int>, std::pair<unsigned, int>, TestContainer::Vector>;

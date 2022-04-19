@@ -46,7 +46,7 @@ static double GlobalFunction(const std::string& s, int i)
     return gNextReturn;
 }
 
-static void FunctionPointer()
+TEST(inplace_function, FunctionPointer)
 {
     // Even compatible function pointers require an appropriate amount of "storage".
     using CompatibleFunctionType = std::remove_reference_t<decltype(GlobalFunction)>;
@@ -63,7 +63,7 @@ static void FunctionPointer()
     EXPECT_EQ(42, gLastI);
 }
 
-static void Lambda()
+TEST(inplace_function, Lambda)
 {
     stdext::inplace_function<double(int), 8> fun;
     std::string closure("some closure");
@@ -78,7 +78,7 @@ static void Lambda()
     EXPECT_EQ(42, gLastI);
 }
 
-static void Bind()
+TEST(inplace_function, StdBind)
 {
     stdext::inplace_function<double(int), 64> fun;
     std::string closure("some closure");
@@ -93,6 +93,7 @@ static void Bind()
     EXPECT_EQ(42, gLastI);
 }
 
+namespace {
 struct AnotherFunctor
 {
     int mTotal = 0;
@@ -105,11 +106,11 @@ struct AnotherFunctor
     AnotherFunctor(const AnotherFunctor&) { mConstructorCalls++; }
     ~AnotherFunctor() { mDestructorCalls++; }
 };
-
 int AnotherFunctor::mDestructorCalls = 0;
 int AnotherFunctor::mConstructorCalls = 0;
+} // namespace
 
-static void FunctorDestruction()
+TEST(inplace_function, FunctorDestruction)
 {
     AnotherFunctor::mDestructorCalls = 0;
     AnotherFunctor::mConstructorCalls = 0;
@@ -138,7 +139,7 @@ static void FunctorDestruction()
     EXPECT_EQ(AnotherFunctor::mDestructorCalls, AnotherFunctor::mConstructorCalls);
 }
 
-static void Swapping()
+TEST(inplace_function, Swapping)
 {
     AnotherFunctor::mDestructorCalls = 0;
     AnotherFunctor::mConstructorCalls = 0;
@@ -164,7 +165,7 @@ static void Swapping()
     EXPECT_EQ(AnotherFunctor::mDestructorCalls, AnotherFunctor::mConstructorCalls);
 }
 
-static void Copying()
+TEST(inplace_function, Copying)
 {
     auto sptr = std::make_shared<int>(42);
     EXPECT_EQ(1, sptr.use_count());
@@ -188,7 +189,7 @@ static void Copying()
     EXPECT_TRUE(bool(fun2));
 }
 
-static void ContainingStdFunction()
+TEST(inplace_function, ContainingStdFunction)
 {
     // build a big closure, bigger than 32 bytes
     uint64_t offset1 = 1234;
@@ -205,10 +206,10 @@ static void ContainingStdFunction()
     stdext::inplace_function<int(const std::string&), 64> fun = stdfun;
 
     int r = fun("123");
-    EXPECT_EQ(r, int(offset1+offset2+offset3+str1.length()+3));
+    EXPECT_EQ(r, int(offset1 + offset2 + offset3 + str1.length() + 3));
 }
 
-static void SimilarTypeCopy()
+TEST(inplace_function, SimilarTypeCopy)
 {
     auto sptr = std::make_shared<int>(42);
     EXPECT_EQ(1, sptr.use_count());
@@ -234,7 +235,7 @@ static void SimilarTypeCopy()
     fun4 = fun1; // fun1 is bigger than 17, but we should be smart about it
 }
 
-static void AssignmentDifferentFunctor()
+TEST(inplace_function, AssignmentFromDifferentFunctor)
 {
     int calls = 0;
     stdext::inplace_function<int(int,int), 16> add = [&calls] (int a, int b) { ++calls; return a+b; };
@@ -259,6 +260,7 @@ static void AssignmentDifferentFunctor()
     EXPECT_EQ(4, calls);
 }
 
+namespace {
 struct ThrowingFunctor {
     static int countdown;
     static int constructed;
@@ -290,8 +292,9 @@ int ThrowingFunctor::countdown = 0;
 int ThrowingFunctor::constructed = 0;
 int ThrowingFunctor::destructed = 0;
 int ThrowingFunctor::called = 0;
+} // namespace
 
-static void test_exception_safety()
+TEST(inplace_function, ExceptionSafety)
 {
     using IPF = stdext::inplace_function<void(), sizeof(ThrowingFunctor)>;
     ThrowingFunctor tf;
@@ -333,7 +336,7 @@ static void test_exception_safety()
 }
 
 template<size_t Cap>
-constexpr size_t expected_alignment_for_capacity()
+static constexpr size_t expected_alignment_for_capacity()
 {
     constexpr size_t alignof_ptr = std::alignment_of<void*>::value;
     constexpr size_t alignof_cap = std::alignment_of<std::aligned_storage_t<Cap>>::value;
@@ -344,7 +347,7 @@ constexpr size_t expected_alignment_for_capacity()
 #undef MIN
 }
 
-static void test_struct_layout()
+TEST(inplace_function, StructLayout)
 {
     static_assert(std::alignment_of< stdext::inplace_function<void(int), 1> >::value == expected_alignment_for_capacity<1>(), "");
     static_assert(std::alignment_of< stdext::inplace_function<void(int), 2> >::value == expected_alignment_for_capacity<2>(), "");
@@ -355,9 +358,9 @@ static void test_struct_layout()
     static_assert(sizeof( stdext::inplace_function<void(int), sizeof(void*)> ) == 2 * sizeof(void*), "");
 }
 
-static void test_nullptr()
+TEST(inplace_function, ConvertibleFromNullptr)
 {
-    using IPF = stdext::inplace_function<void()>;
+    using IPF = stdext::inplace_function<void(int)>;
     auto nil = nullptr;
     const auto cnil = nullptr;
 
@@ -373,21 +376,28 @@ static void test_nullptr()
     f = cnil;                 assert(! bool(f));
     f = IPF(cnil);            assert(! bool(f));
     f = IPF(std::move(cnil)); assert(! bool(f));
+
+    assert(!f);
+    assert(f == nullptr);
+    assert(!(f != nullptr));
+    expected = 0; try { f(42); } catch (const std::bad_function_call&) { expected = 1; } assert(expected == 1);
 }
 
+namespace {
 struct oon_functor {
     int dummy;
 
     oon_functor(int i) : dummy(i) {}
     int operator()(int i) { return i + dummy; }
 
-    void *operator new (size_t, void *p) {
+    void *operator new(size_t, void *p) {
         EXPECT_TRUE(false);  // class-specific "new" should not be called
         return p;
     }
 };
+} // namespace
 
-static void test_overloaded_operator_new()
+TEST(inplace_function, ADLProofOperatorNew)
 {
     using IPF = stdext::inplace_function<int(int), 8>;
     oon_functor oon(42);
@@ -398,7 +408,7 @@ static void test_overloaded_operator_new()
     EXPECT_EQ(43, fun(1));
 }
 
-static void test_move_construction_is_noexcept()
+TEST(inplace_function, MoveConstructionIsNoexcept)
 {
     using IPF = stdext::inplace_function<void(int), sizeof(Functor)>;
     std::vector<IPF> vec;
@@ -410,7 +420,7 @@ static void test_move_construction_is_noexcept()
     EXPECT_EQ(1, moved);
 }
 
-static void test_move_construction_from_smaller_buffer_is_noexcept()
+TEST(inplace_function, MoveConstructionFromSmallerIsNoexcept)
 {
     using IPF32 = stdext::inplace_function<void(int), 32>;
     using IPF40 = stdext::inplace_function<void(int), 40>;
@@ -428,7 +438,7 @@ struct test_bug_32072 {
 static_assert(std::is_copy_constructible<test_bug_32072>::value, "");
 static_assert(std::is_nothrow_move_constructible<test_bug_32072>::value, "");
 
-static void RvalueRefParameter()
+TEST(inplace_function, RvalueRefParameter)
 {
     stdext::inplace_function<void(std::unique_ptr<int>&&)> f;
     f = [](std::unique_ptr<int>) {};
@@ -442,7 +452,7 @@ static void RvalueRefParameter()
     g(std::make_unique<int>(42));
 }
 
-static void test_is_convertible()
+TEST(inplace_function, IsConvertibleTrait)
 {
     static_assert(std::is_convertible<int(&)(), stdext::inplace_function<int()>>::value, "");
     static_assert(std::is_convertible<int(*)(), stdext::inplace_function<int()>>::value, "");
@@ -450,7 +460,7 @@ static void test_is_convertible()
     static_assert(std::is_convertible<int(*&&)(), stdext::inplace_function<int()>>::value, "");
 }
 
-static void test_convertibility_with_qualified_call_operators()
+TEST(inplace_function, ConvertibleFromQualifiedCallOperator)
 {
     struct Callable { void operator()() {} };
     struct LvalueOnlyCallable { void operator()() & {} };
@@ -470,7 +480,7 @@ static void test_convertibility_with_qualified_call_operators()
     static_assert(std::is_convertible<NoexceptCallable, stdext::inplace_function<void()>>::value, "");
 }
 
-static void test_convertibility_with_lambdas()
+TEST(inplace_function, ConvertibleFromLambda)
 {
     struct NoDefaultCtor {
         int val;
@@ -529,7 +539,7 @@ int InstrumentedCopyConstructor::copies = 0;
 int InstrumentedCopyConstructor::moves = 0;
 } // anonymous namespace
 
-static void test_return_by_move()
+TEST(inplace_function, ReturnByMove)
 {
     using IPF20 = stdext::inplace_function<void(), 20>;
     using IPF40 = stdext::inplace_function<void(), 40>;
@@ -555,7 +565,7 @@ static void test_return_by_move()
     assert(InstrumentedCopyConstructor::moves == 1);
 }
 
-static void test_is_invocable()
+TEST(inplace_function, IsInvocableTrait)
 {
     using C_Int1 = int();
     using C_Int2 = int(int);
@@ -586,7 +596,7 @@ static void test_is_invocable()
     // > Determines whether Fn can be invoked with the arguments ArgTypes...
     // > to yield a result that is convertible to R.
     //
-    // void is treated specially because a functions return value can be ignored.
+    // void is treated specially because a function's return value can be ignored.
     static_assert(is_invocable_r<void, C_Int2, int&>::value, "");
     static_assert(is_invocable_r<const void, C_Int2, int&>::value, "");
 
@@ -597,7 +607,7 @@ static void test_is_invocable()
 
 static int overloaded_function(stdext::inplace_function<int()>) { return 1; }
 static int overloaded_function(stdext::inplace_function<int(int)>) { return 2; }
-static void test_overloading_on_arity()
+TEST(inplace_function, OverloadingOnArity)
 {
     EXPECT_EQ(overloaded_function([]() { return 0; }), 1);
     EXPECT_EQ(overloaded_function([](int) { return 0; }), 2);
@@ -605,7 +615,7 @@ static void test_overloading_on_arity()
 
 static int overloaded_function2(stdext::inplace_function<int(int)>) { return 1; }
 static int overloaded_function2(stdext::inplace_function<int(int*)>) { return 2; }
-static void test_overloading_on_parameter_type()
+TEST(inplace_function, OverloadingOnParameterType)
 {
     EXPECT_EQ(overloaded_function2([](int) { return 0; }), 1);
     EXPECT_EQ(overloaded_function2([](int*) { return 0; }), 2);
@@ -613,27 +623,14 @@ static void test_overloading_on_parameter_type()
 
 static int overloaded_function3(stdext::inplace_function<int(int)>) { return 1; }
 static int overloaded_function3(stdext::inplace_function<int*(int)>) { return 2; }
-static void test_overloading_on_return_type()
+TEST(inplace_function, OverloadingOnReturnType)
 {
     EXPECT_EQ(overloaded_function3([](int) { return 0; }), 1);
     EXPECT_EQ(overloaded_function3([](int) { return nullptr; }), 2);
 }
 
-TEST(inplace_function, all)
+TEST(inplace_function, Traits)
 {
-    // first set of tests (from Optiver)
-    AssignmentDifferentFunctor();
-    FunctionPointer();
-    Lambda();
-    Bind();
-    Swapping();
-    Copying();
-    ContainingStdFunction();
-    SimilarTypeCopy();
-    FunctorDestruction();
-    RvalueRefParameter();
-
-    // second set of tests
     using IPF = stdext::inplace_function<void(int)>;
     static_assert(std::is_nothrow_default_constructible<IPF>::value, "");
     static_assert(std::is_copy_constructible<IPF>::value, "");
@@ -647,29 +644,6 @@ TEST(inplace_function, all)
 #endif
     static_assert(std::is_nothrow_destructible<IPF>::value, "");
 
-    test_struct_layout();
-
-    IPF func;
-    assert(!func);
-    assert(!bool(func));
-    assert(func == nullptr);
-    assert(!(func != nullptr));
-    expected = 0; try { func(42); } catch (std::bad_function_call&) { expected = 1; } assert(expected == 1);
-
-    func = Foo;
-    assert(!!func);
-    assert(func);
-    assert(!(func == nullptr));
-    assert(func != nullptr);
-    called_with = 0; expected = 42; func(42); assert(called_with == 42);
-
-    func = nullptr;
-    assert(!func);
-    assert(!bool(func));
-    assert(func == nullptr);
-    assert(!(func != nullptr));
-    expected = 0; try { func(42); } catch (std::bad_function_call&) { expected = 1; } assert(expected == 1);
-
     using IPF40 = stdext::inplace_function<void(int), 40>; // the default is 32
     static_assert(std::is_constructible<IPF40, const IPF&>::value, "");
     static_assert(std::is_constructible<IPF40, IPF&&>::value, "");  // TODO: nothrow
@@ -682,40 +656,30 @@ TEST(inplace_function, all)
     static_assert(!std::is_swappable_with<IPF&, IPF40&>::value, "");
 #endif
     static_assert(std::is_nothrow_destructible<IPF40>::value, "");
-
-    IPF40 func40;
-    assert(!func40);
-    assert(!bool(func40));
-    assert(func40 == nullptr);
-    assert(!(func40 != nullptr));
-    expected = 0; try { func40(42); } catch (std::bad_function_call&) { expected = 1; } assert(expected == 1);
-
-    func = nullptr;
-    func40 = func;
-    assert(!func40);
-    assert(!bool(func40));
-    assert(func40 == nullptr);
-    assert(!(func40 != nullptr));
-    expected = 0; try { func40(42); } catch (std::bad_function_call&) { expected = 1; } assert(expected == 1);
-
-    test_exception_safety();
-    test_nullptr();
-    test_overloaded_operator_new();
-    test_move_construction_is_noexcept();
-    test_move_construction_from_smaller_buffer_is_noexcept();
-    test_is_convertible();
-    test_convertibility_with_qualified_call_operators();
-    test_convertibility_with_lambdas();
-    test_return_by_move();
-    test_is_invocable();
-    test_overloading_on_arity();
-    test_overloading_on_parameter_type();
-    test_overloading_on_return_type();
 }
 
-#ifdef TEST_MAIN
-int main()
+TEST(inplace_function, DefaultConstructor)
 {
-    sg14_test::inplace_function_test();
+    using IPF = stdext::inplace_function<void(int)>;
+
+    IPF func;
+    assert(!func);
+    assert(!bool(func));
+    assert(func == nullptr);
+    assert(!(func != nullptr));
+    expected = 0; try { func(42); } catch (std::bad_function_call&) { expected = 1; } assert(expected == 1);
 }
-#endif
+
+TEST(inplace_function, Assignment)
+{
+    using IPF = stdext::inplace_function<void(int)>;
+
+    IPF func;
+
+    func = Foo;
+    assert(!!func);
+    assert(func);
+    assert(!(func == nullptr));
+    assert(func != nullptr);
+    called_with = 0; expected = 42; func(42); assert(called_with == 42);
+}

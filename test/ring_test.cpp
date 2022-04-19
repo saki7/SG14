@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-static void basic_test()
+TEST(ring_span, Basic)
 {
 	std::array<int, 5> A;
 	std::array<int, 5> B;
@@ -49,7 +49,7 @@ static void basic_test()
 	assert(Q5.back() == 10);
 }
 
-static void filter_test()
+TEST(ring_span, Filter)
 {
 	std::array< double, 3 > A;
 	sg14::ring_span< double > buffer( std::begin( A ), std::end( A ) );
@@ -69,7 +69,7 @@ static void filter_test()
 	assert( std::inner_product( buffer.begin(), buffer.end(), filter_coefficients.begin(), 0.0 ) == 5.0 );
 }
 
-static void iterator_regression_test()
+TEST(ring_span, IteratorRegression)
 {
     std::array<double, 3> A;
     sg14::ring_span<double> r(A.begin(), A.end());
@@ -107,7 +107,7 @@ static void iterator_regression_test()
 #undef TEST_OP
 }
 
-static void copy_popper_test()
+TEST(ring_span, CopyPopper)
 {
     std::vector<std::string> v { "quick", "brown", "fox" };
     sg14::ring_span<std::string, sg14::copy_popper<std::string>> r(v.begin(), v.end(), {"popped"});
@@ -120,7 +120,7 @@ static void copy_popper_test()
     assert(result == "slow");
 }
 
-static void reverse_iterator_test()
+TEST(ring_span, ReverseIterator)
 {
     std::array<int, 3> A;
     sg14::ring_span<int> r(A.begin(), A.end());
@@ -163,13 +163,4 @@ static void reverse_iterator_test()
     static_assert(std::is_same<decltype(c.rend()), decltype(r)::const_reverse_iterator>::value, "");
     static_assert(std::is_same<decltype(r.crend()), decltype(r)::const_reverse_iterator>::value, "");
     static_assert(std::is_same<decltype(c.crend()), decltype(r)::const_reverse_iterator>::value, "");
-}
-
-TEST(ring_test, all)
-{
-    basic_test();
-    filter_test();
-    iterator_regression_test();
-    copy_popper_test();
-    reverse_iterator_test();
 }

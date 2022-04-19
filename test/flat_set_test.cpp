@@ -11,6 +11,21 @@
 #include <string>
 #include <vector>
 
+template<class T> struct flat_sett : testing::Test {};
+
+using flat_sett_types = testing::Types<
+    stdext::flat_set<int>                                           // basic
+    , stdext::flat_set<int, std::greater<int>>                      // custom comparator
+#if __cplusplus >= 201402L
+    , stdext::flat_set<int, std::greater<>>                         // transparent comparator
+#endif
+    , stdext::flat_set<int, std::less<int>, std::deque<int>>        // custom container
+#if defined(__cpp_lib_memory_resource)
+    , stdext::flat_set<int, std::less<int>, std::pmr::vector<int>>  // pmr container
+#endif
+>;
+TYPED_TEST_SUITE(flat_sett, flat_sett_types);
+
 namespace {
 
 struct AmbiguousEraseWidget {
@@ -29,25 +44,9 @@ private:
     std::string s_;
 };
 
-struct InstrumentedWidget {
-    static int move_ctors, copy_ctors;
-    InstrumentedWidget(const char *s) : s_(s) {}
-    InstrumentedWidget(InstrumentedWidget&& o) : s_(std::move(o.s_)) { move_ctors += 1; }
-    InstrumentedWidget(const InstrumentedWidget& o) : s_(o.s_) { copy_ctors += 1; }
-    InstrumentedWidget& operator=(InstrumentedWidget&&) = default;
-    InstrumentedWidget& operator=(const InstrumentedWidget&) = default;
+} // namespace
 
-    friend bool operator<(const InstrumentedWidget& a, const InstrumentedWidget& b) {
-        return a.s_ < b.s_;
-    }
-
-private:
-    std::string s_;
-};
-int InstrumentedWidget::move_ctors = 0;
-int InstrumentedWidget::copy_ctors = 0;
-
-static void AmbiguousEraseTest()
+TEST(flat_set, AmbiguousErase)
 {
     stdext::flat_set<AmbiguousEraseWidget> fs;
     fs.emplace("a");
@@ -64,7 +63,7 @@ static void AmbiguousEraseTest()
 #endif
 }
 
-static void ExtractDoesntSwapTest()
+TEST(flat_set, ExtractDoesntSwap)
 {
 #if defined(__cpp_lib_memory_resource)
     // This test fails if extract() is implemented in terms of swap().
@@ -88,6 +87,8 @@ static void ExtractDoesntSwapTest()
     }
 }
 
+namespace {
+
 struct ThrowingSwapException {};
 
 struct ComparatorWithThrowingSwap {
@@ -105,7 +106,9 @@ struct ComparatorWithThrowingSwap {
 };
 bool ComparatorWithThrowingSwap::please_throw = false;
 
-static void ThrowingSwapDoesntBreakInvariants()
+} // namespace
+
+TEST(flat_set, ThrowingSwapDoesntBreakInvariants)
 {
     using std::swap;
     stdext::flat_set<int, ComparatorWithThrowingSwap> fsx({1,2,3}, ComparatorWithThrowingSwap(std::less<int>()));
@@ -128,7 +131,7 @@ static void ThrowingSwapDoesntBreakInvariants()
     // set to `true`, then flat_set's behavior would be undefined.
 }
 
-static void VectorBoolSanityTest()
+TEST(flat_set, VectorBool)
 {
 #if __cplusplus >= 201402L  // C++11 doesn't support vector<bool>::emplace
     using FS = stdext::flat_set<bool>;
@@ -151,6 +154,8 @@ static void VectorBoolSanityTest()
 #endif
 }
 
+namespace {
+
 struct VectorBoolEvilComparator {
     bool operator()(bool a, bool b) const {
         return a < b;
@@ -162,7 +167,9 @@ struct VectorBoolEvilComparator {
     }
 };
 
-static void VectorBoolEvilComparatorTest()
+} // namespace
+
+TEST(flat_set, VectorBoolEvilComparator)
 {
     using FS = stdext::flat_set<bool, VectorBoolEvilComparator>;
     FS fs;
@@ -175,7 +182,29 @@ static void VectorBoolEvilComparatorTest()
     (void)cfs.equal_range(true);
 }
 
-static void MoveOperationsPilferOwnership()
+namespace {
+
+struct InstrumentedWidget {
+    static int move_ctors, copy_ctors;
+    InstrumentedWidget(const char *s) : s_(s) {}
+    InstrumentedWidget(InstrumentedWidget&& o) : s_(std::move(o.s_)) { move_ctors += 1; }
+    InstrumentedWidget(const InstrumentedWidget& o) : s_(o.s_) { copy_ctors += 1; }
+    InstrumentedWidget& operator=(InstrumentedWidget&&) = default;
+    InstrumentedWidget& operator=(const InstrumentedWidget&) = default;
+
+    friend bool operator<(const InstrumentedWidget& a, const InstrumentedWidget& b) {
+        return a.s_ < b.s_;
+    }
+
+private:
+    std::string s_;
+};
+int InstrumentedWidget::move_ctors = 0;
+int InstrumentedWidget::copy_ctors = 0;
+
+} // namespace
+
+TEST(flat_set, MoveOperationsPilferOwnership)
 {
     using FS = stdext::flat_set<InstrumentedWidget>;
     InstrumentedWidget::move_ctors = 0;
@@ -212,9 +241,10 @@ static void MoveOperationsPilferOwnership()
     assert(InstrumentedWidget::copy_ctors == 0);
 }
 
-template<class FS>
-static void ConstructionTest()
+TYPED_TEST(flat_sett, Construction)
 {
+    using FS = TypeParam;
+
     static_assert(std::is_same<int, typename FS::key_type>::value, "");
     static_assert(std::is_same<int, typename FS::value_type>::value, "");
     using Compare = typename FS::key_compare;
@@ -266,9 +296,10 @@ static void ConstructionTest()
     }
 }
 
-template<class FS>
-static void SpecialMemberTest()
+TYPED_TEST(flat_sett, SpecialMembers)
 {
+    using FS = TypeParam;
+
     static_assert(std::is_default_constructible<FS>::value, "");
     static_assert(std::is_nothrow_move_constructible<FS>::value == std::is_nothrow_move_constructible<typename FS::container_type>::value, "");
     static_assert(std::is_copy_constructible<FS>::value, "");
@@ -276,61 +307,3 @@ static void SpecialMemberTest()
     static_assert(std::is_move_assignable<FS>::value, "");
     static_assert(std::is_nothrow_destructible<FS>::value, "");
 }
-
-} // anonymous namespace
-
-TEST(flat_set, all)
-{
-    AmbiguousEraseTest();
-    ExtractDoesntSwapTest();
-    MoveOperationsPilferOwnership();
-    ThrowingSwapDoesntBreakInvariants();
-    VectorBoolSanityTest();
-    VectorBoolEvilComparatorTest();
-
-    // Test the most basic flat_set.
-    {
-        using FS = stdext::flat_set<int>;
-        ConstructionTest<FS>();
-        SpecialMemberTest<FS>();
-    }
-
-    // Test a custom comparator.
-    {
-        using FS = stdext::flat_set<int, std::greater<int>>;
-        ConstructionTest<FS>();
-        SpecialMemberTest<FS>();
-    }
-
-#if __cplusplus >= 201402L
-    // Test a transparent comparator.
-    {
-        using FS = stdext::flat_set<int, std::greater<>>;
-        ConstructionTest<FS>();
-        SpecialMemberTest<FS>();
-    }
-#endif
-
-    // Test a custom container.
-    {
-        using FS = stdext::flat_set<int, std::less<int>, std::deque<int>>;
-        ConstructionTest<FS>();
-        SpecialMemberTest<FS>();
-    }
-
-#if defined(__cpp_lib_memory_resource)
-    // Test a pmr container.
-    {
-        using FS = stdext::flat_set<int, std::less<int>, std::pmr::vector<int>>;
-        ConstructionTest<FS>();
-        SpecialMemberTest<FS>();
-    }
-#endif
-}
-
-#ifdef TEST_MAIN
-int main()
-{
-    sg14_test::flat_set_test();
-}
-#endif

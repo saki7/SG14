@@ -12,6 +12,22 @@
 #include <string>
 #include <vector>
 
+template<class T> struct flat_mapt : testing::Test {};
+
+using flat_mapt_types = testing::Types<
+    stdext::flat_map<int, const char*>                                                // basic
+    , stdext::flat_map<int, const char*, std::greater<int>>                           // custom comparator
+#if __cplusplus >= 201402L
+    , stdext::flat_map<int, const char*, std::greater<>>                              // transparent comparator
+#endif
+    , stdext::flat_map<int, const char*, std::less<int>, std::deque<int>>             // custom container
+#if defined(__cpp_lib_memory_resource)
+    , stdext::flat_map<int, const char*, std::less<int>, std::pmr::vector<int>>       // pmr container
+    , stdext::flat_map<int, std::pmr::string, std::less<int>, std::pmr::vector<int>>  // uses-allocator construction
+#endif
+>;
+TYPED_TEST_SUITE(flat_mapt, flat_mapt_types);
+
 namespace {
 
 struct AmbiguousEraseWidget {
@@ -27,6 +43,49 @@ struct AmbiguousEraseWidget {
 private:
     std::string s_;
 };
+
+} // namespace
+
+TEST(flat_map, AmbiguousErase)
+{
+    stdext::flat_map<AmbiguousEraseWidget, int> fs;
+    fs.emplace("a", 1);
+    fs.emplace("b", 2);
+    fs.emplace("c", 3);
+    assert(fs.size() == 3);
+    fs.erase(AmbiguousEraseWidget("a"));  // calls erase(const Key&)
+    assert(fs.size() == 2);
+    fs.erase(fs.begin());                 // calls erase(iterator)
+    assert(fs.size() == 1);
+    fs.erase(fs.cbegin());                // calls erase(const_iterator)
+    assert(fs.size() == 0);
+}
+
+TEST(flat_map, ExtractDoesntSwap)
+{
+#if defined(__cpp_lib_memory_resource)
+    // This test fails if extract() is implemented in terms of swap().
+    {
+        std::pmr::monotonic_buffer_resource mr;
+        std::pmr::polymorphic_allocator<int> a(&mr);
+        stdext::flat_map<int, int, std::less<>, std::pmr::vector<int>, std::pmr::vector<int>> fs({{1, 10}, {2, 20}}, a);
+        auto ctrs = std::move(fs).extract();
+        assert(ctrs.keys.get_allocator() == a);
+        assert(ctrs.values.get_allocator() == a);
+    }
+#endif
+
+    // Sanity-check with std::allocator, even though this can't fail.
+    {
+        std::allocator<int> a;
+        stdext::flat_map<int, int, std::less<>, std::vector<int>, std::vector<int>> fs({{1, 10}, {2, 20}}, a);
+        auto ctrs = std::move(fs).extract();
+        assert(ctrs.keys.get_allocator() == a);
+        assert(ctrs.values.get_allocator() == a);
+    }
+}
+
+namespace {
 
 struct InstrumentedWidget {
     static int move_ctors, copy_ctors;
@@ -53,46 +112,9 @@ private:
 int InstrumentedWidget::move_ctors = 0;
 int InstrumentedWidget::copy_ctors = 0;
 
-static void AmbiguousEraseTest()
-{
-    stdext::flat_map<AmbiguousEraseWidget, int> fs;
-    fs.emplace("a", 1);
-    fs.emplace("b", 2);
-    fs.emplace("c", 3);
-    assert(fs.size() == 3);
-    fs.erase(AmbiguousEraseWidget("a"));  // calls erase(const Key&)
-    assert(fs.size() == 2);
-    fs.erase(fs.begin());                 // calls erase(iterator)
-    assert(fs.size() == 1);
-    fs.erase(fs.cbegin());                // calls erase(const_iterator)
-    assert(fs.size() == 0);
-}
+} // namespace
 
-static void ExtractDoesntSwapTest()
-{
-#if defined(__cpp_lib_memory_resource)
-    // This test fails if extract() is implemented in terms of swap().
-    {
-        std::pmr::monotonic_buffer_resource mr;
-        std::pmr::polymorphic_allocator<int> a(&mr);
-        stdext::flat_map<int, int, std::less<>, std::pmr::vector<int>, std::pmr::vector<int>> fs({{1, 10}, {2, 20}}, a);
-        auto ctrs = std::move(fs).extract();
-        assert(ctrs.keys.get_allocator() == a);
-        assert(ctrs.values.get_allocator() == a);
-    }
-#endif
-
-    // Sanity-check with std::allocator, even though this can't fail.
-    {
-        std::allocator<int> a;
-        stdext::flat_map<int, int, std::less<>, std::vector<int>, std::vector<int>> fs({{1, 10}, {2, 20}}, a);
-        auto ctrs = std::move(fs).extract();
-        assert(ctrs.keys.get_allocator() == a);
-        assert(ctrs.values.get_allocator() == a);
-    }
-}
-
-static void MoveOperationsPilferOwnership()
+TEST(flat_map, MoveOperationsPilferOwnership)
 {
     using FS = stdext::flat_map<InstrumentedWidget, int>;
     InstrumentedWidget::move_ctors = 0;
@@ -129,7 +151,7 @@ static void MoveOperationsPilferOwnership()
     assert(InstrumentedWidget::copy_ctors == 0);
 }
 
-static void SortedUniqueConstructionTest()
+TEST(flat_map, SortedUniqueConstruction)
 {
     auto a = stdext::sorted_unique;
     stdext::sorted_unique_t b;
@@ -146,7 +168,7 @@ static void SortedUniqueConstructionTest()
 #endif
 }
 
-static void TryEmplaceTest()
+TEST(flat_map, TryEmplace)
 {
     stdext::flat_map<int, InstrumentedWidget> fm;
     std::pair<stdext::flat_map<int, InstrumentedWidget>::iterator, bool> pair;
@@ -204,7 +226,7 @@ static void TryEmplaceTest()
     }
 }
 
-static void VectorBoolSanityTest()
+TEST(flat_map, VectorBool)
 {
     using FM = stdext::flat_map<bool, bool>;
     FM fm;
@@ -261,7 +283,7 @@ static auto flatmap_is_ctadable_from(long, Args&&...)
 #endif // defined(__cpp_deduction_guides)
 
 
-static void DeductionGuideTests()
+TEST(flat_map, DeductionGuides)
 {
     using stdext::flat_map;
 #if defined(__cpp_deduction_guides)
@@ -496,9 +518,10 @@ static void DeductionGuideTests()
 #endif // defined(__cpp_deduction_guides)
 }
 
-template<class FS>
-static void ConstructionTest()
+TYPED_TEST(flat_mapt, Construction)
 {
+    using FS = TypeParam;
+
     static_assert(std::is_same<int, typename FS::key_type>::value, "");
     static_assert(std::is_convertible<const char*, typename FS::mapped_type>::value, "");
     using Mapped = typename FS::mapped_type;
@@ -564,9 +587,10 @@ static void ConstructionTest()
     }
 }
 
-template<class FM>
-static void InsertOrAssignTest()
+TYPED_TEST(flat_mapt, InsertOrAssign)
 {
+    using FM = TypeParam;
+
     FM fm;
     const char *str = "a";
     using Mapped = typename FM::mapped_type;
@@ -600,10 +624,10 @@ static void InsertOrAssignTest()
     assert(fm[3] == Str("b"));
 }
 
-
-template<class FS>
-static void SpecialMemberTest()
+TYPED_TEST(flat_mapt, SpecialMembers)
 {
+    using FS = TypeParam;
+
     static_assert(std::is_default_constructible<FS>::value, "");
     static_assert(std::is_nothrow_move_constructible<FS>::value == std::is_nothrow_move_constructible<typename FS::key_container_type>::value && std::is_nothrow_move_constructible<typename FS::mapped_container_type>::value && std::is_nothrow_move_constructible<typename FS::key_compare>::value, "");
     static_assert(std::is_copy_constructible<FS>::value, "");
@@ -619,9 +643,10 @@ static void SpecialMemberTest()
     static_assert(std::is_nothrow_destructible<typename FS::containers>::value, "");
 }
 
-template<class FM>
-static void ComparisonOperatorsTest()
+TYPED_TEST(flat_mapt, ComparisonOperators)
 {
+    using FM = TypeParam;
+
     const char *abc[] = {"", "a", "b", "c"};
     FM fm1 = {
         {1, abc[2]}, {2, abc[3]},
@@ -657,9 +682,10 @@ static void ComparisonOperatorsTest()
     assert(fm1 >= fm2);
 }
 
-template<class FM>
-static void SearchTest()
+TYPED_TEST(flat_mapt, Search)
 {
+    using FM = TypeParam;
+
     FM fm{{1, "a"}, {2, "b"}, {3, "c"}};
     auto it = fm.lower_bound(2);
     auto cit = const_cast<const FM&>(fm).lower_bound(2);
@@ -680,85 +706,3 @@ static void SearchTest()
     static_assert(std::is_same<decltype(it), typename FM::iterator>::value, "");
     static_assert(std::is_same<decltype(cit), typename FM::const_iterator>::value, "");
 }
-
-} // anonymous namespace
-
-TEST(flat_map, all)
-{
-    AmbiguousEraseTest();
-    ExtractDoesntSwapTest();
-    MoveOperationsPilferOwnership();
-    SortedUniqueConstructionTest();
-    TryEmplaceTest();
-    VectorBoolSanityTest();
-    DeductionGuideTests();
-
-    // Test the most basic flat_set.
-    {
-        using FS = stdext::flat_map<int, const char*>;
-        ConstructionTest<FS>();
-        SpecialMemberTest<FS>();
-        InsertOrAssignTest<FS>();
-        ComparisonOperatorsTest<FS>();
-        SearchTest<FS>();
-    }
-
-    // Test a custom comparator.
-    {
-        using FS = stdext::flat_map<int, const char*, std::greater<int>>;
-        ConstructionTest<FS>();
-        SpecialMemberTest<FS>();
-        InsertOrAssignTest<FS>();
-        ComparisonOperatorsTest<FS>();
-        SearchTest<FS>();
-    }
-
-    // Test a transparent comparator.
-    {
-        using FS = stdext::flat_map<int, const char*, std::greater<>>;
-        ConstructionTest<FS>();
-        SpecialMemberTest<FS>();
-        InsertOrAssignTest<FS>();
-        ComparisonOperatorsTest<FS>();
-        SearchTest<FS>();
-    }
-
-    // Test a custom container.
-    {
-        using FS = stdext::flat_map<int, const char*, std::less<int>, std::deque<int>>;
-        ConstructionTest<FS>();
-        SpecialMemberTest<FS>();
-        InsertOrAssignTest<FS>();
-        ComparisonOperatorsTest<FS>();
-        SearchTest<FS>();
-    }
-
-#if defined(__cpp_lib_memory_resource)
-    // Test a pmr container.
-    {
-        using FS = stdext::flat_map<int, const char*, std::less<int>, std::pmr::vector<int>>;
-        ConstructionTest<FS>();
-        SpecialMemberTest<FS>();
-        InsertOrAssignTest<FS>();
-        ComparisonOperatorsTest<FS>();
-        SearchTest<FS>();
-    }
-
-    // Test a pmr container with uses-allocator construction!
-    {
-        using FS = stdext::flat_map<int, std::pmr::string, std::less<int>, std::pmr::vector<int>>;
-        ConstructionTest<FS>();
-        SpecialMemberTest<FS>();
-        InsertOrAssignTest<FS>();
-        ComparisonOperatorsTest<FS>();
-        SearchTest<FS>();
-    }
-#endif
-}
-
-#ifdef TEST_MAIN
-int main()
-{
-    sg14_test::flat_map_test();
-}
-#endif
