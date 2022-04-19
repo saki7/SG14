@@ -632,9 +632,9 @@ TEST(slot_map, MoveOnlyValueType)
     IndexesAreUsedEvenlyTest<slot_map_7>();
 }
 
-#if defined(__cpp_concepts)
+#if __cpp_concepts >= 202002
 template<template<class...> class Ctr, class T = int>
-concept bool SlotMapContainer =
+concept SlotMapContainer =
     requires(Ctr<T> c, const Ctr<T> cc, T t) {
         { Ctr<T>{} };  // default constructible, destructible
         { Ctr<T>(cc) };  // copy constructible
@@ -653,17 +653,17 @@ concept bool SlotMapContainer =
         typename Ctr<T>::const_reverse_iterator;
         { c.emplace_back(t) };
         { c.pop_back() };
-        { c.begin() } -> typename Ctr<T>::iterator;
-        { c.end() } -> typename Ctr<T>::iterator;
-        { cc.size() } -> typename Ctr<T>::size_type;
-        { cc.begin() } -> typename Ctr<T>::const_iterator;
-        { cc.end() } -> typename Ctr<T>::const_iterator;
-        { std::next(c.begin()) } -> typename Ctr<T>::iterator;
-        { std::next(cc.begin()) } -> typename Ctr<T>::const_iterator;
+        { c.begin() } -> std::same_as<typename Ctr<T>::iterator>;
+        { c.end() } -> std::same_as<typename Ctr<T>::iterator>;
+        { cc.size() } -> std::same_as<typename Ctr<T>::size_type>;
+        { cc.begin() } -> std::same_as<typename Ctr<T>::const_iterator>;
+        { cc.end() } -> std::same_as<typename Ctr<T>::const_iterator>;
+        { std::next(c.begin()) } -> std::same_as<typename Ctr<T>::iterator>;
+        { std::next(cc.begin()) } -> std::same_as<typename Ctr<T>::const_iterator>;
     };
 static_assert(SlotMapContainer<std::vector>);
 static_assert(SlotMapContainer<std::deque>);
 static_assert(SlotMapContainer<std::list>);
-static_assert(not SlotMapContainer<std::forward_list>);
-static_assert(not SlotMapContainer<std::pair>);
-#endif  // defined(__cpp_concepts)
+static_assert(!SlotMapContainer<std::forward_list>);
+static_assert(!SlotMapContainer<std::pair>);
+#endif // __cpp_concepts >= 202002
