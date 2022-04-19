@@ -1,6 +1,8 @@
 // Original source:
 // https://github.com/mattreecebentley/plf_hive/blob/7b7763f/plf_hive_test_suite.cpp
 
+#if __cplusplus >= 201703L
+
 #include <sg14/plf_hive.h>
 
 #include <gtest/gtest.h>
@@ -10,6 +12,7 @@
 #include <cstdlib>
 #include <functional>
 #include <numeric>
+#include <random>
 #include <utility>
 #include <vector>
 
@@ -316,44 +319,35 @@ TEST(hive, All)
 
         }
 
-
         {
             title2("Iterator comparison tests");
 
-            hive<int> i_hive;
+            hive<int> v = {0, 1, 2, 3, 4};
+            auto it1 = v.begin();
+            auto it2 = v.begin();
+            std::advance(it2, 3);
 
-            for (int temp = 0; temp != 10; ++temp)
-            {
-                i_hive.insert(temp);
-            }
+            EXPECT_EQ((it1 < it2), true);
+            EXPECT_EQ((it1 <= it2), true);
+            EXPECT_EQ((it1 > it2), false);
+            EXPECT_EQ((it1 >= it2), false);
+            EXPECT_EQ((it1 == it2), false);
+            EXPECT_EQ((it1 != it2), true);
 
-            hive<int>::iterator it1 = i_hive.begin(), it2 = i_hive.begin();
+            EXPECT_EQ((it2 < it1), false);
+            EXPECT_EQ((it2 <= it1), false);
+            EXPECT_EQ((it2 > it1), true);
+            EXPECT_EQ((it2 >= it1), true);
+            EXPECT_EQ((it2 == it1), false);
+            EXPECT_EQ((it2 != it1), true);
 
-            ++it2;
-            ++it2;
-            ++it2;
-
-            failpass("Iterator ++ test", *it2 == 3);
-
-            failpass("Iterator > test", it2 > it1);
-
-            failpass("Iterator >= test", it2 >= it1);
-
-            failpass("Iterator < test", it1 < it2);
-
-            failpass("Iterator <= test", it1 <= it2);
-
-            failpass("Iterator != test", it2 != it1);
-
-            failpass("Iterator <=> test 1", (it2 <=> it1) == std::strong_ordering::greater);
-
-            failpass("Iterator <=> test 2", (it1 <=> it2) == std::strong_ordering::less);
-
+#if __cpp_impl_three_way_comparison >= 201907
+            EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+            EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
             it1 = it2;
-
-            failpass("Iterator <=> test 3", (it1 <=> it2) == std::strong_ordering::equal);
+            EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+#endif
         }
-
 
         {
             title2("Insert and Erase tests");
@@ -607,8 +601,6 @@ TEST(hive, All)
                     }
                 }
 
-                unsigned int internal_loop_counter = 0;
-
                 for (hive<int>::iterator the_iterator = i_hive.begin(); the_iterator != i_hive.end();)
                 {
                     if ((rand() & 7) == 0)
@@ -620,8 +612,6 @@ TEST(hive, All)
                     {
                         ++the_iterator;
                     }
-
-                    ++internal_loop_counter;
                 }
             }
 
@@ -941,7 +931,7 @@ TEST(hive, All)
             small_struct_non_trivial ss(5);
 
             unsigned int size, range1 = 0, range2 = 0, internal_loop_counter;
-            int counter, sum1 = 0;
+            int counter;
 
             ss_nt.insert(10000, ss);
 
@@ -951,7 +941,6 @@ TEST(hive, All)
             for (hive<small_struct_non_trivial>::iterator ss_it = ss_nt.begin(); ss_it != ss_nt.end(); ++ss_it)
             {
                 ss_it = ss_nt.erase(ss_it);
-                sum1 += ss_it->number;
                 ++range1;
             }
 
@@ -1830,3 +1819,5 @@ TEST(hive, StdEraseIf)
     EXPECT_EQ(v.size(), 500u);
     EXPECT_TRUE(std::all_of(v.begin(), v.end(), [](int i){ return i < 500; }));
 }
+
+#endif // __cplusplus >= 201703L
