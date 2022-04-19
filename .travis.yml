@@ -133,7 +133,7 @@ matrix:
         - MATRIX_EVAL="CC=gcc-8 && CXX=g++-8 && CONFIG=Release"
 
 script:
-  - mkdir build && cd build && cmake .. && cmake --build . && ./bin/sg14_tests
+  - mkdir build && cd build && cmake .. && cmake --build . && ./bin/utest
 
 notifications:
   email:
