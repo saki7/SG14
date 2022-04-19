@@ -1,12 +1,14 @@
-#include "SG14_test.h"
-#include <vector>
+#include <sg14/algorithm_ext.h>
+
+#include <gtest/gtest.h>
+
+#include <algorithm>
 #include <array>
+#include <cassert>
 #include <ctime>
 #include <iostream>
-#include <algorithm>
-#include "algorithm_ext.h"
-#include <cassert>
 #include <memory>
+#include <vector>
 
 namespace
 {
@@ -96,17 +98,8 @@ namespace
 }
 
 
-
-void sg14_test::uninitialized_test()
+TEST(uninitialized_algorithms, all)
 {
 	value();
 	def();
-
 }
-
-#ifdef TEST_MAIN
-int main()
-{
-    sg14_test::uninitialized_test();
-}
-#endif

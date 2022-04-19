@@ -1,6 +1,8 @@
-#include "SG14_test.h"
-#include "flat_set.h"
-#include <assert.h>
+#include <sg14/flat_set.h>
+
+#include <gtest/gtest.h>
+
+#include <cassert>
 #include <deque>
 #include <functional>
 #if __has_include(<memory_resource>)
@@ -277,7 +279,7 @@ static void SpecialMemberTest()
 
 } // anonymous namespace
 
-void sg14_test::flat_set_test()
+TEST(flat_set, all)
 {
     AmbiguousEraseTest();
     ExtractDoesntSwapTest();

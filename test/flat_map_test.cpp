@@ -1,6 +1,8 @@
-#include "SG14_test.h"
-#include "flat_map.h"
-#include <assert.h>
+#include <sg14/flat_map.h>
+
+#include <gtest/gtest.h>
+
+#include <cassert>
 #include <deque>
 #include <functional>
 #include <list>
@@ -681,7 +683,7 @@ static void SearchTest()
 
 } // anonymous namespace
 
-void sg14_test::flat_map_test()
+TEST(flat_map, all)
 {
     AmbiguousEraseTest();
     ExtractDoesntSwapTest();

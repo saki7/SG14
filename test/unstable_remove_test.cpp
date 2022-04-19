@@ -1,5 +1,7 @@
-#include "SG14_test.h"
-#include "algorithm_ext.h"
+#include <sg14/algorithm_ext.h>
+
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -18,8 +20,7 @@ struct foo
     }
 };
 
-
-void sg14_test::unstable_remove_test()
+TEST(unstable_remove, all)
 {
     size_t test_runs = 200;
 
@@ -89,10 +90,3 @@ void sg14_test::unstable_remove_test()
     std::cout << "unstable: " << unstable_med << "\n";
     std::cout << "remove_if: " << remove_med << "\n";
 }
-
-#ifdef TEST_MAIN
-int main()
-{
-    sg14_test::unstable_remove_test();
-}
-#endif

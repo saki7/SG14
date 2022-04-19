@@ -1,14 +1,12 @@
-#include "SG14_test.h"
-#include "inplace_function.h"
+#include <sg14/inplace_function.h>
+
+#include <gtest/gtest.h>
+
 #include <cassert>
 #include <memory>
 #include <string>
 #include <type_traits>
 #include <vector>
-
-#define EXPECT_EQ(val1, val2) assert(val1 == val2)
-#define EXPECT_TRUE(val) assert(val)
-#define EXPECT_FALSE(val) assert(!val)
 
 namespace {
 
@@ -621,7 +619,7 @@ static void test_overloading_on_return_type()
     EXPECT_EQ(overloaded_function3([](int) { return nullptr; }), 2);
 }
 
-void sg14_test::inplace_function_test()
+TEST(inplace_function, all)
 {
     // first set of tests (from Optiver)
     AssignmentDifferentFunctor();

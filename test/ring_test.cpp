@@ -1,6 +1,6 @@
-#include "SG14_test.h"
+#include <sg14/ring.h>
 
-#include "ring.h"
+#include <gtest/gtest.h>
 
 #include <array>
 #include <numeric>
@@ -165,7 +165,7 @@ static void reverse_iterator_test()
     static_assert(std::is_same<decltype(c.crend()), decltype(r)::const_reverse_iterator>::value, "");
 }
 
-void sg14_test::ring_test()
+TEST(ring_test, all)
 {
     basic_test();
     filter_test();
@@ -173,10 +173,3 @@ void sg14_test::ring_test()
     copy_popper_test();
     reverse_iterator_test();
 }
-
-#ifdef TEST_MAIN
-int main()
-{
-    sg14_test::ring_test();
-}
-#endif

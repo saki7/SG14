@@ -69,19 +69,17 @@
 
 
 
-#include <numeric> // std::accumulate
+#include <sg14/plf_colony.h>
+
+#include <gtest/gtest.h>
+
 #include <algorithm> // std::find
 #include <cstdio> // log redirection, printf
 #include <cstdlib> // abort
 #include <functional> // std::greater
+#include <numeric> // std::accumulate
+#include <utility> // std::move
 #include <vector> // range-insert testing
-
-#ifdef PLF_TEST_TEST_MOVE_SEMANTICS_SUPPORT
-	#include <utility> // std::move
-#endif
-
-#include "plf_colony.h"
-
 
 namespace
 {
@@ -202,10 +200,7 @@ unsigned int rand()
 
 
 
-namespace sg14_test
-{
-
-void plf_colony_test()
+TEST(plf_colony, all)
 {
 	using namespace std;
 	using namespace plf;
@@ -2015,11 +2010,3 @@ void plf_colony_test()
 		}
 	}
 }
-}
-
-#ifdef TEST_MAIN
-int main()
-{
-    sg14_test::plf_colony_test();
-}
-#endif

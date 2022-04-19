@@ -1,12 +1,14 @@
-#include "SG14_test.h"
-#include "slot_map.h"
-#include <assert.h>
-#include <inttypes.h>
+#include <sg14/slot_map.h>
+
+#include <gtest/gtest.h>
+
 #include <algorithm>
+#include <cassert>
+#include <cinttypes>
 #include <deque>
 #include <forward_list>
-#include <list>
 #include <iterator>
+#include <list>
 #include <memory>
 #include <random>
 #include <type_traits>
@@ -508,7 +510,7 @@ static void IndexesAreUsedEvenlyTest()
 #endif
 }
 
-void sg14_test::slot_map_test()
+TEST(slot_map, all)
 {
     TypedefTests();
 
@@ -650,10 +652,3 @@ static_assert(SlotMapContainer<std::list>);
 static_assert(not SlotMapContainer<std::forward_list>);
 static_assert(not SlotMapContainer<std::pair>);
 #endif  // defined(__cpp_concepts)
-
-#ifdef TEST_MAIN
-int main()
-{
-    sg14_test::slot_map_test();
-}
-#endif
