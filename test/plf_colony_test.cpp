@@ -73,21 +73,18 @@
 
 #include <gtest/gtest.h>
 
-#include <algorithm> // std::find
-#include <cstdio> // log redirection, printf
-#include <cstdlib> // abort
-#include <functional> // std::greater
-#include <numeric> // std::accumulate
-#include <utility> // std::move
-#include <vector> // range-insert testing
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <functional>
+#include <numeric>
+#include <random>
+#include <utility>
+#include <vector>
 
-namespace
-{
-
-    inline void failpass(const char* test_type, bool condition)
-    {
-        if (!condition)
-        {
+namespace {
+    inline void failpass(const char* test_type, bool condition) {
+        if (!condition) {
             printf("%s: Fail\n", test_type);
             getchar();
             abort();
@@ -1903,110 +1900,104 @@ TEST(plf_colony, all)
                 failpass("Post-splice insert-and-erase randomly till-empty test", colony1.size() == 0);
             }
         }
+    }
+}
 
-        {
-            title2("erase_if tests");
+TEST(hive, StdErase)
+{
+    std::mt19937 g;
+    plf::colony<int> v;
+    for (int count = 0; count != 1000; ++count) {
+        v.insert(g() & 1);
+    }
+    plf::colony<int> v2 = v;
+    ASSERT_EQ(v.size(), 1000u);
 
-            colony<int> i_colony(100, 100);
+    int count0 = std::count(v.begin(), v.end(), 0);
+    int count1 = std::count(v.begin(), v.end(), 1);
+    ASSERT_EQ(count0 + count1, 1000);
 
-            i_colony.insert(100, 200);
-            colony<int> i_colony2 = i_colony;
+    erase(v, 0);
+    erase(v2, 1);
 
-            erase(i_colony, 100);
-            int total = std::accumulate(i_colony.begin(), i_colony.end(), 0);
+    EXPECT_EQ(v.size(), count1);
+    EXPECT_TRUE(std::all_of(v.begin(), v.end(), [](int i){ return i == 1; }));
 
-            failpass("non-member erase test 1", total == 20000);
+    EXPECT_EQ(v2.size(), count0);
+    EXPECT_TRUE(std::all_of(v2.begin(), v2.end(), [](int i){ return i == 0; }));
+}
 
-            erase(i_colony2, 200);
-            total = std::accumulate(i_colony2.begin(), i_colony2.end(), 0);
+TEST(hive, StdErase2)
+{
+    auto v = plf::colony<int>(100, 100);
+    v.insert(100, 200);
+    plf::colony<int> v2 = v;
+    ASSERT_EQ(v.size(), 200u);
 
-            failpass("non-member erase test 2", total == 10000);
+    erase(v, 100);
+    EXPECT_EQ(std::accumulate(v.begin(), v.end(), 0), 20000);
 
+    erase(v2, 200);
+    EXPECT_EQ(std::accumulate(v2.begin(), v2.end(), 0), 10000);
 
-            i_colony.clear();
+    erase(v, 200);
+    EXPECT_TRUE(v.empty());
 
-            for(int count = 0; count != 1000; ++count)
-            {
-                i_colony.insert((plf::rand() & 1));
+    erase(v2, 100);
+    EXPECT_TRUE(v2.empty());
+}
+
+TEST(hive, StdEraseIf)
+{
+    plf::colony<int> v;
+    for (int count = 0; count != 1000; ++count) {
+        v.insert(count);
+    }
+
+    erase_if(v, [](int i){ return i >= 500; });
+    EXPECT_EQ(v.size(), 500u);
+    EXPECT_TRUE(std::all_of(v.begin(), v.end(), [](int i){ return i < 500; }));
+}
+
+TEST(hive, Data)
+{
+    auto i_colony = plf::colony<int>(10000, 5);
+
+    int sum1 = 0;
+    int sum2 = 0;
+    int range1 = 0;
+    int range2 = 0;
+
+    // Erase half of all elements and sum the rest:
+    for (plf::colony<int>::iterator it = i_colony.begin(); it != i_colony.end(); ++it) {
+        it = i_colony.erase(it);
+        sum1 += *it;
+        ++range1;
+    }
+    plf::colony<int>::colony_data *data = i_colony.data();
+
+    // Manually sum using raw memory blocks
+    for (unsigned int block_num = 0; block_num != data->number_of_blocks; ++block_num) {
+        plf::colony<int>::aligned_element_type *current_element = data->block_pointers[block_num];
+        const unsigned char *bitfield_location = data->bitfield_pointers[block_num];
+        const size_t capacity = data->block_capacities[block_num];
+
+        size_t char_index = 0;
+        unsigned char offset = 0;
+
+        for (size_t index = 0; index != capacity; ++index, ++current_element) {
+            if ((bitfield_location[char_index] >> offset) & 1) {
+                sum2 += *reinterpret_cast<int *>(current_element);
+                ++range2;
             }
-
-            i_colony2 = i_colony;
-
-            const int count0 = static_cast<int>(std::count(i_colony.begin(), i_colony.end(), 0));
-            const int count1 = 1000 - count0;
-
-            erase(i_colony, 0);
-            failpass("random non-member erase test 1", static_cast<int>(i_colony.size()) == count1);
-
-            erase(i_colony2, 1);
-            failpass("random non-member erase test 2",  static_cast<int>(i_colony2.size()) == count0);
-
-
-            i_colony.clear();
-
-            for(int count = 0; count != 1000; ++count)
-            {
-                i_colony.insert(count);
+            if (++offset == 8) {
+                offset = 0;
+                ++char_index;
             }
-
-            #ifdef PLF_TEST_MOVE_SEMANTICS_SUPPORT // approximating checking for C++11 here
-                erase_if(i_colony, std::bind(std::greater<int>(), std::placeholders::_1, 499));
-            #else // C++03 or lower
-                erase_if(i_colony, std::bind2nd(std::greater<int>(), 499));
-            #endif
-
-            failpass("erase_if test",   static_cast<int>(i_colony.size()) == 500);
-
-        }
-
-        {
-            title2("data() tests");
-
-            colony<int> i_colony(10000, 5);
-
-            int sum1 = 0, sum2 = 0, range1 = 0, range2 = 0;
-
-
-            // Erase half of all elements and sum the rest:
-            for (colony<int>::iterator it = i_colony.begin(); it != i_colony.end(); ++it)
-            {
-                it = i_colony.erase(it);
-                sum1 += *it;
-                ++range1;
-            }
-
-
-            colony<int>::colony_data *data = i_colony.data();
-
-            // Manually sum using raw memory blocks:
-            for (unsigned int block_num = 0; block_num != data->number_of_blocks; ++block_num)
-            {
-                colony<int>::aligned_element_type *current_element = data->block_pointers[block_num];
-                const unsigned char *bitfield_location = data->bitfield_pointers[block_num];
-                const size_t capacity = data->block_capacities[block_num];
-
-                size_t char_index = 0;
-                unsigned char offset = 0;
-
-                for (size_t index = 0; index != capacity; ++index, ++current_element)
-                {
-                    if ((bitfield_location[char_index] >> offset) & 1)
-                    {
-                        sum2 += *(reinterpret_cast<int *>(current_element));
-                        ++range2;
-                    }
-
-                    if (++offset == 8)
-                    {
-                        offset = 0;
-                        ++char_index;
-                    }
-                }
-            }
-
-            delete data;
-
-            failpass("Manual summing pass over elements obtained from data()", (sum1 == sum2) && (range1 == range2));
         }
     }
+
+    delete data;
+    EXPECT_EQ(sum1, sum2);
+    EXPECT_EQ(range1, range2);
 }
