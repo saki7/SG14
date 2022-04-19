@@ -7,9 +7,9 @@ A library for Study Group 14 of Working Group 21 (C++)
 
 /docs/proposals - C++ standard proposals.
 
-/SG14 - Source files for implementations.
+/include - Source files for implementations.
 
-/SG14_test - Individual tests for implementations.
+/test - Individual tests for implementations.
 
 http://lists.isocpp.org/mailman/listinfo.cgi/sg14 for more information
 
@@ -19,10 +19,7 @@ Clone the repo. Navigate to the folder in your favorite terminal.
 `mkdir build && cd build`
 
 ### Windows
-`cmake .. -A x64 && cmake --build . && bin\sg14_tests.exe`
+`cmake .. -A x64 && cmake --build . && bin\utest.exe`
 
 ### Unixes
-`cmake .. && cmake --build . && ./bin/sg14_tests`
-
-### Alternatively
-`cd SG14_test && g++ -std=c++14 -DTEST_MAIN -I../SG14 whatever_test.cpp && ./a.out`
+`cmake .. && cmake --build . && ./bin/utest`
