@@ -21,7 +21,7 @@ using flat_mapt_types = testing::Types<
     , stdext::flat_map<int, const char*, std::greater<>>                              // transparent comparator
 #endif
     , stdext::flat_map<int, const char*, std::less<int>, std::deque<int>>             // custom container
-#if defined(__cpp_lib_memory_resource)
+#if __cpp_lib_memory_resource >= 201603
     , stdext::flat_map<int, const char*, std::less<int>, std::pmr::vector<int>>       // pmr container
     , stdext::flat_map<int, std::pmr::string, std::less<int>, std::pmr::vector<int>>  // uses-allocator construction
 #endif
@@ -63,7 +63,7 @@ TEST(flat_map, AmbiguousErase)
 
 TEST(flat_map, ExtractDoesntSwap)
 {
-#if defined(__cpp_lib_memory_resource)
+#if __cpp_lib_memory_resource >= 201603
     // This test fails if extract() is implemented in terms of swap().
     {
         std::pmr::monotonic_buffer_resource mr;
@@ -297,7 +297,7 @@ TEST(flat_map, DeductionGuides)
         std::list<std::pair<const int* const, const int*>> lst;
         flat_map fm3(lst);
         static_assert(std::is_same_v<decltype(fm3), flat_map<const int*, const int*>>);
-#if __cpp_lib_memory_resource
+#if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<std::pair<std::pmr::string, int>> pv;
         flat_map fm4(pv);
         static_assert(std::is_same_v<decltype(fm4), flat_map<std::pmr::string, int>>);
@@ -324,7 +324,7 @@ TEST(flat_map, DeductionGuides)
         std::vector<std::pair<std::string, int>> v;
         flat_map fm1(v, std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm1), flat_map<std::string, int>>);
-#if __cpp_lib_memory_resource
+#if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<std::pair<std::pmr::string, int>> pv;
         // TODO: neither of these lines compiles, and it's unclear what is INTENDED to happen
         // flat_map fm2(pv, std::allocator<int>());
@@ -338,7 +338,7 @@ TEST(flat_map, DeductionGuides)
         flat_map fm1(vi, vs, std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm1), flat_map<int, std::string>>);
         assert(( fm1 == decltype(fm1)(stdext::sorted_unique, {{1,"b"}, {2,"a"}}) ));
-#if __cpp_lib_memory_resource
+#if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<int> pvi {2,1};
         std::pmr::vector<std::pmr::string> pvs {"a","b"};
         flat_map fm2(pvi, pvs, std::pmr::polymorphic_allocator<char>());
@@ -356,7 +356,7 @@ TEST(flat_map, DeductionGuides)
         std::list<std::pair<const int* const, const int*>> lst;
         flat_map fm3(stdext::sorted_unique, lst);
         static_assert(std::is_same_v<decltype(fm3), flat_map<const int*, const int*>>);
-#if __cpp_lib_memory_resource
+#if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<std::pair<std::pmr::string, int>> pv;
         flat_map fm4(stdext::sorted_unique, pv);
         static_assert(std::is_same_v<decltype(fm4), flat_map<std::pmr::string, int>>);
@@ -382,7 +382,7 @@ TEST(flat_map, DeductionGuides)
         std::vector<std::pair<std::string, int>> v;
         flat_map fm1(stdext::sorted_unique, v, std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm1), flat_map<std::string, int>>);
-#if __cpp_lib_memory_resource
+#if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<std::pair<std::pmr::string, int>> pv;
         // TODO: neither of these lines compiles, and it's unclear what is INTENDED to happen
         // flat_map fm2(stdext::sorted_unique, pv, std::allocator<int>());
@@ -396,7 +396,7 @@ TEST(flat_map, DeductionGuides)
         flat_map fm1(stdext::sorted_unique, vs, vi, std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm1), flat_map<std::string, int>>);
         assert(( fm1 == decltype(fm1)(stdext::sorted_unique, {{"a",2}, {"b",1}}) ));
-#if __cpp_lib_memory_resource
+#if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<int> pvi {1, 2};
         std::pmr::vector<std::pmr::string> pvs {"b","a"};
         flat_map fm2(stdext::sorted_unique, pvi, pvs, std::pmr::polymorphic_allocator<char>());
@@ -412,7 +412,7 @@ TEST(flat_map, DeductionGuides)
         std::list<std::pair<const int* const, const int*>> lst;
         flat_map fm3(lst.begin(), lst.end());
         static_assert(std::is_same_v<decltype(fm3), flat_map<const int*, const int*>>);
-#if __cpp_lib_memory_resource
+#if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<std::pair<std::pmr::string, int>> pv;
         flat_map fm4(pv.begin(), pv.end());
         static_assert(std::is_same_v<decltype(fm4), flat_map<std::pmr::string, int>>);
@@ -438,7 +438,7 @@ TEST(flat_map, DeductionGuides)
         std::list<std::pair<const int* const, const int*>> lst;
         flat_map fm3(lst.begin(), lst.end(), std::greater<>());
         static_assert(std::is_same_v<decltype(fm3), flat_map<const int*, const int*, std::greater<>>>);
-#if __cpp_lib_memory_resource
+#if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<std::pair<std::pmr::string, int>> pv;
         flat_map fm4(pv.begin(), pv.end(), std::greater<std::pmr::string>());
         static_assert(std::is_same_v<decltype(fm4), flat_map<std::pmr::string, int, std::greater<std::pmr::string>>>);
@@ -469,7 +469,7 @@ TEST(flat_map, DeductionGuides)
         std::list<std::pair<const int* const, const int*>> lst;
         flat_map fm3(lst.begin(), lst.end(), std::greater<>(), std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm3), flat_map<const int*, const int*, std::greater<>>>);
-#if __cpp_lib_memory_resource
+#if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<std::pair<std::pmr::string, int>> pv;
         flat_map fm4(pv.begin(), pv.end(), std::greater<>(), std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm4), flat_map<std::pmr::string, int, std::greater<>>>);

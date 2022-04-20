@@ -20,7 +20,7 @@ using flat_sett_types = testing::Types<
     , stdext::flat_set<int, std::greater<>>                         // transparent comparator
 #endif
     , stdext::flat_set<int, std::less<int>, std::deque<int>>        // custom container
-#if defined(__cpp_lib_memory_resource)
+#if __cpp_lib_memory_resource >= 201603
     , stdext::flat_set<int, std::less<int>, std::pmr::vector<int>>  // pmr container
 #endif
 >;
@@ -65,7 +65,7 @@ TEST(flat_set, AmbiguousErase)
 
 TEST(flat_set, ExtractDoesntSwap)
 {
-#if defined(__cpp_lib_memory_resource)
+#if __cpp_lib_memory_resource >= 201603
     // This test fails if extract() is implemented in terms of swap().
     {
         std::pmr::monotonic_buffer_resource mr;

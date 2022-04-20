@@ -8,1816 +8,1782 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <cstdio>
-#include <cstdlib>
 #include <functional>
+#include <memory>
+#if __has_include(<memory_resource>)
+#include <memory_resource>
+#endif
 #include <numeric>
 #include <random>
+#include <string>
 #include <utility>
 #include <vector>
 
-void message(const char *) {}
-void title1(const char *) {}
-void title2(const char *) {}
+template<class T> struct hivet : testing::Test {};
 
-static void failpass(const char *, bool condition)
-{
-    ASSERT_TRUE(condition);
-}
+using hivet_types = testing::Types<
+    plf::hive<int>
+    , plf::hive<int, std::allocator<int>, plf::hive_priority::performance>
+    , plf::hive<int, std::allocator<int>, plf::hive_priority::memory_use>
+    , plf::hive<std::string>            // non-trivial construction/destruction
+#if defined(__cpp_lib_memory_resource)
+    , plf::pmr::hive<int>               // pmr allocator
+    , plf::pmr::hive<std::pmr::string>  // uses-allocator construction
+#endif
+>;
+TYPED_TEST_SUITE(hivet, hivet_types);
+
+template<class> struct hivet_setup;
+template<class A, class P> struct hivet_setup<plf::hive<int, A, P>> {
+    static int value(int i) { return i; }
+};
+template<class A, class P> struct hivet_setup<plf::hive<std::string, A, P>> {
+    static std::string value(int i) { return std::to_string(i); }
+};
+#if __cpp_lib_memory_resource >= 201603
+template<class A, class P> struct hivet_setup<plf::hive<std::pmr::string, A, P>> {
+    static std::pmr::string value(int i) { return std::to_string(i); }
+};
+#endif
+
+#define EXPECT_INVARIANTS(h) \
+    EXPECT_EQ(h.empty(), (h.size() == 0)); \
+    EXPECT_EQ(h.empty(), (h.begin() == h.end())); \
+    EXPECT_GE(h.max_size(), h.capacity()); \
+    EXPECT_GE(h.capacity(), h.size()); \
+    EXPECT_EQ(std::distance(h.begin(), h.end()), h.size()); \
+    EXPECT_EQ(h.begin().distance(h.end()), h.size()); \
+    EXPECT_EQ(h.begin().next(h.size()), h.end()); \
+    EXPECT_EQ(h.end().prev(h.size()), h.begin());
 
 namespace {
-
-struct perfect_forwarding_test {
-    const bool success;
-
-    perfect_forwarding_test(int&& /*perfect1*/, int& perfect2)
-        : success(true)
-    {
-        perfect2 = 1;
-    }
-
-    template <typename T, typename U>
-    perfect_forwarding_test(T&& /*imperfect1*/, U&& /*imperfect2*/)
-        : success(false)
-    {}
+template<class BidirIt>
+struct Adaptor {
+    using value_type = typename BidirIt::value_type;
+    using difference_type = typename BidirIt::difference_type;
+    using iterator_category = std::random_access_iterator_tag;
+    using pointer = typename BidirIt::pointer;
+    using reference = typename BidirIt::reference;
+    BidirIt it_;
+    reference operator*() const { return *it_; }
+    reference operator[](difference_type n) const { return *(*this + n); }
+    auto& operator++() { ++it_; return *this; }
+    auto& operator++(int) { auto copy = *this; ++it_; return copy; }
+    auto& operator--() { --it_; return *this; }
+    auto& operator--(int) { auto copy = *this; --it_; return copy; }
+    auto& operator+=(difference_type n) { it_.advance(n); return *this; }
+    auto& operator-=(difference_type n) { it_.advance(-n); return *this; }
+    friend Adaptor operator+(Adaptor a, difference_type n) { a += n; return a; }
+    friend Adaptor operator+(difference_type n, Adaptor a) { a += n; return a; }
+    friend Adaptor operator-(Adaptor a, difference_type n) { a -= n; return a; }
+    friend difference_type operator-(const Adaptor& a, const Adaptor& b) { return b.it_.distance(a.it_); }
+    friend bool operator==(const Adaptor& a, const Adaptor& b) { return a.it_ == b.it_; }
+    friend bool operator!=(const Adaptor& a, const Adaptor& b) { return a.it_ != b.it_; }
+    friend bool operator<(const Adaptor& a, const Adaptor& b) { return a.it_ < b.it_; }
+    friend bool operator>(const Adaptor& a, const Adaptor& b) { return a.it_ > b.it_; }
+    friend bool operator<=(const Adaptor& a, const Adaptor& b) { return a.it_ <= b.it_; }
+    friend bool operator>=(const Adaptor& a, const Adaptor& b) { return a.it_ >= b.it_; }
 };
+template<class BidirIt>
+static Adaptor<BidirIt> adapt_iterator(BidirIt it) {
+    return Adaptor<BidirIt>{it};
+}
+} // anonymous namespace
 
-struct small_struct {
-    double *empty_field_1;
-    double unused_number;
-    unsigned int empty_field2;
-    double *empty_field_3;
-    int number;
-    unsigned int empty_field4;
-
-    small_struct(const int num) : number(num) {};
-};
-
-class non_copyable_type {
-private:
-    int i;
-    non_copyable_type(const non_copyable_type &); // non construction-copyable
-    non_copyable_type& operator=(const non_copyable_type &); // non copyable
-public:
-    non_copyable_type(int a) : i(a) {}
-};
-
-int global_counter = 0;
-
-struct small_struct_non_trivial {
-    double *empty_field_1;
-    double unused_number;
-    unsigned int empty_field2;
-    double *empty_field_3;
-    int number;
-    unsigned int empty_field4;
-
-    small_struct_non_trivial(const int num) : number(num) {}
-    ~small_struct_non_trivial() { ++global_counter; }
-};
-
-} // namespace
-
-TEST(hive, BasicInsertBeginEnd)
+TYPED_TEST(hivet, BasicInsertClear)
 {
-    plf::hive<int *> v;
-    EXPECT_TRUE(v.empty());
-    EXPECT_EQ(v.size(), 0u);
-    EXPECT_EQ(v.begin(), v.end());
+    using Hive = TypeParam;
 
-    int ten = 10;
-    v.insert(&ten);
-    EXPECT_FALSE(v.empty());
-    EXPECT_EQ(v.size(), 1u);
-    EXPECT_NE(v.begin(), v.end());
-    EXPECT_EQ(std::distance(v.begin(), v.end()), 1);
+    Hive h;
+    EXPECT_TRUE(h.empty());
+    EXPECT_INVARIANTS(h);
 
-    EXPECT_EQ(*v.begin(), &ten);
+    auto x = hivet_setup<Hive>::value(42);
+    h.insert(x);
+    EXPECT_EQ(h.size(), 1u);
+    EXPECT_INVARIANTS(h);
 
-    v.clear();
-    EXPECT_TRUE(v.empty());
-    EXPECT_EQ(v.size(), 0u);
-    EXPECT_EQ(v.begin(), v.end());
+    EXPECT_EQ(*h.begin(), x);
+
+    h.clear();
+    EXPECT_TRUE(h.empty());
+    EXPECT_INVARIANTS(h);
 }
 
-TEST(hive, All)
+TYPED_TEST(hivet, CustomAdvanceForward)
 {
-    using namespace std;
-    using namespace plf;
-
-    for (unsigned int looper = 0; looper != 100; ++looper)
-    {
-        {
-            hive<int*> p_hive;
-
-            int ten = 10;
-            int twenty = 20;
-            for (unsigned int temp = 0; temp != 200; ++temp)
-            {
-                p_hive.insert(&ten);
-                p_hive.insert(&twenty);
-            }
-
-            int total = 0, numtotal = 0;
-
-            for(hive<int *>::iterator the_iterator = p_hive.begin(); the_iterator != p_hive.end(); ++the_iterator)
-            {
-                ++total;
-                numtotal += **the_iterator;
-            }
-
-            failpass("Iteration count test", total == 400);
-            failpass("Iterator access test", numtotal == 6000);
-
-            hive<int *>::iterator plus_twenty = p_hive.begin();
-            advance(plus_twenty, 20);
-            hive<int *>::iterator plus_two_hundred = p_hive.begin();
-            advance(plus_two_hundred, 200);
-
-            failpass("Iterator + distance test", distance(p_hive.begin(), plus_twenty) == 20);
-            failpass("Iterator - distance test", distance(plus_two_hundred, p_hive.begin()) == -200);
-
-            hive<int *>::const_iterator plus_two_hundred_c = plus_two_hundred;
-            hive<int *> hive_copy(plus_twenty, plus_two_hundred_c);
-
-            total = 0;
-
-            for(hive<int *>::iterator the_iterator = hive_copy.begin(); the_iterator != hive_copy.end(); ++the_iterator)
-            {
-                ++total;
-            }
-
-            failpass("Range-constructor with differing iterator types test", total == 180);
-
-
-            hive<int *>::iterator next_iterator = next(p_hive.begin(), 5);
-            hive<int *>::const_iterator prev_iterator = prev(p_hive.cend(), 300);
-
-            failpass("Iterator next test", distance(p_hive.begin(), next_iterator) == 5);
-            failpass("Const iterator prev test", distance(p_hive.cend(), prev_iterator) == -300);
-
-            hive<int *>::iterator prev_iterator2 = prev(p_hive.end(), 300);
-            failpass("Iterator/Const iterator equality operator test", prev_iterator == prev_iterator2);
-
-            prev_iterator = p_hive.begin();
-            advance(prev_iterator, 5);
-            failpass("Iterator/Const iterator equality operator test 2", prev_iterator == next_iterator);
-
-            hive<int *> p_hive2;
-            p_hive2 = p_hive;
-            hive<int *> p_hive3(p_hive);
-            hive<int *> p_hive4(p_hive2, p_hive2.get_allocator());
-
-            hive<int *>::iterator it1 = p_hive.begin();
-            hive<int *>::const_iterator cit(it1);
-
-            failpass("Copy test", p_hive2.size() == 400);
-            failpass("Copy construct test", p_hive3.size() == 400);
-            failpass("Allocator-extended copy construct test", p_hive4.size() == 400);
-
-            p_hive2.insert(&ten);
-
-            numtotal = 0;
-            total = 0;
-
-            for (hive<int *>::reverse_iterator the_iterator = p_hive.rbegin(); the_iterator != p_hive.rend(); ++the_iterator)
-            {
-                ++total;
-                numtotal += **the_iterator;
-            }
-
-
-            failpass("Reverse iteration count test", total == 400);
-            failpass("Reverse iterator access test", numtotal == 6000);
-
-            hive<int *>::reverse_iterator r_iterator = p_hive.rbegin();
-            advance(r_iterator, 50);
-
-            failpass("Reverse iterator advance and distance test", distance(p_hive.rbegin(), r_iterator) == 50);
-
-            hive<int *>::reverse_iterator r_iterator2 = next(r_iterator, 2);
-
-            failpass("Reverse iterator next and distance test", distance(p_hive.rbegin(), r_iterator2) == 52);
-
-            numtotal = 0;
-            total = 0;
-
-            for(hive<int *>::iterator the_iterator = p_hive.begin(); the_iterator < p_hive.end(); advance(the_iterator, 2))
-            {
-                ++total;
-                numtotal += **the_iterator;
-            }
-
-            failpass("Multiple iteration test", total == 200);
-            failpass("Multiple iteration access test", numtotal == 2000);
-
-            numtotal = 0;
-            total = 0;
-
-            for(hive<int *>::const_iterator the_iterator = p_hive.cbegin(); the_iterator != p_hive.cend(); ++the_iterator)
-            {
-                ++total;
-                numtotal += **the_iterator;
-            }
-
-            failpass("Const_iterator test", total == 400);
-            failpass("Const_iterator access test", numtotal == 6000);
-
-
-            numtotal = 0;
-            total = 0;
-
-            for(hive<int *>::const_reverse_iterator the_iterator = --hive<int *>::const_reverse_iterator(p_hive.crend()); the_iterator != hive<int *>::const_reverse_iterator(p_hive.crbegin()); --the_iterator)
-            {
-                ++total;
-                numtotal += **the_iterator;
-            }
-
-            failpass("Const_reverse_iterator -- test", total == 399);
-            failpass("Const_reverse_iterator -- access test", numtotal == 5980);
-
-            total = 0;
-
-            for(hive<int *>::iterator the_iterator = ++hive<int *>::iterator(p_hive.begin()); the_iterator < p_hive.end(); ++the_iterator)
-            {
-                ++total;
-                the_iterator = p_hive.erase(the_iterator);
-            }
-
-            failpass("Partial erase iteration test", total == 200);
-            failpass("Post-erase size test", p_hive.size() == 200);
-
-            const unsigned int temp_capacity = static_cast<unsigned int>(p_hive.capacity());
-            p_hive.shrink_to_fit();
-            failpass("Shrink_to_fit test", p_hive.capacity() < temp_capacity);
-            failpass("Shrink_to_fit test 2", p_hive.capacity() == 200);
-
-            total = 0;
-
-            for(hive<int *>::reverse_iterator the_iterator = p_hive.rbegin(); the_iterator != p_hive.rend(); ++the_iterator)
-            {
-                hive<int *>::iterator it = the_iterator.base();
-                the_iterator = p_hive.erase(--it);
-                ++total;
-            }
-
-            failpass("Full erase reverse iteration test", total == 200);
-            failpass("Post-erase size test", p_hive.size() == 0);
-
-            for (unsigned int temp = 0; temp != 200; ++temp)
-            {
-                p_hive.insert(&ten);
-                p_hive.insert(&twenty);
-            }
-
-            total = 0;
-
-            for(hive<int *>::iterator the_iterator = --hive<int *>::iterator(p_hive.end()); the_iterator != p_hive.begin(); --the_iterator)
-            {
-                ++total;
-            }
-
-            failpass("Negative iteration test", total == 399);
-
-
-            total = 0;
-
-            for(hive<int *>::iterator the_iterator = --(hive<int *>::iterator(p_hive.end())); the_iterator != p_hive.begin(); advance(the_iterator, -2))
-            {
-                ++total;
-            }
-
-            failpass("Negative multiple iteration test", total == 200);
-
-            p_hive2 = std::move(p_hive);
-            failpass("Move test", p_hive2.size() == 400);
-
-            p_hive.insert(&ten);
-
-            failpass("Insert to post-moved-hive test", p_hive.size() == 1);
-
-            hive<int *> p_hive5(p_hive2);
-            hive<int *> p_hive6(std::move(p_hive5), p_hive2.get_allocator());
-
-            failpass("Allocator-extended move construct test", p_hive6.size() == 400);
-
-            p_hive3 = p_hive2;
-
-            failpass("Copy test 2", p_hive3.size() == 400);
-
-            p_hive2.insert(&ten);
-
-            p_hive2.swap(p_hive3);
-
-            failpass("Swap test", p_hive2.size() == p_hive3.size() - 1);
-
-            std::swap(p_hive2, p_hive3);
-
-            failpass("Swap test 2", p_hive3.size() == p_hive2.size() - 1);
-
-            failpass("max_size() test", p_hive2.max_size() > p_hive2.size());
-
-        }
-
-        {
-            title2("Iterator comparison tests");
-
-            hive<int> v = {0, 1, 2, 3, 4};
-            auto it1 = v.begin();
-            auto it2 = v.begin();
-            std::advance(it2, 3);
-
-            EXPECT_EQ((it1 < it2), true);
-            EXPECT_EQ((it1 <= it2), true);
-            EXPECT_EQ((it1 > it2), false);
-            EXPECT_EQ((it1 >= it2), false);
-            EXPECT_EQ((it1 == it2), false);
-            EXPECT_EQ((it1 != it2), true);
-
-            EXPECT_EQ((it2 < it1), false);
-            EXPECT_EQ((it2 <= it1), false);
-            EXPECT_EQ((it2 > it1), true);
-            EXPECT_EQ((it2 >= it1), true);
-            EXPECT_EQ((it2 == it1), false);
-            EXPECT_EQ((it2 != it1), true);
+    using Hive = TypeParam;
+    Hive h(400);
+    EXPECT_EQ(h.size(), 400u);
+    EXPECT_INVARIANTS(h);
+
+    auto it = h.begin();
+    auto jt = h.begin();
+    auto kt = h.cbegin();
+
+    std::advance(it, 20);
+    jt.advance(20);
+    kt.advance(20);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.begin().next(20));
+    EXPECT_EQ(it, h.cbegin().next(20));
+
+    std::advance(it, 37);
+    jt.advance(37);
+    kt.advance(37);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.begin().next(57));
+    EXPECT_EQ(it, h.cbegin().next(57));
+
+    std::advance(it, 101);
+    jt.advance(101);
+    kt.advance(101);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.begin().next(158));
+    EXPECT_EQ(it, h.cbegin().next(158));
+
+    std::advance(it, 1);
+    jt.advance(1);
+    kt.advance(1);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.begin().next(159));
+    EXPECT_EQ(it, h.cbegin().next(159));
+
+    std::advance(it, 400 - 159);
+    jt.advance(400 - 159);
+    kt.advance(400 - 159);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.begin().next(400));
+    EXPECT_EQ(it, h.cbegin().next(400));
+    EXPECT_EQ(it, h.end());
+    EXPECT_EQ(jt, h.end());
+    EXPECT_EQ(kt, h.end());
+}
+
+TYPED_TEST(hivet, CustomAdvanceBackward)
+{
+    using Hive = TypeParam;
+    Hive h(400);
+    EXPECT_EQ(h.size(), 400u);
+    EXPECT_INVARIANTS(h);
+
+    auto it = h.end();
+    auto jt = h.end();
+    auto kt = h.cend();
+
+    std::advance(it, -20);
+    jt.advance(-20);
+    kt.advance(-20);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.end().prev(20));
+    EXPECT_EQ(it, h.cend().prev(20));
+
+    std::advance(it, -37);
+    jt.advance(-37);
+    kt.advance(-37);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.end().prev(57));
+    EXPECT_EQ(it, h.cend().prev(57));
+
+    std::advance(it, -101);
+    jt.advance(-101);
+    kt.advance(-101);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.end().prev(158));
+    EXPECT_EQ(it, h.cend().prev(158));
+
+    std::advance(it, -1);
+    jt.advance(-1);
+    kt.advance(-1);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.end().prev(159));
+    EXPECT_EQ(it, h.cend().prev(159));
+
+    std::advance(it, 159 - 400);
+    jt.advance(159 - 400);
+    kt.advance(159 - 400);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.end().prev(400));
+    EXPECT_EQ(it, h.cend().prev(400));
+    EXPECT_EQ(it, h.begin());
+    EXPECT_EQ(jt, h.begin());
+    EXPECT_EQ(kt, h.begin());
+}
+
+TYPED_TEST(hivet, CustomDistanceFunction)
+{
+    using Hive = TypeParam;
+    Hive h(400);
+    EXPECT_EQ(h.size(), 400u);
+    EXPECT_INVARIANTS(h);
+
+    auto plus20 = h.begin();
+    std::advance(plus20, 20);
+    auto plus200 = h.begin();
+    std::advance(plus200, 200);
+    EXPECT_EQ(std::distance(h.begin(), plus20), 20);
+    EXPECT_EQ(std::distance(h.begin(), plus200), 200);
+    EXPECT_EQ(std::distance(plus20, plus200), 180);
+
+    EXPECT_EQ(h.begin().distance(plus20), 20);
+    EXPECT_EQ(h.begin().distance(plus200), 200);
+    EXPECT_EQ(plus20.distance(plus200), 180);
+    EXPECT_EQ(plus20.distance(h.begin()), -20);
+    EXPECT_EQ(plus200.distance(h.begin()), -200);
+    EXPECT_EQ(plus200.distance(plus20), -180);
+    EXPECT_EQ(plus200.distance(plus200), 0);
+
+    // Test const iterators also
+    typename Hive::const_iterator c20 = plus20;
+    typename Hive::const_iterator c200 = plus200;
+    EXPECT_EQ(h.cbegin().distance(c20), 20);
+    EXPECT_EQ(h.cbegin().distance(c200), 200);
+    EXPECT_EQ(c20.distance(c200), 180);
+    EXPECT_EQ(c20.distance(h.cbegin()), -20);
+    EXPECT_EQ(c200.distance(h.cbegin()), -200);
+    EXPECT_EQ(c200.distance(c20), -180);
+    EXPECT_EQ(c200.distance(c200), 0);
+}
+
+TYPED_TEST(hivet, CustomAdvanceForwardRev)
+{
+    using Hive = TypeParam;
+    Hive h(400);
+    EXPECT_EQ(h.size(), 400u);
+    EXPECT_INVARIANTS(h);
+
+    auto it = h.rbegin();
+    auto jt = h.rbegin();
+    auto kt = h.crbegin();
+
+    std::advance(it, 20);
+    jt.advance(20);
+    kt.advance(20);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.rbegin().next(20));
+    EXPECT_EQ(it, h.crbegin().next(20));
+
+    std::advance(it, 37);
+    jt.advance(37);
+    kt.advance(37);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.rbegin().next(57));
+    EXPECT_EQ(it, h.crbegin().next(57));
+
+    std::advance(it, 101);
+    jt.advance(101);
+    kt.advance(101);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.rbegin().next(158));
+    EXPECT_EQ(it, h.crbegin().next(158));
+
+    std::advance(it, 1);
+    jt.advance(1);
+    kt.advance(1);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.rbegin().next(159));
+    EXPECT_EQ(it, h.crbegin().next(159));
+
+    std::advance(it, 400 - 159);
+    jt.advance(400 - 159);
+    kt.advance(400 - 159);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.rbegin().next(400));
+    EXPECT_EQ(it, h.crbegin().next(400));
+    EXPECT_EQ(it, h.rend());
+    EXPECT_EQ(jt, h.rend());
+    EXPECT_EQ(kt, h.rend());
+}
+
+TYPED_TEST(hivet, CustomAdvanceBackwardRev)
+{
+    using Hive = TypeParam;
+    Hive h(400);
+    EXPECT_EQ(h.size(), 400u);
+    EXPECT_INVARIANTS(h);
+
+    auto it = h.rend();
+    auto jt = h.rend();
+    auto kt = h.crend();
+
+    std::advance(it, -20);
+    jt.advance(-20);
+    kt.advance(-20);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.rend().prev(20));
+    EXPECT_EQ(it, h.crend().prev(20));
+
+    std::advance(it, -37);
+    jt.advance(-37);
+    kt.advance(-37);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.rend().prev(57));
+    EXPECT_EQ(it, h.crend().prev(57));
+
+    std::advance(it, -101);
+    jt.advance(-101);
+    kt.advance(-101);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.rend().prev(158));
+    EXPECT_EQ(it, h.crend().prev(158));
+
+    std::advance(it, -1);
+    jt.advance(-1);
+    kt.advance(-1);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.rend().prev(159));
+    EXPECT_EQ(it, h.crend().prev(159));
+
+    std::advance(it, 159 - 400);
+    jt.advance(159 - 400);
+    kt.advance(159 - 400);
+    EXPECT_EQ(it, jt);
+    EXPECT_EQ(it, kt);
+    EXPECT_EQ(it, h.rend().prev(400));
+    EXPECT_EQ(it, h.crend().prev(400));
+    EXPECT_EQ(it, h.rbegin());
+    EXPECT_EQ(jt, h.rbegin());
+    EXPECT_EQ(kt, h.rbegin());
+}
+
+TYPED_TEST(hivet, CustomDistanceFunctionRev)
+{
+    using Hive = TypeParam;
+    Hive h(400);
+    EXPECT_EQ(h.size(), 400u);
+    EXPECT_INVARIANTS(h);
+
+    auto plus20 = h.rbegin();
+    std::advance(plus20, 20);
+    auto plus200 = h.rbegin();
+    std::advance(plus200, 200);
+    EXPECT_EQ(std::distance(h.rbegin(), plus20), 20);
+    EXPECT_EQ(std::distance(h.rbegin(), plus200), 200);
+    EXPECT_EQ(std::distance(plus20, plus200), 180);
+
+    EXPECT_EQ(h.rbegin().distance(plus20), 20);
+    EXPECT_EQ(h.rbegin().distance(plus200), 200);
+    EXPECT_EQ(plus20.distance(plus200), 180);
+    EXPECT_EQ(plus20.distance(h.rbegin()), -20);
+    EXPECT_EQ(plus200.distance(h.rbegin()), -200);
+    EXPECT_EQ(plus200.distance(plus20), -180);
+    EXPECT_EQ(plus200.distance(plus200), 0);
+
+    // Test const iterators also
+    typename Hive::const_reverse_iterator c20 = plus20;
+    typename Hive::const_reverse_iterator c200 = plus200;
+    EXPECT_EQ(h.crbegin().distance(c20), 20);
+    EXPECT_EQ(h.crbegin().distance(c200), 200);
+    EXPECT_EQ(c20.distance(c200), 180);
+    EXPECT_EQ(c20.distance(h.crbegin()), -20);
+    EXPECT_EQ(c200.distance(h.crbegin()), -200);
+    EXPECT_EQ(c200.distance(c20), -180);
+    EXPECT_EQ(c200.distance(c200), 0);
+}
+
+TYPED_TEST(hivet, CopyConstructor)
+{
+    using Hive = TypeParam;
+    Hive h(7, hivet_setup<Hive>::value(1));
+    h.insert(10'000, hivet_setup<Hive>::value(2));
+
+    Hive h2 = h;
+    EXPECT_EQ(h2.size(), 10'007);
+    EXPECT_INVARIANTS(h2);
+    EXPECT_TRUE(std::equal(h.begin(), h.end(), h2.begin(), h2.end()));
+
+    Hive h3(h, h.get_allocator());
+    EXPECT_EQ(h3.size(), 10'007);
+    EXPECT_INVARIANTS(h3);
+    EXPECT_TRUE(std::equal(h.begin(), h.end(), h3.begin(), h3.end()));
+}
+
+TEST(hive, MoveConstructor)
+{
+    plf::hive<int> h = {1, 2, 3, 4, 5, 6, 7};
+    h.insert(10'000, 42);
+
+    plf::hive<int> copy = h;
+
+    plf::hive<int> h2 = std::move(h);
+    EXPECT_TRUE(h.empty());
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(h2.size(), 10'007);
+    EXPECT_INVARIANTS(h2);
+    EXPECT_TRUE(std::equal(copy.begin(), copy.end(), h2.begin(), h2.end()));
+
+    h = copy;
+    plf::hive<int> h3(std::move(h), copy.get_allocator());
+    EXPECT_TRUE(h.empty());
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(h3.size(), 10'007);
+    EXPECT_INVARIANTS(h3);
+    EXPECT_TRUE(std::equal(copy.begin(), copy.end(), h3.begin(), h3.end()));
+}
+
+TEST(hive, ReverseIterator)
+{
+    plf::hive<int> h = {1, 2, 3, 4, 5};
+    std::vector<int> expected = {1, 2, 3, 4, 5};
+    EXPECT_TRUE(std::equal(h.begin(), h.end(), expected.begin(), expected.end()));
+    EXPECT_TRUE(std::equal(h.cbegin(), h.cend(), expected.begin(), expected.end()));
+    EXPECT_TRUE(std::equal(h.rbegin(), h.rend(), expected.rbegin(), expected.rend()));
+    EXPECT_TRUE(std::equal(h.crbegin(), h.crend(), expected.rbegin(), expected.rend()));
+}
+
+TEST(hive, ReverseIteratorBase)
+{
+    plf::hive<int> h = {1, 2, 3, 4, 5};
+    EXPECT_EQ(h.rend().base(), h.begin());
+    EXPECT_EQ(h.crend().base(), h.cbegin());
+    EXPECT_EQ(h.rbegin().base(), h.end());
+    EXPECT_EQ(h.crbegin().base(), h.cend());
+
+    auto rit = h.rbegin();
+    auto crit = h.crbegin();
+    static_assert(std::is_same<decltype(rit.base()), plf::hive<int>::iterator>::value, "");
+    static_assert(std::is_same<decltype(crit.base()), plf::hive<int>::const_iterator>::value, "");
+    static_assert(noexcept(rit.base()), "");
+    static_assert(noexcept(crit.base()), "");
+}
+
+TEST(hive, ShrinkToFit)
+{
+    plf::hive<int> h = {1, 2, 3, 4, 5};
+    size_t oldcap = h.capacity();
+
+    h.shrink_to_fit();
+    EXPECT_EQ(h.size(), 5u);
+    EXPECT_LE(h.capacity(), oldcap);
+    EXPECT_INVARIANTS(h);
+}
+
+TEST(hive, InsertInMovedFromContainer)
+{
+    plf::hive<int> h = {1, 2, 3, 4, 5};
+    auto dummy = std::move(h);
+    EXPECT_TRUE(h.empty());
+    h.insert(42);
+    EXPECT_EQ(h.size(), 1u);
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(*h.begin(), 42);
+}
+
+TEST(hive, Swap)
+{
+    plf::hive<int> h1 = {1, 2, 3, 4, 5};
+    plf::hive<int> h2 = {3, 1, 4};
+
+    h1.swap(h2);
+    EXPECT_EQ(h1.size(), 3u);
+    EXPECT_EQ(h2.size(), 5u);
+
+    h1.assign(100'000, 42);
+    h1.swap(h2);
+    EXPECT_EQ(h1.size(), 5u);
+    EXPECT_EQ(h2.size(), 100'000u);
+
+    using std::swap;
+    swap(h1, h2);
+    EXPECT_EQ(h1.size(), 100'000u);
+    EXPECT_EQ(h2.size(), 5u);
+}
+
+TEST(hive, MaxSize)
+{
+    plf::hive<int> h1 = {1, 2, 3, 4, 5};
+    EXPECT_GE(h1.max_size(), 100'000u);
+    static_assert(noexcept(h1.max_size()), "");
+    static_assert(std::is_same<decltype(h1.max_size()), size_t>::value, "");
+}
+
+TEST(hive, IteratorConvertibility)
+{
+    using H = plf::hive<int>;
+    using It = H::iterator;
+    using CIt = H::const_iterator;
+    using RIt = H::reverse_iterator;
+    using CRIt = H::const_reverse_iterator;
+    static_assert( std::is_constructible<It, It>::value, "");
+    static_assert(!std::is_constructible<It, CIt>::value, "");
+    static_assert(!std::is_constructible<It, RIt>::value, "");
+    static_assert(!std::is_constructible<It, CRIt>::value, "");
+    static_assert( std::is_constructible<CIt, It>::value, "");
+    static_assert( std::is_constructible<CIt, CIt>::value, "");
+    static_assert(!std::is_constructible<CIt, RIt>::value, "");
+    static_assert(!std::is_constructible<CIt, CRIt>::value, "");
+    static_assert( std::is_constructible<RIt, It>::value, "");
+    static_assert(!std::is_constructible<RIt, CIt>::value, "");
+    static_assert( std::is_constructible<RIt, RIt>::value, "");
+    static_assert(!std::is_constructible<RIt, CRIt>::value, "");
+    static_assert( std::is_constructible<CRIt, It>::value, "");
+    static_assert( std::is_constructible<CRIt, CIt>::value, "");
+    static_assert( std::is_constructible<CRIt, RIt>::value, "");
+    static_assert( std::is_constructible<CRIt, CRIt>::value, "");
+    static_assert( std::is_convertible<It, It>::value, "");
+    static_assert( std::is_convertible<It, CIt>::value, "");
+    static_assert(!std::is_convertible<It, RIt>::value, "");
+    static_assert(!std::is_convertible<It, CRIt>::value, "");
+    static_assert(!std::is_convertible<CIt, It>::value, "");
+    static_assert( std::is_convertible<CIt, CIt>::value, "");
+    static_assert(!std::is_convertible<CIt, RIt>::value, "");
+    static_assert(!std::is_convertible<CIt, CRIt>::value, "");
+    static_assert(!std::is_convertible<RIt, It>::value, "");
+    static_assert(!std::is_convertible<RIt, CIt>::value, "");
+    static_assert( std::is_convertible<RIt, RIt>::value, "");
+    static_assert( std::is_convertible<RIt, CRIt>::value, "");
+    static_assert(!std::is_convertible<CRIt, It>::value, "");
+    static_assert(!std::is_convertible<CRIt, CIt>::value, "");
+    static_assert(!std::is_convertible<CRIt, RIt>::value, "");
+    static_assert( std::is_convertible<CRIt, CRIt>::value, "");
+}
+
+TEST(hive, IteratorComparison)
+{
+    plf::hive<int> h = {0, 1, 2, 3, 4};
+    auto it1 = h.begin();
+    auto it2 = h.begin().next(3);
+
+    EXPECT_EQ((it1 < it2), true);
+    EXPECT_EQ((it1 <= it2), true);
+    EXPECT_EQ((it1 > it2), false);
+    EXPECT_EQ((it1 >= it2), false);
+    EXPECT_EQ((it1 == it2), false);
+    EXPECT_EQ((it1 != it2), true);
+
+    EXPECT_EQ((it2 < it1), false);
+    EXPECT_EQ((it2 <= it1), false);
+    EXPECT_EQ((it2 > it1), true);
+    EXPECT_EQ((it2 >= it1), true);
+    EXPECT_EQ((it2 == it1), false);
+    EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
-            EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
-            EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
-            it1 = it2;
-            EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+    it1 = it2;
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+#if __cpp_lib_concepts >= 202002
+    static_assert(std::totally_ordered<plf::hive<int>::iterator>);
+    static_assert(std::three_way_comparable<plf::hive<int>::iterator>);
 #endif
-        }
-
-        {
-            title2("Insert and Erase tests");
-
-            hive<int> i_hive;
-
-            for (int temp = 0; temp != 500000; ++temp)
-            {
-                i_hive.insert(temp);
-            }
-
-
-            failpass("Size after insert test", i_hive.size() == 500000);
-
-
-            hive<int>::iterator found_item = std::find(i_hive.begin(), i_hive.end(), 5000);;
-
-            failpass("std::find iterator test", *found_item == 5000);
-
-
-            hive<int>::reverse_iterator found_item2 = std::find(i_hive.rbegin(), i_hive.rend(), 5000);;
-
-            failpass("std::find reverse_iterator test", *found_item2 == 5000);
-
-
-            for (hive<int>::iterator the_iterator = i_hive.begin(); the_iterator != i_hive.end(); ++the_iterator)
-            {
-                the_iterator = i_hive.erase(the_iterator);
-            }
-
-            failpass("Erase alternating test", i_hive.size() == 250000);
-
-            do
-            {
-                for (hive<int>::iterator the_iterator = i_hive.begin(); the_iterator != i_hive.end();)
-                {
-                    if ((rand() & 7) == 0)
-                    {
-                        the_iterator = i_hive.erase(the_iterator);
-                    }
-                    else
-                    {
-                        ++the_iterator;
-                    }
-                }
-            } while (!i_hive.empty());
-
-            failpass("Erase randomly till-empty test", i_hive.size() == 0);
-
-
-            i_hive.clear();
-            i_hive.trim_capacity();
-            i_hive.reshape(plf::hive_limits(10000, i_hive.block_capacity_limits().max));
-
-            i_hive.insert(30000, 1); // fill-insert 30000 elements
-
-            failpass("Size after reinitialize + fill-insert test", i_hive.size() == 30000);
-
-            unsigned short count2 = 0;
-
-            do
-            {
-                for (hive<int>::iterator the_iterator = i_hive.begin(); the_iterator != i_hive.end();)
-                {
-                    if ((rand() & 7) == 0)
-                    {
-                        the_iterator = i_hive.erase(the_iterator);
-                        ++count2;
-                    }
-                    else
-                    {
-                        ++the_iterator;
-                    }
-                }
-
-            } while (count2 < 15000);
-
-            failpass("Erase randomly till half-empty test", i_hive.size() == 30000u - count2);
-
-            i_hive.insert(count2, 1);
-
-            failpass("Size after reinsert test", i_hive.size() == 30000);
-
-
-
-
-            unsigned int sum = 0;
-
-            for (hive<int>::iterator the_iterator = i_hive.begin(); the_iterator != i_hive.end();)
-            {
-                if (++sum == 3)
-                {
-                    sum = 0;
-                    the_iterator = i_hive.erase(the_iterator);
-                }
-                else
-                {
-                    i_hive.insert(1);
-                    ++the_iterator;
-                }
-            }
-
-            failpass("Alternating insert/erase test", i_hive.size() == 45001);
-
-
-            do
-            {
-                for (hive<int>::iterator the_iterator = i_hive.begin(); the_iterator != i_hive.end();)
-                {
-                    if ((rand() & 3) == 0)
-                    {
-                        ++the_iterator;
-                        i_hive.insert(1);
-                    }
-                    else
-                    {
-                        the_iterator = i_hive.erase(the_iterator);
-                    }
-                }
-            } while (!i_hive.empty());;
-
-            failpass("Random insert/erase till empty test", i_hive.size() == 0);
-
-
-            i_hive.insert(500000, 10);
-
-            failpass("Insert post-erase test", i_hive.size() == 500000);
-            hive<int>::iterator it2 = i_hive.begin();
-            advance(it2, 250000);
-
-
-            for (; it2 != i_hive.end();)
-            {
-                it2 = i_hive.erase(it2);
-            }
-
-            failpass("Large multi-increment iterator test", i_hive.size() == 250000);
-
-            i_hive.insert(250000, 10);
-
-            hive<int>::iterator end_iterator = i_hive.end();
-            hive<int>::iterator end_iterator2 = i_hive.end();
-            advance(end_iterator, -250000);
-
-            for (unsigned int count = 0; count != 250000; ++count, --end_iterator2){}
-            failpass("Large multi-decrement iterator test 1", end_iterator == end_iterator2);
-
-
-            for (hive<int>::iterator the_iterator = i_hive.begin(); the_iterator != end_iterator;)
-            {
-                the_iterator = i_hive.erase(the_iterator);
-            }
-
-            failpass("Large multi-decrement iterator test", i_hive.size() == 250000);
-
-
-
-            i_hive.insert(250000, 10);
-            int total = 0;
-
-            for (hive<int>::iterator the_iterator = i_hive.begin(); the_iterator != i_hive.end(); ++the_iterator)
-            {
-                total += *the_iterator;
-            }
-
-            failpass("Re-insert post-heavy-erasure test", total == 5000000);
-
-
-            end_iterator = i_hive.end();
-            advance(end_iterator, -50001);
-            hive<int>::iterator begin_iterator = i_hive.begin();
-            advance(begin_iterator, 300000);
-
-            for (hive<int>::iterator the_iterator = begin_iterator; the_iterator != end_iterator;)
-            {
-                the_iterator = i_hive.erase(the_iterator);
-            }
-
-            failpass("Non-end decrement + erase test", i_hive.size() == 350001);
-
-
-            i_hive.insert(100000, 10);
-
-            begin_iterator = i_hive.begin();
-            advance(begin_iterator, 300001);
-
-
-            for (hive<int>::iterator the_iterator = begin_iterator; the_iterator != i_hive.end();)
-            {
-                the_iterator = i_hive.erase(the_iterator);
-            }
-
-            failpass("Non-beginning increment + erase test", i_hive.size() == 300001);
-
-            hive<int>::iterator temp_iterator = i_hive.begin();
-            advance(temp_iterator, 20); // Advance test 1
-
-            unsigned int index = static_cast<unsigned int>(distance(i_hive.begin(), temp_iterator));
-            failpass("Advance + iterator-to-index test", index == 20);
-
-            i_hive.erase(temp_iterator);
-            temp_iterator = i_hive.begin(); // Check edge-case with advance when erasures present in initial group
-            advance(temp_iterator, 500);
-
-            index = static_cast<unsigned int>(distance(i_hive.begin(), temp_iterator));
-
-            failpass("Advance + iterator-to-index test", index == 500);
-
-            hive<int>::iterator temp2 = i_hive.get_iterator(&(*temp_iterator));
-            hive<int>::const_iterator temp3 = i_hive.get_iterator(const_cast<hive<int>::const_pointer>(&(*temp_iterator)));
-
-            failpass("Pointer-to-iterator test", temp2 != i_hive.end());
-            failpass("Const_pointer-to-const_iterator test", temp3 != i_hive.end());
-
-            temp2 = i_hive.begin();
-            advance(temp2, 500);
-
-            failpass("Index-to-iterator test", temp2 == temp_iterator);
-
-
-            for (hive<int>::iterator the_iterator = i_hive.begin(); the_iterator != i_hive.end();)
-            {
-                the_iterator = i_hive.erase(the_iterator);
-            }
-
-            failpass("Total erase test", i_hive.empty());
-
-
-            i_hive.clear();
-            i_hive.trim_capacity();
-            i_hive.reshape(plf::hive_limits(3, i_hive.block_capacity_limits().max));
-
-            const unsigned int temp_capacity2 = static_cast<unsigned int>(i_hive.capacity());
-            i_hive.reserve(100000);
-            failpass("Post-reset reserve test", temp_capacity2 != i_hive.capacity());
-
-            i_hive.insert(110000, 1);
-
-            failpass("Post-reserve insert test", i_hive.size() == 110000);
-
-            unsigned int count = 110000;
-
-            for (unsigned int loop1 = 0; loop1 != 50000; ++loop1)
-            {
-                for (unsigned int loop = 0; loop != 10; ++loop)
-                {
-                    if ((rand() & 7) == 0)
-                    {
-                        i_hive.insert(1);
-                        ++count;
-                    }
-                }
-
-                for (hive<int>::iterator the_iterator = i_hive.begin(); the_iterator != i_hive.end();)
-                {
-                    if ((rand() & 7) == 0)
-                    {
-                        the_iterator = i_hive.erase(the_iterator);
-                        --count;
-                    }
-                    else
-                    {
-                        ++the_iterator;
-                    }
-                }
-            }
-
-            failpass("Multiple sequential small insert/erase commands test", count == i_hive.size());
-        }
-
-
-        {
-            title2("Range-erase tests");
-
-            hive<int> i_hive;
-
-            int counter = 0;
-
-            for (; counter != 1000; ++counter)
-            {
-                i_hive.insert(counter);
-            }
-
-
-            hive<int>::iterator it1 = i_hive.begin(), it2 = i_hive.begin();
-
-            advance(it1, 500);
-            advance(it2, 800);
-
-            i_hive.erase(it1, it2);
-
-            counter = 0;
-
-            for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-            {
-                ++counter;
-            }
-
-            failpass("Simple range-erase test 1", counter == 700 && i_hive.size() == 700);
-
-
-            it1 = it2 = i_hive.begin();
-
-            advance(it1, 400);
-            advance(it2, 500); // This should put it2 past the point of previous erasures
-
-            i_hive.erase(it1, it2);
-
-            counter = 0;
-
-            for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-            {
-                ++counter;
-            }
-
-            failpass("Simple range-erase test 2", counter == 600 && i_hive.size() == 600);
-
-
-
-            it2 = it1 = i_hive.begin();
-
-            advance(it1, 4);
-            advance(it2, 9); // This should put it2 past the point of previous erasures
-
-            i_hive.erase(it1, it2);
-
-            counter = 0;
-
-            for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-            {
-                ++counter;
-            }
-
-            failpass("Simple range-erase test 3", counter == 595 && i_hive.size() == 595);
-
-
-
-
-            it2 = it1 = i_hive.begin();
-
-            advance(it2, 50);
-
-            i_hive.erase(it1, it2);
-
-            counter = 0;
-
-            for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-            {
-                ++counter;
-            }
-
-            failpass("Range-erase from begin()", counter == 545 && i_hive.size() == 545);
-
-
-
-
-            it1 = i_hive.begin();
-            it2 = i_hive.end();
-
-            advance(it1, 345); // Test erasing and validity when it removes the final group in hive
-            i_hive.erase(it1, it2);
-
-            counter = 0;
-
-            for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-            {
-                ++counter;
-            }
-
-            failpass("Range-erase to end()", counter == 345 && i_hive.size() == 345);
-
-
-
-            i_hive.clear();
-
-            for (counter = 0; counter != 3000; ++counter)
-            {
-                i_hive.insert(counter);
-            }
-
-            for (hive<int>::iterator it = i_hive.begin(); it < i_hive.end(); ++it)
-            {
-                it = i_hive.erase(it);
-            }
-
-            it2 = it1 = i_hive.begin();
-
-            advance(it1, 4);
-            advance(it2, 600);
-            i_hive.erase(it1, it2);
-
-            counter = 0;
-
-            for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-            {
-                ++counter;
-            }
-
-            failpass("Range-erase with hive already half-erased, alternating erasures", counter == 904 && i_hive.size() == 904);
-
-
-
-            i_hive.clear();
-
-            for (counter = 0; counter != 3000; ++counter)
-            {
-                i_hive.insert(counter);
-            }
-
-            for (hive<int>::iterator it = i_hive.begin(); it < i_hive.end(); ++it)
-            {
-                if ((rand() & 1) == 0)
-                {
-                    it = i_hive.erase(it);
-                }
-            }
-
-            if (i_hive.size() < 400)
-            {
-                for (counter = 0; counter != 400; ++counter)
-                {
-                    i_hive.insert(counter);
-                }
-            }
-
-            it1 = i_hive.begin();
-            it2 = i_hive.end();
-
-            advance(it1, 400);
-            i_hive.erase(it1, it2);
-
-            counter = 0;
-
-            for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-            {
-                ++counter;
-            }
-
-            failpass("Range-erase with hive already third-erased, randomized erasures", counter == 400 && i_hive.size() == 400);
-
-
-
-            unsigned int size, range1, range2, internal_loop_counter;
-
-            for (unsigned int loop_counter = 0; loop_counter != 50; ++loop_counter)
-            {
-                i_hive.clear();
-
-                for (counter = 0; counter != 1000; ++counter)
-                {
-                    i_hive.insert(counter);
-                }
-
-                internal_loop_counter = 0;
-
-                while (!i_hive.empty())
-                {
-                    it2 = it1 = i_hive.begin();
-
-                    size = static_cast<unsigned int>(i_hive.size());
-                    range1 = rand() % size;
-                    range2 = range1 + 1 + (rand() % (size - range1));
-                    advance(it1, static_cast<int>(range1));
-                    advance(it2, static_cast<int>(range2));
-
-                    i_hive.erase(it1, it2);
-
-                    counter = 0;
-
-                    for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-                    {
-                        ++counter;
-                    }
-
-                    if (i_hive.size() != static_cast<unsigned int>(counter))
-                    {
-                        printf("Fuzz-test range-erase randomly Fail: loop counter: %u, internal_loop_counter: %u.\n", loop_counter, internal_loop_counter);
-                        getchar();
-                        abort();
-                    }
-
-                    if (i_hive.size() > 2)
-                    { // Test to make sure our stored erased_locations are valid
-                        i_hive.insert(1);
-                        i_hive.insert(10);
-                    }
-
-                    ++internal_loop_counter;
-                }
-            }
-
-            failpass("Fuzz-test range-erase randomly until empty", i_hive.size() == 0);
-
-
-
-            for (unsigned int loop_counter = 0; loop_counter != 50; ++loop_counter)
-            {
-                i_hive.clear();
-                internal_loop_counter = 0;
-
-                i_hive.insert(10000, 10);
-
-                while (!i_hive.empty())
-                {
-                    it2 = it1 = i_hive.begin();
-
-                    size = static_cast<unsigned int>(i_hive.size());
-                    range1 = rand() % size;
-                    range2 = range1 + 1 + (rand() % (size - range1));
-                    advance(it1, static_cast<int>(range1));
-                    advance(it2, static_cast<int>(range2));
-
-                    i_hive.erase(it1, it2);
-
-                    counter = 0;
-
-                    for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-                    {
-                        ++counter;
-                    }
-
-                    if (i_hive.size() != static_cast<unsigned int>(counter))
-                    {
-                        printf("Fuzz-test range-erase + fill-insert randomly Fails during erase: loop counter: %u, internal_loop_counter: %u.\n", loop_counter, internal_loop_counter);
-                        getchar();
-                        abort();
-                    }
-
-                    if (i_hive.size() > 100)
-                    { // Test to make sure our stored erased_locations are valid & fill-insert is functioning properly in these scenarios
-                        const unsigned int extra_size = rand() & 127;
-                        i_hive.insert(extra_size, 5);
-
-                        if (i_hive.size() != static_cast<unsigned int>(counter) + extra_size)
-                        {
-                            printf("Fuzz-test range-erase + fill-insert randomly Fails during fill-insert: loop counter: %u, internal_loop_counter: %u.\n", loop_counter, internal_loop_counter);
-                            getchar();
-                            abort();
-                        }
-
-                        counter = 0;
-
-                        for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-                        {
-                            ++counter;
-                        }
-
-                        if (i_hive.size() != static_cast<unsigned int>(counter))
-                        {
-                            printf("Fuzz-test range-erase + fill-insert randomly Fails during counter-test fill-insert: loop counter: %u, internal_loop_counter: %u.\n", loop_counter, internal_loop_counter);
-                            getchar();
-                            abort();
-                        }
-                    }
-
-                    ++internal_loop_counter;
-                }
-            }
-
-            failpass("Fuzz-test range-erase + fill-insert randomly until empty", i_hive.size() == 0);
-
-            i_hive.erase(i_hive.begin(), i_hive.end());
-
-            failpass("Range-erase when hive is empty test (crash test)", i_hive.size() == 0);
-
-            i_hive.insert(10, 1);
-
-            i_hive.erase(i_hive.begin(), i_hive.begin());
-
-            failpass("Range-erase when range is empty test (crash test)", i_hive.size() == 10);
-        }
-
-
-
-        {
-            title1("Non-trivial type tests");
-
-            hive<small_struct_non_trivial> ss_nt;
-            hive<small_struct_non_trivial>::iterator ss_it1, ss_it2;
-
-            small_struct_non_trivial ss(5);
-
-            unsigned int size, range1 = 0, range2 = 0, internal_loop_counter;
-            int counter;
-
-            ss_nt.insert(10000, ss);
-
-            failpass("Non-trivial type insert test", ss_nt.size() == 10000);
-
-
-            for (hive<small_struct_non_trivial>::iterator ss_it = ss_nt.begin(); ss_it != ss_nt.end(); ++ss_it)
-            {
-                ss_it = ss_nt.erase(ss_it);
-                ++range1;
-            }
-
-            failpass("Non-trivial type erase half of all elements", ss_nt.size() == 5000);
-
-
-            for (unsigned int loop_counter = 0; loop_counter != 50; ++loop_counter)
-            {
-                ss_nt.clear();
-
-                for (counter = 0; counter != 1000; ++counter)
-                {
-                    ss_nt.insert(counter);
-                }
-
-                internal_loop_counter = 0;
-
-                while (!ss_nt.empty())
-                {
-                    ss_it2 = ss_it1 = ss_nt.begin();
-
-                    size = static_cast<unsigned int>(ss_nt.size());
-                    range1 = rand() % size;
-                    range2 = range1 + 1 + (rand() % (size - range1));
-                    advance(ss_it1, static_cast<int>(range1));
-                    advance(ss_it2, static_cast<int>(range2));
-
-                    ss_nt.erase(ss_it1, ss_it2);
-
-                    counter = 0;
-
-                    for (hive<small_struct_non_trivial>::iterator ss_it = ss_nt.begin(); ss_it != ss_nt.end(); ++ss_it)
-                    {
-                        ++counter;
-                    }
-
-                    if (ss_nt.size() != static_cast<unsigned int>(counter))
-                    {
-                        printf("Fuzz-test range-erase randomly Fail: loop counter: %u, internal_loop_counter: %u.\n", loop_counter, internal_loop_counter);
-                        getchar();
-                        abort();
-                    }
-
-                    if (ss_nt.size() > 2)
-                    { // Test to make sure our stored erased_locations are valid
-                        ss_nt.insert(1);
-                        ss_nt.insert(10);
-                    }
-
-                    ++internal_loop_counter;
-                }
-            }
-
-            failpass("Non-trivial type fuzz-test range-erase randomly until empty", ss_nt.size() == 0);
-        }
-
-
-
-
-        {
-            title2("Sort tests");
-
-            hive<int> i_hive;
-
-            i_hive.reserve(50000);
-
-            for (unsigned int temp = 0; temp != 50000; ++temp)
-            {
-                i_hive.insert(rand() & 65535);
-            }
-
-            i_hive.sort();
-
-            bool sorted = true;
-            int previous = 0;
-
-            for (hive<int>::iterator current = i_hive.begin(); current != i_hive.end(); ++current)
-            {
-                if (previous > *current)
-                {
-                    sorted = false;
-                    break;
-                }
-
-                previous = *current;
-            }
-
-            failpass("Less-than sort test", sorted);
-
-            i_hive.unique();
-
-
-            bool unique = true;
-            previous = -1;
-
-            for (hive<int>::iterator current = i_hive.begin(); current != i_hive.end(); ++current)
-            {
-                if (previous == *current)
-                {
-                    unique = false;
-                    break;
-                }
-
-                previous = *current;
-            }
-
-            failpass("Unique test", unique);
-
-            i_hive.sort(std::greater<int>());
-
-            previous = 65536;
-
-            for (hive<int>::iterator current = i_hive.begin(); current != i_hive.end(); ++current)
-            {
-                if (previous < *current)
-                {
-                    sorted = false;
-                    break;
-                }
-
-                previous = *current;
-            }
-
-            failpass("Greater-than sort test", sorted);
-        }
-
-
-
-
-        {
-            title2("Different insertion-style tests");
-
-            hive<int> i_hive({1, 2, 3});
-
-            failpass("Initializer-list constructor test", i_hive.size() == 3);
-
-            hive<int> i_hive2(i_hive.begin(), i_hive.end());
-
-            failpass("Range constructor test", i_hive2.size() == 3);
-
-#if __cpp_lib_ranges >= 201911
-            std::ranges::take_view<std::ranges::ref_view<plf::hive<int>>> rng = i_hive2 | std::ranges::views::take(2);
-
-            hive<int> i_hive_range(rng);
-
-            failpass("Rangesv3 constructor test", i_hive_range.size() == 2);
 #endif
-
-            hive<int> i_hive3(5000, 2, plf::hive_limits(100, 1000));
-
-            failpass("Fill construction test", i_hive3.size() == 5000);
-
-            i_hive2.insert(500000, 5);
-
-            failpass("Fill insertion test", i_hive2.size() == 500003);
-
-            std::vector<int> some_ints(500, 2);
-
-            i_hive2.insert(some_ints.begin(), some_ints.end());
-
-            failpass("Range insertion test", i_hive2.size() == 500503);
-
-            i_hive2.insert(some_ints.begin(), some_ints.cend());
-
-            failpass("Range insertion with differing iterators test", i_hive2.size() == 501003);
-
-            i_hive3.clear();
-            i_hive2.clear();
-            i_hive2.trim_capacity();
-            i_hive2.reserve(50000);
-            i_hive2.insert(60000, 1);
-
-            int total = 0;
-
-            for (hive<int>::iterator it = i_hive2.begin(); it != i_hive2.end(); ++it)
-            {
-                total += *it;
-            }
-
-            failpass("Reserve + fill insert test", i_hive2.size() == 60000 && total == 60000);
-
-
-            i_hive2.clear();
-            i_hive2.reserve(5000);
-            i_hive2.insert(60, 1);
-
-            total = 0;
-
-            for (hive<int>::iterator it = i_hive2.begin(); it != i_hive2.end(); ++it)
-            {
-                total += *it;
-            }
-
-            failpass("Reserve + fill insert test 2", i_hive2.size() == 60 && total == 60);
-
-            i_hive2.insert(6000, 1);
-
-            total = 0;
-
-            for (hive<int>::iterator it = i_hive2.begin(); it != i_hive2.end(); ++it)
-            {
-                total += *it;
-            }
-
-            failpass("Reserve + fill + fill test", i_hive2.size() == 6060 && total == 6060);
-
-            i_hive2.reserve(18000);
-            i_hive2.insert(6000, 1);
-
-            total = 0;
-
-            for (hive<int>::iterator it = i_hive2.begin(); it != i_hive2.end(); ++it)
-            {
-                total += *it;
-            }
-
-            failpass("Reserve + fill + fill + reserve + fill test", i_hive2.size() == 12060 && total == 12060);
-
-            i_hive2.clear();
-            i_hive2.insert(6000, 2);
-
-            failpass("Clear + fill test", i_hive2.size() == 6000 && *(i_hive2.begin()) == 2);
-
-            i_hive.insert(i_hive2.begin(), i_hive2.end());
-
-            failpass("Range insert when not empty test", i_hive.size() == 6003);
-        }
-
-
-        {
-            title2("Assign tests");
-
-            hive<int> i_hive(50, 2);
-
-            i_hive.assign(50, 1);
-
-            int total = 0;
-
-            for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-            {
-                total += *it;
-            }
-
-            failpass("Equal capacity assign test", i_hive.size() == 50 && total == 50);
-
-
-            i_hive.assign(10, 2);
-
-            total = 0;
-
-            for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-            {
-                total += *it;
-            }
-
-            failpass("Lesser capacity assign test", i_hive.size() == 10 && total == 20);
-
-
-            i_hive.assign(2000, 20);
-
-            total = 0;
-
-            for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-            {
-                total += *it;
-            }
-
-            failpass("Greater capacity assign test", i_hive.size() == 2000 && total == 40000);
-
-            i_hive.clear();
-
-
-            for (unsigned int internal_loop_counter = 0; internal_loop_counter != 10; ++internal_loop_counter)
-            {
-                const unsigned int capacity = rand() & 65535;
-                i_hive.assign(capacity, 1);
-
-                total = 0;
-
-                for (hive<int>::iterator it = i_hive.begin(); it != i_hive.end(); ++it)
-                {
-                    total += *it;
-                }
-
-                if (i_hive.size() != capacity)
-                {
-                    printf("Fuzz-test assign capacity Fail: global loop counter: %u, internal loop counter: %u.\n", looper, internal_loop_counter);
-                    getchar();
-                    abort();
-                }
-
-                if (i_hive.size() != static_cast<unsigned int>(total))
-                {
-                    printf("Fuzz-test assign sum Fail: global loop counter: %u, internal loop counter: %u.\n", looper, internal_loop_counter);
-                    getchar();
-                    abort();
-                }
-            }
-
-            message("Fuzz-test assign passed.");
-
-
-            i_hive.clear();
-
-            std::vector<int> i_vector;
-
-            for (int counter = 1; counter != 11; ++counter)
-            {
-                i_vector.push_back(counter);
-            }
-
-            i_hive.assign(i_vector.begin(), i_vector.end());
-
-            hive<int>::iterator it = i_hive.begin();
-            bool fail = false;
-
-            for (int counter = 1; counter != 11; ++counter, ++it)
-            {
-                if (*it != counter)
-                {
-                    fail = true;
-                    break;
-                }
-            }
-
-            failpass("Range assign test", i_hive.size() == 10 && !fail);
-
-
-            i_hive.clear();
-
-
-            for (unsigned int internal_loop_counter = 0; internal_loop_counter != 10; ++internal_loop_counter)
-            {
-                const unsigned int capacity = rand() & 65535;
-                i_vector.assign(capacity, 1);
-                i_hive.assign(i_vector.begin(), i_vector.end());
-
-                total = 0;
-
-                for (hive<int>::iterator it3 = i_hive.begin(); it3 != i_hive.end(); ++it3)
-                {
-                    total += *it3;
-                }
-
-                if (i_hive.size() != capacity)
-                {
-                    printf("Fuzz-test range assign capacity Fail: global loop counter: %u, internal loop counter: %u.\n", looper, internal_loop_counter);
-                    getchar();
-                    abort();
-                }
-
-                if (i_hive.size() != static_cast<unsigned int>(total))
-                {
-                    printf("Fuzz-test range assign sum Fail: global loop counter: %u, internal loop counter: %u.\n", looper, internal_loop_counter);
-                    getchar();
-                    abort();
-                }
-            }
-
-            message("Fuzz-test range assign passed.");
-
-
-            i_hive.clear();
-
-            i_hive.assign({1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
-            it = i_hive.begin();
-
-            for (int counter = 1; counter != 11; ++counter, ++it)
-            {
-                if (*it != counter)
-                {
-                    fail = true;
-                    break;
-                }
-            }
-
-            failpass("Initializer_list assign test", i_hive.size() == 10 && !fail);
-
-            i_hive.clear();
-        }
-
-
-        {
-            title2("Perfect Forwarding tests");
-
-            hive<perfect_forwarding_test> pf_hive;
-
-            int lvalue = 0;
-            int &lvalueref = lvalue;
-
-            pf_hive.emplace(7, lvalueref);
-
-            failpass("Perfect forwarding test", (*pf_hive.begin()).success);
-            failpass("Perfect forwarding test 2", lvalueref == 1);
-        }
-
-
-        {
-            title2("Basic emplace test");
-
-            hive<small_struct> ss_hive;
-            int total1 = 0, total2 = 0;
-
-            for (int counter = 0; counter != 100; ++counter)
-            {
-                ss_hive.emplace(counter);
-                total1 += counter;
-            }
-
-            for (hive<small_struct>::iterator it = ss_hive.begin(); it != ss_hive.end(); ++it)
-            {
-                total2 += it->number;
-            }
-
-            failpass("Basic emplace test", total1 == total2);
-            failpass("Basic emplace test 2", ss_hive.size() == 100);
-        }
-
-
-        {
-            title2("Non-copyable type test");
-
-            hive<non_copyable_type> temp;
-
-            temp.emplace(1);
-            temp.emplace(2);
-
-            failpass("Non-copyable size test", temp.size() == 2);
-        }
-
-
-        {
-            title2("Misc function tests");
-
-            hive<int> hive1;
-            hive1.reshape(plf::hive_limits(50, 100));
-
-            hive1.insert(27);
-
-            failpass("Change_group_sizes min-size test", hive1.capacity() == 50);
-
-            for (int counter = 0; counter != 100; ++counter)
-            {
-                hive1.insert(counter);
-            }
-
-            failpass("Change_group_sizes max-size test", hive1.capacity() == 200);
-
-            hive1.clear();
-            hive1.reshape(plf::hive_limits(200, 2000));
-
-            hive1.insert(27);
-
-            failpass("Reinitialize min-size test", hive1.capacity() == 200);
-
-            plf::hive_limits temp_limits = hive1.block_capacity_limits();
-
-            failpass("get_block_capacity_limits test", temp_limits.min == 200 && temp_limits.max == 2000);
-
-            temp_limits = plf::hive<int>::block_capacity_hard_limits();
-
-            failpass("get_block_capacity_limits test", temp_limits.min == 3 && temp_limits.max == 65535);
-
-            for (int counter = 0; counter != 3300; ++counter)
-            {
-                hive1.insert(counter);
-            }
-
-            failpass("Reinitialize max-size test", hive1.capacity() == 5200);
-
-            hive1.reshape(plf::hive_limits(500, 500));
-
-            failpass("Change_group_sizes resize test", hive1.capacity() == 3500);
-
-            hive1.reshape(plf::hive_limits(200, 200));
-
-            failpass("Change_maximum_group_size resize test", hive1.capacity() == 3400);
-
-        }
-
-        {
-            title2("Splice tests");
-
-            {
-                hive<int> hive1, hive2;
-
-                for(int number = 0; number != 20; ++number)
-                {
-                    hive1.insert(number);
-                    hive2.insert(number + 20);
-                }
-
-                hive1.splice(hive2);
-
-                int check_number = 0;
-                bool fail = false;
-
-                for (hive<int>::iterator current = hive1.begin(); current != hive1.end(); ++current)
-                {
-                    if (check_number++ != *current)
-                    {
-                        fail = true;
-                    }
-                }
-
-                failpass("Small splice test 1", fail == false);
-            }
-
-
-            {
-                hive<int> hive1, hive2;
-
-                for(int number = 0; number != 100; ++number)
-                {
-                    hive1.insert(number);
-                    hive2.insert(number + 100);
-                }
-
-                hive1.splice(hive2);
-
-                int check_number = 0;
-                bool fail = false;
-
-                for (hive<int>::iterator current = hive1.begin(); current != hive1.end(); ++current)
-                {
-                    if (check_number++ != *current)
-                    {
-                        fail = true;
-                    }
-                }
-
-                failpass("Small splice test 2", fail == false);
-            }
-
-
-            {
-                hive<int> hive1, hive2;
-
-                for(int number = 0; number != 100000; ++number)
-                {
-                    hive1.insert(number);
-                    hive2.insert(number + 100000);
-                }
-
-                hive1.splice(hive2);
-
-                int check_number = 0;
-                bool fail = false;
-
-                for (hive<int>::iterator current = hive1.begin(); current != hive1.end(); ++current)
-                {
-                    if (check_number++ != *current)
-                    {
-                        fail = true;
-                    }
-                }
-
-                failpass("Large splice test 1", fail == false);
-            }
-
-
-            {
-                hive<int> hive1, hive2;
-
-                for(int number = 0; number != 100; ++number)
-                {
-                    hive1.insert(number);
-                    hive2.insert(number + 100);
-                }
-
-
-                for (hive<int>::iterator current = hive2.begin(); current != hive2.end();)
-                {
-                    if ((rand() & 7) == 0)
-                    {
-                        current = hive2.erase(current);
-                    }
-                    else
-                    {
-                        ++current;
-                    }
-                }
-
-
-                hive1.splice(hive2);
-
-                int check_number = -1;
-                bool fail = false;
-
-                for (hive<int>::iterator current = hive1.begin(); current != hive1.end(); ++current)
-                {
-                    if (check_number >= *current)
-                    {
-                        fail = true;
-                    }
-
-                    check_number = *current;
-                }
-
-                failpass("Erase + splice test 1", fail == false);
-            }
-
-
-
-            {
-                hive<int> hive1, hive2;
-
-                for(int number = 0; number != 100; ++number)
-                {
-                    hive1.insert(number);
-                    hive2.insert(number + 100);
-                }
-
-
-
-                for (hive<int>::iterator current = hive2.begin(); current != hive2.end();)
-                {
-                    if ((rand() & 3) == 0)
-                    {
-                        current = hive2.erase(current);
-                    }
-                    else
-                    {
-                        ++current;
-                    }
-                }
-
-
-                for (hive<int>::iterator current = hive1.begin(); current != hive1.end();)
-                {
-                    if ((rand() & 1) == 0)
-                    {
-                        current = hive1.erase(current);
-                    }
-                    else
-                    {
-                        ++current;
-                    }
-                }
-
-
-                hive1.splice(hive2);
-
-                int check_number = -1;
-                bool fail = false;
-
-                for (hive<int>::iterator current = hive1.begin(); current != hive1.end(); ++current)
-                {
-                    if (check_number >= *current)
-                    {
-                        fail = true;
-                    }
-
-                    check_number = *current;
-                }
-
-                failpass("Erase + splice test 2", fail == false);
-            }
-
-
-
-            {
-                hive<int> hive1, hive2;
-
-                hive1.reshape(plf::hive_limits(200, 200));
-                hive2.reshape(plf::hive_limits(200, 200));
-
-                for(int number = 0; number != 100; ++number)
-                {
-                    hive1.insert(number + 150);
-                }
-
-
-                for(int number = 0; number != 150; ++number)
-                {
-                    hive2.insert(number);
-                }
-
-
-                hive1.splice(hive2);
-
-                int check_number = -1;
-                bool fail = false;
-
-                for (hive<int>::iterator current = hive1.begin(); current != hive1.end(); ++current)
-                {
-                    if (check_number >= *current)
-                    {
-                        fail = true;
-                    }
-
-                    check_number = *current;
-                }
-
-                failpass("Unequal size splice test 1", fail == false);
-            }
-
-
-
-            {
-                hive<int> hive1(plf::hive_limits(200, 200)), hive2(plf::hive_limits(200, 200));
-
-                for(int number = 0; number != 100; ++number)
-                {
-                    hive1.insert(100 - number);
-                }
-
-
-                for(int number = 0; number != 150; ++number)
-                {
-                    hive2.insert(250 - number);
-                }
-
-
-                hive1.splice(hive2);
-
-                int check_number = 255;
-                bool fail = false;
-
-                for (hive<int>::iterator current = hive1.begin(); current != hive1.end(); ++current)
-                {
-                    if (check_number < *current)
-                    {
-                        fail = true;
-                    }
-
-                    check_number = *current;
-                }
-
-                failpass("Unequal size splice test 2", fail == false);
-            }
-
-
-
-            {
-                hive<int> hive1, hive2;
-
-                for(int number = 0; number != 100000; ++number)
-                {
-                    hive1.insert(number + 200000);
-                }
-
-
-                for(int number = 0; number != 200000; ++number)
-                {
-                    hive2.insert(number);
-                }
-
-                for (hive<int>::iterator current = hive2.begin(); current != hive2.end();)
-                {
-                    if ((rand() & 1) == 0)
-                    {
-                        current = hive2.erase(current);
-                    }
-                    else
-                    {
-                        ++current;
-                    }
-                }
-
-
-                for (hive<int>::iterator current = hive1.begin(); current != hive1.end();)
-                {
-                    if ((rand() & 1) == 0)
-                    {
-                        current = hive1.erase(current);
-                    }
-                    else
-                    {
-                        ++current;
-                    }
-                }
-
-
-                hive1.erase(--(hive1.end()));
-                hive2.erase(--(hive2.end()));
-
-                hive1.splice(hive2); // splice should swap the order at this point due to differences in numbers of unused elements at end of final group in each hive
-
-                int check_number = -1;
-                bool fail = false;
-
-                for (hive<int>::iterator current = hive1.begin(); current != hive1.end(); ++current)
-                {
-                    if (check_number >= *current)
-                    {
-                        fail = true;
-                        break;
-                    }
-
-                    check_number = *current;
-                }
-
-                failpass("Large unequal size + erase splice test 1", fail == false);
-
-
-                do
-                {
-                    for (hive<int>::iterator current = hive1.begin(); current != hive1.end();)
-                    {
-                        if ((rand() & 3) == 0)
-                        {
-                            current = hive1.erase(current);
-                        }
-                        else if ((rand() & 7) == 0)
-                        {
-                            hive1.insert(433);
-                            ++current;
-                        }
-                        else
-                        {
-                            ++current;
-                        }
-                    }
-
-                } while (!hive1.empty());
-
-                failpass("Post-splice insert-and-erase randomly till-empty test", hive1.size() == 0);
+}
+
+TEST(hive, ConstIteratorComparison)
+{
+    plf::hive<int> h = {0, 1, 2, 3, 4};
+    plf::hive<int>::const_iterator it1 = h.cbegin();
+    plf::hive<int>::const_iterator it2 = h.cbegin().next(3);
+
+    EXPECT_EQ((it1 < it2), true);
+    EXPECT_EQ((it1 <= it2), true);
+    EXPECT_EQ((it1 > it2), false);
+    EXPECT_EQ((it1 >= it2), false);
+    EXPECT_EQ((it1 == it2), false);
+    EXPECT_EQ((it1 != it2), true);
+
+    EXPECT_EQ((it2 < it1), false);
+    EXPECT_EQ((it2 <= it1), false);
+    EXPECT_EQ((it2 > it1), true);
+    EXPECT_EQ((it2 >= it1), true);
+    EXPECT_EQ((it2 == it1), false);
+    EXPECT_EQ((it2 != it1), true);
+
+#if __cpp_impl_three_way_comparison >= 201907
+    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+    it1 = it2;
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+#if __cpp_lib_concepts >= 202002
+    static_assert(std::totally_ordered<plf::hive<int>::const_iterator>);
+    static_assert(std::three_way_comparable<plf::hive<int>::const_iterator>);
+#endif
+#endif // __cpp_impl_three_way_comparison >= 201907
+}
+
+TEST(hive, MixedIteratorComparison)
+{
+    plf::hive<int> h = {0, 1, 2, 3, 4};
+    plf::hive<int>::const_iterator it1 = h.cbegin();
+    plf::hive<int>::iterator it2 = h.begin().next(3);
+
+    EXPECT_EQ((it1 < it2), true);
+    EXPECT_EQ((it1 <= it2), true);
+    EXPECT_EQ((it1 > it2), false);
+    EXPECT_EQ((it1 >= it2), false);
+    EXPECT_EQ((it1 == it2), false);
+    EXPECT_EQ((it1 != it2), true);
+
+    EXPECT_EQ((it2 < it1), false);
+    EXPECT_EQ((it2 <= it1), false);
+    EXPECT_EQ((it2 > it1), true);
+    EXPECT_EQ((it2 >= it1), true);
+    EXPECT_EQ((it2 == it1), false);
+    EXPECT_EQ((it2 != it1), true);
+
+#if __cpp_impl_three_way_comparison >= 201907
+    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+    it1 = it2;
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+#if __cpp_lib_concepts >= 202002
+    static_assert(std::totally_ordered_with<
+        plf::hive<int>::iterator,
+        plf::hive<int>::const_iterator
+    >);
+    static_assert(std::three_way_comparable_with<
+        plf::hive<int>::iterator,
+        plf::hive<int>::const_iterator
+    >);
+#endif
+#endif
+}
+
+TEST(hive, ReverseIteratorComparison)
+{
+    plf::hive<int> h = {0, 1, 2, 3, 4};
+    plf::hive<int>::reverse_iterator it1 = h.rbegin();
+    plf::hive<int>::reverse_iterator it2 = h.rbegin().next(3);
+
+    EXPECT_EQ((it1 < it2), true);
+    EXPECT_EQ((it1 <= it2), true);
+    EXPECT_EQ((it1 > it2), false);
+    EXPECT_EQ((it1 >= it2), false);
+    EXPECT_EQ((it1 == it2), false);
+    EXPECT_EQ((it1 != it2), true);
+
+    EXPECT_EQ((it2 < it1), false);
+    EXPECT_EQ((it2 <= it1), false);
+    EXPECT_EQ((it2 > it1), true);
+    EXPECT_EQ((it2 >= it1), true);
+    EXPECT_EQ((it2 == it1), false);
+    EXPECT_EQ((it2 != it1), true);
+
+#if __cpp_impl_three_way_comparison >= 201907
+    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+    it1 = it2;
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+#if __cpp_lib_concepts >= 202002
+    static_assert(std::totally_ordered<plf::hive<int>::reverse_iterator>);
+    static_assert(std::three_way_comparable<plf::hive<int>::reverse_iterator>);
+#endif
+#endif
+}
+
+TEST(hive, ConstReverseIteratorComparison)
+{
+    plf::hive<int> h = {0, 1, 2, 3, 4};
+    plf::hive<int>::const_reverse_iterator it1 = h.crbegin();
+    plf::hive<int>::const_reverse_iterator it2 = h.crbegin().next(3);
+
+    EXPECT_EQ((it1 < it2), true);
+    EXPECT_EQ((it1 <= it2), true);
+    EXPECT_EQ((it1 > it2), false);
+    EXPECT_EQ((it1 >= it2), false);
+    EXPECT_EQ((it1 == it2), false);
+    EXPECT_EQ((it1 != it2), true);
+
+    EXPECT_EQ((it2 < it1), false);
+    EXPECT_EQ((it2 <= it1), false);
+    EXPECT_EQ((it2 > it1), true);
+    EXPECT_EQ((it2 >= it1), true);
+    EXPECT_EQ((it2 == it1), false);
+    EXPECT_EQ((it2 != it1), true);
+
+#if __cpp_impl_three_way_comparison >= 201907
+    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+    it1 = it2;
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+#if __cpp_lib_concepts >= 202002
+    static_assert(std::totally_ordered<plf::hive<int>::const_reverse_iterator>);
+    static_assert(std::three_way_comparable<plf::hive<int>::const_reverse_iterator>);
+#endif
+#endif // __cpp_impl_three_way_comparison >= 201907
+}
+
+TEST(hive, MixedReverseIteratorComparison)
+{
+    plf::hive<int> h = {0, 1, 2, 3, 4};
+    plf::hive<int>::const_reverse_iterator it1 = h.crbegin();
+    plf::hive<int>::reverse_iterator it2 = h.rbegin().next(3);
+
+    EXPECT_EQ((it1 < it2), true);
+    EXPECT_EQ((it1 <= it2), true);
+    EXPECT_EQ((it1 > it2), false);
+    EXPECT_EQ((it1 >= it2), false);
+    EXPECT_EQ((it1 == it2), false);
+    EXPECT_EQ((it1 != it2), true);
+
+    EXPECT_EQ((it2 < it1), false);
+    EXPECT_EQ((it2 <= it1), false);
+    EXPECT_EQ((it2 > it1), true);
+    EXPECT_EQ((it2 >= it1), true);
+    EXPECT_EQ((it2 == it1), false);
+    EXPECT_EQ((it2 != it1), true);
+
+#if __cpp_impl_three_way_comparison >= 201907
+    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+    it1 = it2;
+    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+#if __cpp_lib_concepts >= 202002
+    static_assert(std::totally_ordered_with<
+        plf::hive<int>::reverse_iterator,
+        plf::hive<int>::const_reverse_iterator
+    >);
+    static_assert(std::three_way_comparable_with<
+        plf::hive<int>::reverse_iterator,
+        plf::hive<int>::const_reverse_iterator
+    >);
+#endif
+#endif
+}
+
+TEST(hive, InsertAndErase)
+{
+    std::mt19937 g;
+    plf::hive<int> h;
+    for (int i = 0; i < 500'000; ++i) {
+        h.insert(i);
+    }
+    EXPECT_EQ(h.size(), 500'000u);
+    EXPECT_INVARIANTS(h);
+
+    if (true) {
+        auto it = std::find(h.begin(), h.end(), 5000);
+        EXPECT_EQ(*it, 5000);
+
+        auto rit = std::find(h.rbegin(), h.rend(), 5000);
+        EXPECT_EQ(*rit, 5000);
+    }
+
+    for (auto it = h.begin(); it != h.end(); ++it) {
+        it = h.erase(it);
+        ASSERT_NE(it, h.end());
+    }
+    EXPECT_EQ(h.size(), 250'000u);
+    EXPECT_INVARIANTS(h);
+
+    while (!h.empty()) {
+        for (auto it = h.begin(); it != h.end(); ) {
+            if (g() % 8 == 0) {
+                it = h.erase(it);
+            } else {
+                ++it;
             }
         }
     }
+    EXPECT_INVARIANTS(h);
+
+    h.clear();
+    h.trim_capacity();
+    h.reshape(plf::hive_limits(10000, h.block_capacity_limits().max));
+    h.insert(30'000, 1);
+    EXPECT_EQ(h.size(), 30'000u);
+    EXPECT_INVARIANTS(h);
+
+    size_t erased_count = 0;
+    while (!h.empty()) {
+        for (auto it = h.begin(); it != h.end(); ) {
+            if (g() % 8 == 0) {
+                it = h.erase(it);
+                erased_count += 1;
+            } else {
+                ++it;
+            }
+        }
+    }
+    EXPECT_EQ(h.size(), 30'000u - erased_count);
+    EXPECT_INVARIANTS(h);
+
+    h.insert(erased_count, 1);
+    EXPECT_EQ(h.size(), 30'000u);
+    EXPECT_INVARIANTS(h);
+
+    size_t sum = 0;
+    for (auto it = h.begin(); it != h.end(); ) {
+        if (++sum == 3) {
+            sum = 0;
+            it = h.erase(it);
+        } else {
+            h.insert(1);  // TODO: why doesn't this invalidate `it`?
+            ++it;
+        }
+    }
+    EXPECT_EQ(h.size(), 45'001u); 
+    EXPECT_INVARIANTS(h);
+
+    while (!h.empty()) {
+        for (auto it = h.begin(); it != h.end(); ) {
+            if (g() % 4 == 0) {
+                ++it;
+                h.insert(1);
+            } else {
+                it = h.erase(it);
+            }
+        }
+    }
+    EXPECT_INVARIANTS(h);
+
+    h.insert(500'000, 10);
+    EXPECT_EQ(h.size(), 500'000u);
+    EXPECT_INVARIANTS(h);
+
+    if (true) {
+        auto it2 = h.begin();
+        std::advance(it2, 250'000);
+
+        // Yes, this is just `h.erase(it2, h.end())`
+        while (it2 != h.end()) {
+            it2 = h.erase(it2);
+        }
+        EXPECT_EQ(h.size(), 250'000u);
+        EXPECT_INVARIANTS(h);
+    }
+
+    h.insert(250'000, 10);
+
+    if (true) {
+        auto it1 = h.end();
+        auto it2 = h.end();
+        std::advance(it1, -250'000);
+        for (int i = 0; i < 250'000; ++i) {
+            --it2;
+        }
+        EXPECT_EQ(it1, it2);
+
+        for (auto it = h.begin(); it != it1; ) {
+            it = h.erase(it);
+        }
+        EXPECT_EQ(h.size(), 250'000u);
+        EXPECT_INVARIANTS(h);
+    }
+
+    h.insert(250'000, 10);
+    EXPECT_EQ(h.size(), 500'000u);
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(std::accumulate(h.begin(), h.end(), 0), 5'000'000);
+}
+
+TEST(hive, InsertAndErase2)
+{
+    plf::hive<int> h(500'000, 10);
+    auto first = h.begin();
+    auto last = h.end();
+    std::advance(first, 300'000);
+    std::advance(last, -50'001);
+    for (auto it = first; it != last; ) {
+        it = h.erase(it);
+    }
+    EXPECT_EQ(h.size(), 350'001u);
+    EXPECT_INVARIANTS(h);
+
+    h.insert(100'000, 10);
+
+    first = h.begin();
+    std::advance(first, 300'001);
+    for (auto it = first; it != h.end(); ) {
+        it = h.erase(it);
+    }
+    EXPECT_EQ(h.size(), 300'001u);
+    EXPECT_INVARIANTS(h);
+
+    if (true) {
+        auto temp = h.begin();
+        std::advance(temp, 20);
+        EXPECT_EQ(std::distance(h.begin(), temp), 20);
+
+        h.erase(temp);
+    }
+
+    if (true) {
+        // Check edge-case with advance when erasures present in initial group
+        auto temp = h.begin();
+        std::advance(temp, 500);
+        EXPECT_EQ(std::distance(h.begin(), temp), 500);
+        ASSERT_NE(temp, h.end());
+
+        auto temp2 = h.get_iterator(&*temp);
+        auto temp3 = h.get_iterator((const int *)&*temp);
+        static_assert(std::is_same<decltype(temp2), plf::hive<int>::iterator>::value, "");
+        static_assert(std::is_same<decltype(temp3), plf::hive<int>::const_iterator>::value, "");
+        EXPECT_EQ(temp, temp2);
+        EXPECT_EQ(temp, temp3);
+    }
+
+    for (auto it = h.begin(); it != h.end(); ) {
+        it = h.erase(it);
+    }
+    EXPECT_TRUE(h.empty());
+    EXPECT_INVARIANTS(h);
+}
+
+TEST(hive, Reserve)
+{
+    plf::hive<int> h;
+    h.reshape(plf::hive_limits(3, h.block_capacity_limits().max));
+
+    size_t cap = h.capacity();
+    h.reserve(100'000);
+    EXPECT_GE(h.capacity(), 100'000);
+    EXPECT_GE(h.capacity(), cap);
+    EXPECT_INVARIANTS(h);
+}
+
+TEST(hive, MultipleSingleInsertErase)
+{
+    std::mt19937 g;
+    plf::hive<int> h(110'000, 1);
+
+    size_t count = h.size();
+    for (int i = 0; i < 50'000; ++i) {
+        for (int j = 0; j < 10; ++j) {
+            if (g() % 8 == 0) {
+                h.insert(1);
+                count += 1;
+            }
+        }
+        for (auto it = h.begin(); it != h.end(); ) {
+            if (g() % 8 == 0) {
+                it = h.erase(it);
+                count -= 1;
+            } else {
+                ++it;
+            }
+        }
+        EXPECT_EQ(h.size(), count);
+        EXPECT_INVARIANTS(h);
+    }
+}
+
+TEST(hive, Erase)
+{
+    plf::hive<int> h;
+    for (int i = 0; i < 1000; ++i) {
+        h.insert(i);
+    }
+
+    auto it1 = h.begin();
+    auto it2 = h.begin();
+    std::advance(it1, 500);
+    std::advance(it2, 800);
+
+    h.erase(it1, it2);
+    EXPECT_EQ(h.size(), 700u);
+    EXPECT_INVARIANTS(h);
+
+    it1 = h.begin();
+    it2 = h.begin();
+    std::advance(it1, 400);
+    std::advance(it2, 500);
+
+    h.erase(it1, it2);
+    EXPECT_EQ(h.size(), 600u);
+    EXPECT_INVARIANTS(h);
+
+    it1 = h.begin();
+    it2 = h.begin();
+    std::advance(it1, 4);
+    std::advance(it2, 9);
+
+    h.erase(it1, it2);
+    EXPECT_EQ(h.size(), 595u);
+    EXPECT_INVARIANTS(h);
+
+    it1 = h.begin();
+    it2 = h.begin();
+    std::advance(it2, 50);
+
+    h.erase(it1, it2);
+    EXPECT_EQ(h.size(), 545u);
+    EXPECT_INVARIANTS(h);
+
+    it1 = h.begin();
+    std::advance(it1, 345);
+
+    h.erase(it1, h.end());
+    EXPECT_EQ(h.size(), 345u);
+    EXPECT_INVARIANTS(h);
+}
+
+TEST(hive, RangeEraseHalfErasedAlternating)
+{
+    plf::hive<int> v;
+    for (int i = 0; i < 3000; ++i) {
+        v.insert(i);
+    }
+    for (auto it = v.begin(); it != v.end(); ++it) {
+        it = v.erase(it);
+        ASSERT_NE(it, v.end());
+    }
+    auto it1 = v.begin();
+    auto it2 = v.begin();
+    std::advance(it1, 4);
+    std::advance(it2, 600);
+
+    v.erase(it1, it2);
+    EXPECT_EQ(v.size(), 904u);
+    EXPECT_INVARIANTS(v);
+}
+
+TEST(hive, RangeEraseThirdErasedRandomized)
+{
+    std::mt19937 g;
+    plf::hive<int> v(3000, 42);
+    for (auto it = v.begin(); it != v.end(); ) {
+        if (g() % 2 == 0) {
+            it = v.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    ASSERT_GE(v.size(), 400u);
+    auto it1 = v.begin();
+    std::advance(it1, 400);
+
+    v.erase(it1, v.end());
+    EXPECT_EQ(v.size(), 400u);
+    EXPECT_INVARIANTS(v);
+}    
+
+TYPED_TEST(hivet, EraseRandomlyUntilEmpty)
+{
+    using Hive = TypeParam;
+
+    std::mt19937 g;
+    Hive h;
+    for (int t = 0; t < 10; ++t) {
+        h.clear();
+        for (int i = 0; i < 1000; ++i) {
+            h.insert(hivet_setup<Hive>::value(i));
+        }
+        for (int i = 0; i < 50 && !h.empty(); ++i) {
+            auto it1 = h.begin();
+            auto it2 = h.begin();
+            size_t n = h.size();
+            size_t offset = g() % (n + 1);
+            size_t len = g() % (n + 1 - offset);
+            std::advance(it1, offset);
+            std::advance(it2, offset + len);
+            EXPECT_EQ(std::distance(it1, it2), len);
+            h.erase(it1, it2);
+            EXPECT_EQ(h.size(), n - len);
+            EXPECT_INVARIANTS(h);
+
+            // Test to make sure our stored erased_locations are valid
+            h.insert(hivet_setup<Hive>::value(1));
+            h.insert(hivet_setup<Hive>::value(10));
+            EXPECT_EQ(h.size(), n - len + 2);
+            EXPECT_INVARIANTS(h);
+        }
+        EXPECT_INVARIANTS(h);
+    }
+}
+
+TYPED_TEST(hivet, EraseInsertRandomlyUntilEmpty)
+{
+    using Hive = TypeParam;
+
+    std::mt19937 g;
+    Hive h;
+    for (int t = 0; t < 10; ++t) {
+        h.assign(10'000, hivet_setup<Hive>::value(42));
+        for (int i = 0; i < 50 && !h.empty(); ++i) {
+            auto it1 = h.begin();
+            auto it2 = h.begin();
+            size_t n = h.size();
+            size_t offset = g() % (n + 1);
+            size_t len = g() % (n + 1 - offset);
+            std::advance(it1, offset);
+            std::advance(it2, offset + len);
+            EXPECT_EQ(std::distance(it1, it2), len);
+            h.erase(it1, it2);
+            EXPECT_EQ(h.size(), n - len);
+            EXPECT_INVARIANTS(h);
+
+            // Test to make sure our stored erased_locations are valid & fill-insert is functioning properly in these scenarios
+            size_t extra = g() % 10'000;
+            h.insert(extra, hivet_setup<Hive>::value(5));
+            EXPECT_EQ(h.size(), n - len + extra);
+            EXPECT_INVARIANTS(h);
+        }
+    }
+}
+
+TYPED_TEST(hivet, EraseEmptyRange)
+{
+    using Hive = TypeParam;
+
+    Hive h;
+    h.erase(h.begin(), h.end());
+    EXPECT_TRUE(h.empty());
+    EXPECT_INVARIANTS(h);
+
+    h.insert(10, hivet_setup<Hive>::value(1));
+    EXPECT_EQ(h.size(), 10u);
+    EXPECT_INVARIANTS(h);
+
+    h.erase(h.begin(), h.begin());
+    h.erase(h.end(), h.end());
+    EXPECT_EQ(h.size(), 10u);
+    EXPECT_INVARIANTS(h);
+}
+
+TYPED_TEST(hivet, Sort)
+{
+    using Hive = TypeParam;
+
+    std::mt19937 g;
+    Hive h;
+    for (int i = 0; i < 50'000; ++i) {
+        h.insert(hivet_setup<Hive>::value(g() % 65536));
+    }
+    ASSERT_EQ(h.size(), 50'000u);
+    ASSERT_TRUE(!std::is_sorted(h.begin(), h.end()));
+    Hive h2 = h;
+    h2.sort();
+    EXPECT_EQ(h.size(), 50'000u);
+    EXPECT_FALSE(std::is_sorted(h.begin(), h.end()));
+    EXPECT_EQ(h2.size(), 50'000u);
+    EXPECT_TRUE(std::is_sorted(h2.begin(), h2.end()));
+    std::sort(adapt_iterator(h.begin()), adapt_iterator(h.end()));
+    EXPECT_TRUE(std::equal(h2.begin(), h2.end(), h.begin(), h.end()));
+    EXPECT_INVARIANTS(h);
+    EXPECT_INVARIANTS(h2);
+}
+
+TYPED_TEST(hivet, SortGreater)
+{
+    using Hive = TypeParam;
+    using Value = typename Hive::value_type;
+
+    std::mt19937 g;
+    Hive h;
+    for (int i = 0; i < 50'000; ++i) {
+        h.insert(hivet_setup<Hive>::value(g() % 65536));
+    }
+    Hive h2 = h;
+    h2.sort(std::greater<Value>());
+    EXPECT_EQ(h.size(), 50'000u);
+    EXPECT_FALSE(std::is_sorted(h.begin(), h.end()));
+    EXPECT_EQ(h2.size(), 50'000u);
+    EXPECT_TRUE(std::is_sorted(h2.begin(), h2.end(), std::greater<Value>()));
+    std::sort(adapt_iterator(h.begin()), adapt_iterator(h.end()), std::greater<Value>());
+    EXPECT_TRUE(std::equal(h2.begin(), h2.end(), h.begin(), h.end()));
+    EXPECT_INVARIANTS(h);
+    EXPECT_INVARIANTS(h2);
+}
+
+TYPED_TEST(hivet, SortAndUnique)
+{
+    using Hive = TypeParam;
+    using Value = typename Hive::value_type;
+
+    std::mt19937 g;
+    for (int n : {1, 2, 3, 10, 100, 500, 50'000}) {
+        std::vector<Value> v;
+        for (int i = 0; i < n; ++i) {
+            v.push_back(hivet_setup<Hive>::value(g() % 65536));
+        }
+        auto h = Hive(v.begin(), v.end());
+        h.sort();
+        h.unique();
+        std::sort(v.begin(), v.end());
+        v.erase(std::unique(v.begin(), v.end()), v.end());
+        EXPECT_TRUE(std::is_sorted(h.begin(), h.end()));
+        EXPECT_TRUE(std::equal(h.begin(), h.end(), v.begin(), v.end()));
+        EXPECT_INVARIANTS(h);
+    }
+}
+
+TYPED_TEST(hivet, ConstructFromInitializerList)
+{
+    using Hive = TypeParam;
+    if (true) {
+        Hive h = {
+            hivet_setup<Hive>::value(1),
+            hivet_setup<Hive>::value(2),
+            hivet_setup<Hive>::value(3),
+        };
+        EXPECT_EQ(h.size(), 3u);
+        EXPECT_INVARIANTS(h);
+    }
+    if (true) {
+        Hive h = {
+            hivet_setup<Hive>::value(1),
+            hivet_setup<Hive>::value(2),
+        };
+        EXPECT_EQ(h.size(), 2u);
+        EXPECT_INVARIANTS(h);
+    }
+    if (true) {
+        Hive h = {
+            hivet_setup<Hive>::value(1),
+        };
+        EXPECT_EQ(h.size(), 1u);
+        EXPECT_INVARIANTS(h);
+    }
+    if (true) {
+        std::initializer_list<typename Hive::value_type> il = {
+            hivet_setup<Hive>::value(1),
+            hivet_setup<Hive>::value(2),
+        };
+        Hive h = il;
+        EXPECT_EQ(h.size(), 2u);
+        EXPECT_INVARIANTS(h);
+    }
+}
+
+TYPED_TEST(hivet, ConstructFromIteratorPair)
+{
+    using Hive = TypeParam;
+    using V = typename Hive::value_type;
+    std::vector<V> v = {
+        hivet_setup<Hive>::value(1),
+        hivet_setup<Hive>::value(2),
+        hivet_setup<Hive>::value(3),
+    };
+    Hive h(v.begin(), v.end());
+    EXPECT_EQ(h.size(), 3u);
+    EXPECT_INVARIANTS(h);
+}
+
+TEST(hive, ConstructFromVectorBoolIteratorPair)
+{
+    std::vector<bool> v = { true, false, true, false, true };
+    auto h = plf::hive<bool>(v.begin(), v.end());
+    EXPECT_EQ(h.size(), 5u);
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(std::count(h.begin(), h.end(), true), 3);
+    EXPECT_EQ(std::count(h.begin(), h.end(), false), 2);
+}
+
+#if __cpp_lib_ranges >= 201911 && __cpp_lib_ranges_to_container >= 202202
+TEST(hive, ConstructFromRange)
+{
+    plf::hive<int> v = {1, 2, 3};
+    auto r = v | std::views::take(2);
+    plf::hive<int> h(std::from_range, r);
+    EXPECT_EQ(h.size(), 2u);
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(*h.begin(), 1);
+    EXPECT_EQ(*std::next(h.begin()), 2);
+}
+#endif
+
+TYPED_TEST(hivet, InsertOverloads)
+{
+    using Hive = TypeParam;
+    using Value = typename Hive::value_type;
+
+    Hive h;
+
+    // single-element insert
+    Value one = hivet_setup<Hive>::value(1);
+    h.insert(one);
+    h.insert(hivet_setup<Hive>::value(2));
+
+    // fill-insert
+    Value three = hivet_setup<Hive>::value(3);
+    h.insert(3, three);
+    h.insert(4, hivet_setup<Hive>::value(4));
+
+    // iterator-pair
+    std::vector<Value> v(3, hivet_setup<Hive>::value(5));
+    h.insert(v.begin(), v.end());
+
+    // initializer_list
+    std::initializer_list<Value> il = {
+        hivet_setup<Hive>::value(6),
+        hivet_setup<Hive>::value(7),
+    };
+    h.insert(il);
+    h.insert({
+        hivet_setup<Hive>::value(8),
+        hivet_setup<Hive>::value(9),
+    });
+
+    std::vector<Value> expected = {
+        hivet_setup<Hive>::value(1),
+        hivet_setup<Hive>::value(2),
+        hivet_setup<Hive>::value(3),
+        hivet_setup<Hive>::value(3),
+        hivet_setup<Hive>::value(3),
+        hivet_setup<Hive>::value(4),
+        hivet_setup<Hive>::value(4),
+        hivet_setup<Hive>::value(4),
+        hivet_setup<Hive>::value(4),
+        hivet_setup<Hive>::value(5),
+        hivet_setup<Hive>::value(5),
+        hivet_setup<Hive>::value(5),
+        hivet_setup<Hive>::value(6),
+        hivet_setup<Hive>::value(7),
+        hivet_setup<Hive>::value(8),
+        hivet_setup<Hive>::value(9),
+    };
+    EXPECT_TRUE(std::is_permutation(h.begin(), h.end(), expected.begin(), expected.end()));
+}
+
+#if __cpp_lib_ranges >= 201911
+TYPED_TEST(hivet, InsertOverloadsForRanges)
+{
+    using Hive = TypeParam;
+    using Value = typename Hive::value_type;
+
+    Hive h = {
+        hivet_setup<Hive>::value(0),
+    };
+
+    // iterator-sentinel pair
+    std::vector<Value> v = {
+        hivet_setup<Hive>::value(1),
+        hivet_setup<Hive>::value(2),
+        hivet_setup<Hive>::value(3),
+    };
+    h.insert(v.begin(), v.cend());
+
+    // insert_range
+    std::vector<Value> v = {
+        hivet_setup<Hive>::value(4),
+        hivet_setup<Hive>::value(5),
+        hivet_setup<Hive>::value(6),
+        hivet_setup<Hive>::value(7),
+    };
+    h.insert_range(v);
+    h.insert_range(v | std::views::take(2));
+
+    std::vector<Value> expected = {
+        hivet_setup<Hive>::value(0),
+        hivet_setup<Hive>::value(1),
+        hivet_setup<Hive>::value(2),
+        hivet_setup<Hive>::value(3),
+        hivet_setup<Hive>::value(4),
+        hivet_setup<Hive>::value(5),
+        hivet_setup<Hive>::value(6),
+        hivet_setup<Hive>::value(7),
+        hivet_setup<Hive>::value(4),
+        hivet_setup<Hive>::value(5),
+    };
+    EXPECT_TRUE(std::is_permutation(h.begin(), h.end(), expected.begin(), expected.end()));
+}
+#endif // __cpp_lib_ranges >= 201911
+
+TEST(hive, ReserveAndFill)
+{
+    plf::hive<int> v;
+    v.trim_capacity();
+    v.reserve(50'000);
+    v.insert(60'000, 1);
+    EXPECT_EQ(v.size(), 60'000u);
+    EXPECT_INVARIANTS(v);
+    EXPECT_EQ(std::accumulate(v.begin(), v.end(), 0), 60'000);
+}
+
+TEST(hive, ReserveAndFill2)
+{
+    plf::hive<int> v;
+    v.reserve(50'000);
+    v.insert(60, 1);
+    EXPECT_EQ(v.size(), 60u);
+    EXPECT_INVARIANTS(v);
+    EXPECT_EQ(std::accumulate(v.begin(), v.end(), 0), 60);
+
+    v.insert(6000, 1);
+    EXPECT_EQ(v.size(), 6060u);
+    EXPECT_INVARIANTS(v);
+    EXPECT_EQ(std::accumulate(v.begin(), v.end(), 0), 6060);
+
+    v.reserve(18'000);
+    v.insert(6000, 1);
+    EXPECT_EQ(v.size(), 12060u);
+    EXPECT_INVARIANTS(v);
+    EXPECT_EQ(std::accumulate(v.begin(), v.end(), 0), 12060);
+
+    v.clear();
+    v.insert(6000, 2);
+    EXPECT_EQ(v.size(), 6000u);
+    EXPECT_INVARIANTS(v);
+    EXPECT_EQ(std::accumulate(v.begin(), v.end(), 0), 12000);
+}
+
+TEST(hive, Assign)
+{
+    plf::hive<int> v(50, 2);
+    v.assign(50, 1);
+    EXPECT_EQ(v.size(), 50u);
+    EXPECT_INVARIANTS(v);
+    EXPECT_EQ(std::accumulate(v.begin(), v.end(), 0), 50);
+
+    v.assign(10, 2);
+    EXPECT_EQ(v.size(), 10u);
+    EXPECT_INVARIANTS(v);
+    EXPECT_EQ(std::accumulate(v.begin(), v.end(), 0), 20);
+
+    v.assign(2000, 20);
+    EXPECT_EQ(v.size(), 2000u);
+    EXPECT_INVARIANTS(v);
+    EXPECT_EQ(std::accumulate(v.begin(), v.end(), 0), 40000);
+}
+
+TEST(hive, AssignFuzz)
+{
+    std::mt19937 g;
+    plf::hive<int> v;
+    for (int t = 0; t < 10; ++t) {
+        size_t n = g() % 100'000;
+        int x = g() % 20;
+        v.assign(n, x);
+        EXPECT_EQ(v.size(), n);
+        EXPECT_INVARIANTS(v);
+        EXPECT_EQ(std::accumulate(v.begin(), v.end(), 0u), n * x);
+    }
+}
+
+TEST(hive, RangeAssign)
+{
+    std::vector<int> v = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    plf::hive<int> h;
+    h.assign(v.begin(), v.end());
+    EXPECT_TRUE(std::equal(h.begin(), h.end(), v.begin(), v.end()));
+    EXPECT_INVARIANTS(h);
+}
+
+TEST(hive, RangeAssignFuzz)
+{
+    std::mt19937 g;
+    plf::hive<int> h;
+    for (int t = 0; t < 10; ++t) {
+        size_t n = g() % 100'000;
+        int x = g() % 20;
+        auto v = std::vector<int>(n, x);
+        h.assign(v.begin(), v.end());
+        EXPECT_EQ(h.size(), n);
+        EXPECT_INVARIANTS(h);
+        EXPECT_TRUE(std::equal(h.begin(), h.end(), v.begin(), v.end()));
+    }
+}
+
+TEST(hive, AssignInitializerList)
+{
+    plf::hive<int> h;
+    h.assign({1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
+    plf::hive<int> h2 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    EXPECT_INVARIANTS(h);
+    EXPECT_INVARIANTS(h2);
+    EXPECT_TRUE(std::equal(h.begin(), h.end(), h2.begin(), h2.end()));
+}
+
+TEST(hive, PerfectForwarding)
+{
+    struct S {
+        bool success = false;
+        explicit S(int&&, int& i) : success(true) { i = 1; }
+    };
+
+    plf::hive<S> v;
+    int i = 0;
+    v.emplace(7, i);
+    EXPECT_EQ(v.size(), 1u);
+    EXPECT_INVARIANTS(v);
+    EXPECT_TRUE(v.begin()->success);
+    EXPECT_EQ(i, 1);
+}
+
+TEST(hive, BasicEmplace)
+{
+    struct S {
+        double *empty_field_1;
+        double unused_number;
+        unsigned int empty_field2;
+        double *empty_field_3;
+        int number;
+        unsigned int empty_field4;
+
+        explicit S(int n) : number(n) {}
+    };
+
+    plf::hive<S> v;
+    for (int i = 0; i < 100; ++i) {
+        v.emplace(i);
+    }
+    int total = 0;
+    for (S& s : v) {
+        total += s.number;
+    }
+    EXPECT_EQ(total, 4950);
+    EXPECT_EQ(v.size(), 100u);
+    EXPECT_INVARIANTS(v);
+}
+
+TEST(hive, MoveOnly)
+{
+    plf::hive<std::unique_ptr<int>> h;
+    h.emplace(std::make_unique<int>(1));
+    h.emplace(std::make_unique<int>(2));
+    EXPECT_EQ(h.size(), 2u);
+    EXPECT_INVARIANTS(h);
+}
+
+TEST(hive, NonCopyable)
+{
+    struct S {
+        int m;
+        explicit S(int i) : m(i) {}
+        S(const S&) = delete;
+        S& operator=(const S&) = delete;
+    };
+    plf::hive<S> h;
+    h.emplace(1);
+    h.emplace(2);
+    EXPECT_EQ(h.size(), 2u);
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(h.begin()->m, 1);
+    EXPECT_EQ((++h.begin())->m, 2);
+}
+
+TEST(hive, Reshape)
+{
+    plf::hive<int> h;
+    h.reshape(plf::hive_limits(50, 100));
+    EXPECT_TRUE(h.empty());
+    EXPECT_INVARIANTS(h);
+
+    h.insert(27);
+    EXPECT_EQ(h.size(), 1u);
+    EXPECT_EQ(h.capacity(), 50u);
+    EXPECT_INVARIANTS(h);
+
+    for (int i = 0; i < 100; ++i) {
+        h.insert(i);
+    }
+    EXPECT_EQ(h.size(), 101u);
+    EXPECT_EQ(h.capacity(), 200u);
+    EXPECT_INVARIANTS(h);
+
+    h.clear();
+    h.reshape(plf::hive_limits(200, 2000));
+    EXPECT_TRUE(h.empty());
+    EXPECT_INVARIANTS(h);
+
+    h.insert(27);
+    EXPECT_EQ(h.size(), 1u);
+    EXPECT_EQ(h.capacity(), 200u);
+    EXPECT_INVARIANTS(h);
+
+    static_assert(noexcept(h.block_capacity_limits()), "");
+    plf::hive_limits soft = h.block_capacity_limits();
+    EXPECT_EQ(soft.min, 200u);
+    EXPECT_EQ(soft.max, 2000u);
+
+    static_assert(noexcept(decltype(h)::block_capacity_hard_limits()), "");
+    plf::hive_limits hard = decltype(h)::block_capacity_hard_limits();
+    EXPECT_EQ(hard.min, 3u);
+    EXPECT_EQ(hard.max, 65535u);
+
+    for (int i = 0; i < 3300; ++i) {
+        h.insert(i);
+    }
+    EXPECT_EQ(h.size(), 3301u);
+    EXPECT_EQ(h.capacity(), 5200u);
+    EXPECT_INVARIANTS(h);
+
+    h.reshape(plf::hive_limits(500, 500));
+    EXPECT_EQ(h.size(), 3301u);
+    EXPECT_EQ(h.capacity(), 3500u);
+    EXPECT_INVARIANTS(h);
+
+    h.reshape(plf::hive_limits(200, 200));
+    EXPECT_EQ(h.size(), 3301u);
+    EXPECT_EQ(h.capacity(), 3400u);
+    EXPECT_INVARIANTS(h);
+}
+
+TEST(hive, Splice)
+{
+    std::vector<int> v1 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    std::vector<int> v2 = {11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+    plf::hive<int> h1(v1.begin(), v1.end());
+    plf::hive<int> h2(v2.begin(), v2.end());
+
+    h1.splice(h2);
+    v1.insert(v1.end(), v2.begin(), v2.end());
+    EXPECT_TRUE(std::equal(h1.begin(), h1.end(), v1.begin(), v1.end()));
+    EXPECT_TRUE(h2.empty());
+    EXPECT_INVARIANTS(h1);
+    EXPECT_INVARIANTS(h2);
+}
+
+TEST(hive, SpliceRvalue)
+{
+    std::vector<int> v1 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    std::vector<int> v2 = {11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+    plf::hive<int> h1(v1.begin(), v1.end());
+    plf::hive<int> h2(v2.begin(), v2.end());
+
+    h1.splice(std::move(h2));
+    v1.insert(v1.end(), v2.begin(), v2.end());
+    EXPECT_TRUE(std::equal(h1.begin(), h1.end(), v1.begin(), v1.end()));
+    EXPECT_TRUE(h2.empty());
+    EXPECT_INVARIANTS(h1);
+    EXPECT_INVARIANTS(h2);
+}
+
+TEST(hive, SpliceLargeRandom)
+{
+    std::mt19937 g;
+    plf::hive<int> h1(100'000, 1);
+
+    for (int t = 0; t < 10; ++t) {
+        for (auto it = h1.begin(); it != h1.end(); ++it) {
+            if (g() & 1) {
+                it = h1.erase(it);
+                if (it == h1.end()) break;
+            }
+        }
+        EXPECT_INVARIANTS(h1);
+
+        plf::hive<int> h2(10'000, t);
+        for (auto it = h2.begin(); it != h2.end(); ++it) {
+            if (g() & 1) {
+                it = h2.erase(it);
+                if (it == h2.end()) break;
+            }
+        }
+        EXPECT_INVARIANTS(h2);
+
+        auto expected = std::vector<int>(h1.begin(), h1.end());
+        expected.insert(expected.end(), h2.begin(), h2.end());
+
+        h1.splice(h2);
+        EXPECT_TRUE(h2.empty());
+        EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), expected.begin(), expected.end()));
+        EXPECT_INVARIANTS(h1);
+        EXPECT_INVARIANTS(h2);
+    }
+}
+
+TEST(hive, SpliceUnequalSize1)
+{
+    auto h1 = plf::hive<int>(plf::hive_limits(200, 200));
+    auto h2 = plf::hive<int>(plf::hive_limits(200, 200));
+    std::vector<int> expected;
+
+    for (int i = 0; i < 150; ++i) {
+        h1.insert(i);
+        expected.push_back(i);
+    }
+    for (int i = 150; i < 250; ++i) {
+        h2.insert(i);
+        expected.push_back(i);
+    }
+    h1.splice(h2);
+    EXPECT_TRUE(h2.empty());
+    EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), expected.begin(), expected.end()));
+    EXPECT_INVARIANTS(h1);
+    EXPECT_INVARIANTS(h2);
+}
+
+TEST(hive, SpliceUnequalSize2)
+{
+    auto h1 = plf::hive<int>(plf::hive_limits(200, 200));
+    auto h2 = plf::hive<int>(plf::hive_limits(200, 200));
+    std::vector<int> expected;
+
+    for (int i = 0; i < 150; ++i) {
+        h2.insert(i);
+        expected.push_back(i);
+    }
+    for (int i = 150; i < 250; ++i) {
+        h1.insert(i);
+        expected.push_back(i);
+    }
+    h1.splice(h2);
+    EXPECT_TRUE(h2.empty());
+    EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), expected.begin(), expected.end()));
+    EXPECT_INVARIANTS(h1);
+    EXPECT_INVARIANTS(h2);
 }
 
 TEST(hive, StdErase)
 {
     std::mt19937 g;
-    plf::hive<int> v;
+    plf::hive<int> h;
     for (int count = 0; count != 1000; ++count) {
-        v.insert(g() & 1);
+        h.insert(g() & 1);
     }
-    plf::hive<int> v2 = v;
-    ASSERT_EQ(v.size(), 1000u);
+    plf::hive<int> h2 = h;
+    ASSERT_EQ(h.size(), 1000u);
 
-    int count0 = std::count(v.begin(), v.end(), 0);
-    int count1 = std::count(v.begin(), v.end(), 1);
+    int count0 = std::count(h.begin(), h.end(), 0);
+    int count1 = std::count(h.begin(), h.end(), 1);
     ASSERT_EQ(count0 + count1, 1000);
 
-    erase(v, 0);
-    erase(v2, 1);
+    erase(h, 0);
+    erase(h2, 1);
 
-    EXPECT_EQ(v.size(), count1);
-    EXPECT_TRUE(std::all_of(v.begin(), v.end(), [](int i){ return i == 1; }));
+    EXPECT_EQ(h.size(), count1);
+    EXPECT_TRUE(std::all_of(h.begin(), h.end(), [](int i){ return i == 1; }));
 
-    EXPECT_EQ(v2.size(), count0);
-    EXPECT_TRUE(std::all_of(v2.begin(), v2.end(), [](int i){ return i == 0; }));
+    EXPECT_EQ(h2.size(), count0);
+    EXPECT_TRUE(std::all_of(h2.begin(), h2.end(), [](int i){ return i == 0; }));
 }
 
 TEST(hive, StdErase2)
 {
-    auto v = plf::hive<int>(100, 100);
-    v.insert(100, 200);
-    plf::hive<int> v2 = v;
-    ASSERT_EQ(v.size(), 200u);
+    auto h = plf::hive<int>(100, 100);
+    h.insert(100, 200);
+    plf::hive<int> h2 = h;
+    ASSERT_EQ(h.size(), 200u);
 
-    erase(v, 100);
-    EXPECT_EQ(std::accumulate(v.begin(), v.end(), 0), 20000);
+    erase(h, 100);
+    EXPECT_EQ(std::accumulate(h.begin(), h.end(), 0), 20000);
+    EXPECT_INVARIANTS(h);
 
-    erase(v2, 200);
-    EXPECT_EQ(std::accumulate(v2.begin(), v2.end(), 0), 10000);
+    erase(h2, 200);
+    EXPECT_EQ(std::accumulate(h2.begin(), h2.end(), 0), 10000);
+    EXPECT_INVARIANTS(h2);
 
-    erase(v, 200);
-    EXPECT_TRUE(v.empty());
+    erase(h, 200);
+    EXPECT_TRUE(h.empty());
+    EXPECT_INVARIANTS(h);
 
-    erase(v2, 100);
-    EXPECT_TRUE(v2.empty());
+    erase(h2, 100);
+    EXPECT_TRUE(h2.empty());
+    EXPECT_INVARIANTS(h2);
 }
 
 TEST(hive, StdEraseIf)
 {
-    plf::hive<int> v;
+    plf::hive<int> h;
     for (int count = 0; count != 1000; ++count) {
-        v.insert(count);
+        h.insert(count);
     }
 
-    erase_if(v, [](int i){ return i >= 500; });
-    EXPECT_EQ(v.size(), 500u);
-    EXPECT_TRUE(std::all_of(v.begin(), v.end(), [](int i){ return i < 500; }));
+    erase_if(h, [](int i){ return i >= 500; });
+    EXPECT_EQ(h.size(), 500u);
+    EXPECT_TRUE(std::all_of(h.begin(), h.end(), [](int i){ return i < 500; }));
 }
 
 #endif // __cplusplus >= 201703L
