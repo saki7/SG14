@@ -26,9 +26,9 @@ using hivet_types = testing::Types<
     , plf::hive<int, std::allocator<int>, plf::hive_priority::performance>
     , plf::hive<int, std::allocator<int>, plf::hive_priority::memory_use>
     , plf::hive<std::string>            // non-trivial construction/destruction
-#if defined(__cpp_lib_memory_resource)
-    , plf::pmr::hive<int>               // pmr allocator
-    , plf::pmr::hive<std::pmr::string>  // uses-allocator construction
+#if __cpp_lib_memory_resource >= 201603
+    , plf::hive<int, std::pmr::polymorphic_allocator<int>>                            // pmr allocator
+    , plf::hive<std::pmr::string, std::pmr::polymorphic_allocator<std::pmr::string>>  // uses-allocator construction
 #endif
 >;
 TYPED_TEST_SUITE(hivet, hivet_types);
@@ -42,7 +42,7 @@ template<class A, class P> struct hivet_setup<plf::hive<std::string, A, P>> {
 };
 #if __cpp_lib_memory_resource >= 201603
 template<class A, class P> struct hivet_setup<plf::hive<std::pmr::string, A, P>> {
-    static std::pmr::string value(int i) { return std::to_string(i); }
+    static std::pmr::string value(int i) { return std::to_string(i).c_str(); }
 };
 #endif
 
@@ -557,207 +557,267 @@ TEST(hive, IteratorConvertibility)
     static_assert( std::is_convertible<CRIt, CRIt>::value, "");
 }
 
-TEST(hive, IteratorComparison)
+TYPED_TEST(hivet, IteratorComparison)
 {
-    plf::hive<int> h = {0, 1, 2, 3, 4};
-    auto it1 = h.begin();
-    auto it2 = h.begin().next(3);
+    using Hive = TypeParam;
 
-    EXPECT_EQ((it1 < it2), true);
-    EXPECT_EQ((it1 <= it2), true);
-    EXPECT_EQ((it1 > it2), false);
-    EXPECT_EQ((it1 >= it2), false);
-    EXPECT_EQ((it1 == it2), false);
-    EXPECT_EQ((it1 != it2), true);
+    for (int n : {5, 30, 10'000}) {
+        Hive h(n, hivet_setup<Hive>::value(42));
+        typename Hive::iterator it1 = h.begin();
+        typename Hive::iterator it2 = h.end();
+        std::advance(it1, n / 10);
+        std::advance(it2, -2);
 
-    EXPECT_EQ((it2 < it1), false);
-    EXPECT_EQ((it2 <= it1), false);
-    EXPECT_EQ((it2 > it1), true);
-    EXPECT_EQ((it2 >= it1), true);
-    EXPECT_EQ((it2 == it1), false);
-    EXPECT_EQ((it2 != it1), true);
+        EXPECT_EQ((it1 < it2), true);
+        EXPECT_EQ((it1 <= it2), true);
+        EXPECT_EQ((it1 > it2), false);
+        EXPECT_EQ((it1 >= it2), false);
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+
+        EXPECT_EQ((it2 < it1), false);
+        EXPECT_EQ((it2 <= it1), false);
+        EXPECT_EQ((it2 > it1), true);
+        EXPECT_EQ((it2 >= it1), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
-    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
-    it1 = it2;
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
-#if __cpp_lib_concepts >= 202002
-    static_assert(std::totally_ordered<plf::hive<int>::iterator>);
-    static_assert(std::three_way_comparable<plf::hive<int>::iterator>);
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+        it2 = it1;
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
 #endif
+    }
+
+#if __cpp_lib_concepts >= 202002
+    static_assert(std::totally_ordered<typename Hive::iterator>);
+#endif
+#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
+    static_assert(std::three_way_comparable<typename Hive::iterator>);
 #endif
 }
 
-TEST(hive, ConstIteratorComparison)
+TYPED_TEST(hivet, ConstIteratorComparison)
 {
-    plf::hive<int> h = {0, 1, 2, 3, 4};
-    plf::hive<int>::const_iterator it1 = h.cbegin();
-    plf::hive<int>::const_iterator it2 = h.cbegin().next(3);
+    using Hive = TypeParam;
 
-    EXPECT_EQ((it1 < it2), true);
-    EXPECT_EQ((it1 <= it2), true);
-    EXPECT_EQ((it1 > it2), false);
-    EXPECT_EQ((it1 >= it2), false);
-    EXPECT_EQ((it1 == it2), false);
-    EXPECT_EQ((it1 != it2), true);
+    for (int n : {5, 30, 10'000}) {
+        Hive h(n, hivet_setup<Hive>::value(42));
+        typename Hive::const_iterator it1 = h.cbegin();
+        typename Hive::const_iterator it2 = h.cend();
+        std::advance(it1, n / 10);
+        std::advance(it2, -2);
 
-    EXPECT_EQ((it2 < it1), false);
-    EXPECT_EQ((it2 <= it1), false);
-    EXPECT_EQ((it2 > it1), true);
-    EXPECT_EQ((it2 >= it1), true);
-    EXPECT_EQ((it2 == it1), false);
-    EXPECT_EQ((it2 != it1), true);
+        EXPECT_EQ((it1 < it2), true);
+        EXPECT_EQ((it1 <= it2), true);
+        EXPECT_EQ((it1 > it2), false);
+        EXPECT_EQ((it1 >= it2), false);
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+
+        EXPECT_EQ((it2 < it1), false);
+        EXPECT_EQ((it2 <= it1), false);
+        EXPECT_EQ((it2 > it1), true);
+        EXPECT_EQ((it2 >= it1), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
-    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
-    it1 = it2;
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
-#if __cpp_lib_concepts >= 202002
-    static_assert(std::totally_ordered<plf::hive<int>::const_iterator>);
-    static_assert(std::three_way_comparable<plf::hive<int>::const_iterator>);
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+        it2 = it1;
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
 #endif
-#endif // __cpp_impl_three_way_comparison >= 201907
+    }
+
+#if __cpp_lib_concepts >= 202002
+    static_assert(std::totally_ordered<typename Hive::const_iterator>);
+#endif
+#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
+    static_assert(std::three_way_comparable<typename Hive::const_iterator>);
+#endif
 }
 
-TEST(hive, MixedIteratorComparison)
+TYPED_TEST(hivet, MixedIteratorComparison)
 {
-    plf::hive<int> h = {0, 1, 2, 3, 4};
-    plf::hive<int>::const_iterator it1 = h.cbegin();
-    plf::hive<int>::iterator it2 = h.begin().next(3);
+    using Hive = TypeParam;
 
-    EXPECT_EQ((it1 < it2), true);
-    EXPECT_EQ((it1 <= it2), true);
-    EXPECT_EQ((it1 > it2), false);
-    EXPECT_EQ((it1 >= it2), false);
-    EXPECT_EQ((it1 == it2), false);
-    EXPECT_EQ((it1 != it2), true);
+    for (int n : {5, 30, 10'000}) {
+        Hive h(n, hivet_setup<Hive>::value(42));
+        typename Hive::iterator it1 = h.begin();
+        typename Hive::const_iterator it2 = h.cend();
+        std::advance(it1, n / 10);
+        std::advance(it2, -2);
 
-    EXPECT_EQ((it2 < it1), false);
-    EXPECT_EQ((it2 <= it1), false);
-    EXPECT_EQ((it2 > it1), true);
-    EXPECT_EQ((it2 >= it1), true);
-    EXPECT_EQ((it2 == it1), false);
-    EXPECT_EQ((it2 != it1), true);
+        EXPECT_EQ((it1 < it2), true);
+        EXPECT_EQ((it1 <= it2), true);
+        EXPECT_EQ((it1 > it2), false);
+        EXPECT_EQ((it1 >= it2), false);
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+
+        EXPECT_EQ((it2 < it1), false);
+        EXPECT_EQ((it2 <= it1), false);
+        EXPECT_EQ((it2 > it1), true);
+        EXPECT_EQ((it2 >= it1), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
-    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
-    it1 = it2;
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+        it2 = it1;
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+#endif
+    }
+
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered_with<
-        plf::hive<int>::iterator,
-        plf::hive<int>::const_iterator
+        typename Hive::iterator,
+        typename Hive::const_iterator
     >);
+#endif
+#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
     static_assert(std::three_way_comparable_with<
-        plf::hive<int>::iterator,
-        plf::hive<int>::const_iterator
+        typename Hive::iterator,
+        typename Hive::const_iterator
     >);
 #endif
-#endif
 }
 
-TEST(hive, ReverseIteratorComparison)
+TYPED_TEST(hivet, ReverseIteratorComparison)
 {
-    plf::hive<int> h = {0, 1, 2, 3, 4};
-    plf::hive<int>::reverse_iterator it1 = h.rbegin();
-    plf::hive<int>::reverse_iterator it2 = h.rbegin().next(3);
+    using Hive = TypeParam;
 
-    EXPECT_EQ((it1 < it2), true);
-    EXPECT_EQ((it1 <= it2), true);
-    EXPECT_EQ((it1 > it2), false);
-    EXPECT_EQ((it1 >= it2), false);
-    EXPECT_EQ((it1 == it2), false);
-    EXPECT_EQ((it1 != it2), true);
+    for (int n : {5, 30, 10'000}) {
+        Hive h(n, hivet_setup<Hive>::value(42));
+        typename Hive::reverse_iterator it1 = h.rbegin();
+        typename Hive::reverse_iterator it2 = h.rend();
+        std::advance(it1, n / 10);
+        std::advance(it2, -2);
 
-    EXPECT_EQ((it2 < it1), false);
-    EXPECT_EQ((it2 <= it1), false);
-    EXPECT_EQ((it2 > it1), true);
-    EXPECT_EQ((it2 >= it1), true);
-    EXPECT_EQ((it2 == it1), false);
-    EXPECT_EQ((it2 != it1), true);
+        EXPECT_EQ((it1 < it2), true);
+        EXPECT_EQ((it1 <= it2), true);
+        EXPECT_EQ((it1 > it2), false);
+        EXPECT_EQ((it1 >= it2), false);
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+
+        EXPECT_EQ((it2 < it1), false);
+        EXPECT_EQ((it2 <= it1), false);
+        EXPECT_EQ((it2 > it1), true);
+        EXPECT_EQ((it2 >= it1), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
-    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
-    it1 = it2;
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+        it2 = it1;
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+#endif
+    }
+
 #if __cpp_lib_concepts >= 202002
-    static_assert(std::totally_ordered<plf::hive<int>::reverse_iterator>);
-    static_assert(std::three_way_comparable<plf::hive<int>::reverse_iterator>);
+    static_assert(std::totally_ordered<typename Hive::reverse_iterator>);
 #endif
+#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
+    static_assert(std::three_way_comparable<typename Hive::reverse_iterator>);
 #endif
 }
 
-TEST(hive, ConstReverseIteratorComparison)
+TYPED_TEST(hivet, ConstReverseIteratorComparison)
 {
-    plf::hive<int> h = {0, 1, 2, 3, 4};
-    plf::hive<int>::const_reverse_iterator it1 = h.crbegin();
-    plf::hive<int>::const_reverse_iterator it2 = h.crbegin().next(3);
+    using Hive = TypeParam;
 
-    EXPECT_EQ((it1 < it2), true);
-    EXPECT_EQ((it1 <= it2), true);
-    EXPECT_EQ((it1 > it2), false);
-    EXPECT_EQ((it1 >= it2), false);
-    EXPECT_EQ((it1 == it2), false);
-    EXPECT_EQ((it1 != it2), true);
+    for (int n : {5, 30, 10'000}) {
+        Hive h(n, hivet_setup<Hive>::value(42));
+        typename Hive::const_reverse_iterator it1 = h.rbegin();
+        typename Hive::const_reverse_iterator it2 = h.rend();
+        std::advance(it1, n / 10);
+        std::advance(it2, -2);
 
-    EXPECT_EQ((it2 < it1), false);
-    EXPECT_EQ((it2 <= it1), false);
-    EXPECT_EQ((it2 > it1), true);
-    EXPECT_EQ((it2 >= it1), true);
-    EXPECT_EQ((it2 == it1), false);
-    EXPECT_EQ((it2 != it1), true);
+        EXPECT_EQ((it1 < it2), true);
+        EXPECT_EQ((it1 <= it2), true);
+        EXPECT_EQ((it1 > it2), false);
+        EXPECT_EQ((it1 >= it2), false);
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+
+        EXPECT_EQ((it2 < it1), false);
+        EXPECT_EQ((it2 <= it1), false);
+        EXPECT_EQ((it2 > it1), true);
+        EXPECT_EQ((it2 >= it1), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
-    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
-    it1 = it2;
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+        it2 = it1;
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+#endif
+    }
+
 #if __cpp_lib_concepts >= 202002
-    static_assert(std::totally_ordered<plf::hive<int>::const_reverse_iterator>);
-    static_assert(std::three_way_comparable<plf::hive<int>::const_reverse_iterator>);
+    static_assert(std::totally_ordered<typename Hive::const_reverse_iterator>);
 #endif
-#endif // __cpp_impl_three_way_comparison >= 201907
+#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
+    static_assert(std::three_way_comparable<typename Hive::const_reverse_iterator>);
+#endif
 }
 
-TEST(hive, MixedReverseIteratorComparison)
+TYPED_TEST(hivet, MixedReverseIteratorComparison)
 {
-    plf::hive<int> h = {0, 1, 2, 3, 4};
-    plf::hive<int>::const_reverse_iterator it1 = h.crbegin();
-    plf::hive<int>::reverse_iterator it2 = h.rbegin().next(3);
+    using Hive = TypeParam;
 
-    EXPECT_EQ((it1 < it2), true);
-    EXPECT_EQ((it1 <= it2), true);
-    EXPECT_EQ((it1 > it2), false);
-    EXPECT_EQ((it1 >= it2), false);
-    EXPECT_EQ((it1 == it2), false);
-    EXPECT_EQ((it1 != it2), true);
+    for (int n : {5, 30, 10'000}) {
+        Hive h(n, hivet_setup<Hive>::value(42));
+        typename Hive::reverse_iterator it1 = h.rbegin();
+        typename Hive::const_reverse_iterator it2 = h.crend();
+        std::advance(it1, n / 10);
+        std::advance(it2, -2);
 
-    EXPECT_EQ((it2 < it1), false);
-    EXPECT_EQ((it2 <= it1), false);
-    EXPECT_EQ((it2 > it1), true);
-    EXPECT_EQ((it2 >= it1), true);
-    EXPECT_EQ((it2 == it1), false);
-    EXPECT_EQ((it2 != it1), true);
+        EXPECT_EQ((it1 < it2), true);
+        EXPECT_EQ((it1 <= it2), true);
+        EXPECT_EQ((it1 > it2), false);
+        EXPECT_EQ((it1 >= it2), false);
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+
+        EXPECT_EQ((it2 < it1), false);
+        EXPECT_EQ((it2 <= it1), false);
+        EXPECT_EQ((it2 > it1), true);
+        EXPECT_EQ((it2 >= it1), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
-    EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
-    it1 = it2;
-    EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
+        it2 = it1;
+        EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
+        EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
+#endif
+    }
+
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered_with<
-        plf::hive<int>::reverse_iterator,
-        plf::hive<int>::const_reverse_iterator
-    >);
-    static_assert(std::three_way_comparable_with<
-        plf::hive<int>::reverse_iterator,
-        plf::hive<int>::const_reverse_iterator
+        typename Hive::reverse_iterator,
+        typename Hive::const_reverse_iterator
     >);
 #endif
+#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
+    static_assert(std::three_way_comparable_with<
+        typename Hive::reverse_iterator,
+        typename Hive::const_reverse_iterator
+    >);
 #endif
 }
 
@@ -926,7 +986,7 @@ TEST(hive, InsertAndErase2)
         ASSERT_NE(temp, h.end());
 
         auto temp2 = h.get_iterator(&*temp);
-        auto temp3 = h.get_iterator((const int *)&*temp);
+        auto temp3 = std::as_const(h).get_iterator(&*temp);
         static_assert(std::is_same<decltype(temp2), plf::hive<int>::iterator>::value, "");
         static_assert(std::is_same<decltype(temp3), plf::hive<int>::const_iterator>::value, "");
         EXPECT_EQ(temp, temp2);
@@ -1102,7 +1162,7 @@ TYPED_TEST(hivet, EraseRandomlyUntilEmpty)
     }
 }
 
-TYPED_TEST(hivet, EraseInsertRandomlyUntilEmpty)
+TYPED_TEST(hivet, DISABLED_EraseInsertRandomly)
 {
     using Hive = TypeParam;
 
@@ -1785,5 +1845,77 @@ TEST(hive, StdEraseIf)
     EXPECT_EQ(h.size(), 500u);
     EXPECT_TRUE(std::all_of(h.begin(), h.end(), [](int i){ return i < 500; }));
 }
+
+#if __cpp_lib_memory_resource >= 201603
+struct PmrGuard {
+    std::pmr::memory_resource *m_;
+    explicit PmrGuard() : m_(std::pmr::set_default_resource(std::pmr::null_memory_resource())) {}
+    ~PmrGuard() { std::pmr::set_default_resource(m_); }
+};
+
+TEST(hive, DefaultCtorDoesntAllocate)
+{
+    using Hive = plf::hive<int, std::pmr::polymorphic_allocator<int>>;
+    PmrGuard guard;
+    Hive h;  // should not allocate
+}
+
+TEST(hive, PmrCorrectness)
+{
+    std::pmr::monotonic_buffer_resource mr(10'000);
+    int a[] = {1, 2, 3, 4};
+
+    PmrGuard guard;
+
+    using Hive = plf::hive<int, std::pmr::polymorphic_allocator<int>>;
+    Hive h1(&mr);
+    Hive h2({10, 10}, &mr);
+    Hive h3(plf::hive_limits(10, 10), &mr);
+    Hive h4(100, &mr);
+    Hive h5(100, {10, 10}, &mr);
+    Hive h6(100, plf::hive_limits(10, 10), &mr);
+    Hive h7(100, 42, &mr);
+    Hive h8(100, 42, {10, 10}, &mr);
+    Hive h9(100, 42, plf::hive_limits(10, 10), &mr);
+    Hive ha(a, a + 4, &mr);
+    Hive hb({1, 2, 3, 4}, &mr);
+    Hive hc({1, 2, 3, 4}, {10, 10}, &mr);
+    Hive hd({1, 2, 3, 4}, plf::hive_limits(10, 10), &mr);
+    Hive he(h1, &mr);
+    Hive hf(Hive(&mr), &mr);
+
+    h1.insert(100, 42);
+    h2.insert(100, 42);
+    h3.insert(100, 42);
+    h4.insert(100, 42);
+    h5.insert(100, 42);
+    h6.insert(100, 42);
+    h7.insert(100, 42);
+    h8.insert(100, 42);
+    h9.insert(100, 42);
+    ha.insert(100, 42);
+    hb.insert(100, 42);
+    hc.insert(100, 42);
+    hd.insert(100, 42);
+    he.insert(100, 42);
+    hf.insert(100, 42);
+
+#if __cpp_lib_ranges >= 201911
+    Hive hg(std::counted_iterator(a, 2), std::default_sentinel, &mr);
+    Hive hh(std::counted_iterator(a, 2), std::default_sentinel, {10, 10}, &mr);
+    Hive hi(std::counted_iterator(a, 2), std::default_sentinel, plf::hive_limits(10, 10), &mr);
+    hg.insert(100, 42);
+    hh.insert(100, 42);
+    hi.insert(100, 42);
+#endif
+
+#if __cpp_lib_ranges >= 201911 && __cpp_lib_ranges_to_container >= 202202
+    Hive hj(std::from_range, a, &mr);
+    Hive hk(std::from_range, a | std::views::take(2), &mr);
+    hj.insert(100, 42);
+    hk.insert(100, 42);
+#endif
+}
+#endif // __cpp_lib_memory_resource >= 201603
 
 #endif // __cplusplus >= 201703L
