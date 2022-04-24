@@ -1299,6 +1299,22 @@ TEST(hive, DISABLED_RegressionTestIssue8)
     }
 }
 
+TEST(hive, RegressionTestIssue14)
+{
+    struct S {
+        std::shared_ptr<int> p_;
+        S(int i) : p_(std::make_shared<int>(i)) {
+            if (i == 3) throw 42;
+        }
+    };
+    static_assert(std::is_nothrow_copy_constructible<S>::value, "");
+
+    plf::hive<S> h;
+    int a[] = {1, 2, 3, 4, 5};
+    ASSERT_THROW(h.assign(a, a + 5), int);
+    EXPECT_INVARIANTS(h);
+}
+
 TYPED_TEST(hivet, Sort)
 {
     using Hive = TypeParam;
