@@ -147,35 +147,34 @@ private:
     typedef typename std::allocator_traits<allocator_type>::template rebind_alloc<aligned_allocation_struct> aligned_struct_allocator_type;
     typedef typename std::allocator_traits<allocator_type>::template rebind_alloc<item_index_tuple>          tuple_allocator_type;
 
-    typedef typename std::allocator_traits<aligned_element_allocator_type>::pointer aligned_pointer_type; // pointer to the overaligned element type, not the original element type
-    typedef typename std::allocator_traits<group_allocator_type>::pointer               group_pointer_type;
-    typedef typename std::allocator_traits<skipfield_allocator_type>::pointer           skipfield_pointer_type;
+    typedef typename std::allocator_traits<aligned_element_allocator_type>::pointer AlignedEltPtr; // pointer to the overaligned element type, not the original element type
+    typedef typename std::allocator_traits<group_allocator_type>::pointer           GroupPtr;
+    typedef typename std::allocator_traits<skipfield_allocator_type>::pointer       SkipfieldPtr;
     typedef typename std::allocator_traits<aligned_struct_allocator_type>::pointer  aligned_struct_pointer_type;
-    typedef typename std::allocator_traits<tuple_allocator_type>::pointer               tuple_pointer_type;
+    typedef typename std::allocator_traits<tuple_allocator_type>::pointer           tuple_pointer_type;
 
     // group == element memory block + skipfield + block metadata
     struct group {
-        aligned_pointer_type          last_endpoint;          // The address which is one-past the highest cell number that's been used so far in this group - does not change via erasure but may change via insertion/emplacement/assignment (if no previously-erased locations are available to insert to). This variable is necessary because an iterator cannot access the hive's end_. It is probably the most-used variable in general hive usage (being heavily used in operator ++, --), so is first in struct. If all cells in the group have been inserted into at some point, it will be == reinterpret_cast<aligned_pointer_type>(skipfield).
-        group_pointer_type            next_group;             // Next group in the intrusive list of all groups. nullptr if no next group.
-        const aligned_pointer_type    elements;               // Element storage.
-        const skipfield_pointer_type  skipfield;              // Skipfield storage. The element and skipfield arrays are allocated contiguously, in a single allocation, in this implementation, hence the skipfield pointer also functions as a 'one-past-end' pointer for the elements array. There will always be one additional skipfield node allocated compared to the number of elements. This is to ensure a faster ++ iterator operation (fewer checks are required when this is present). The extra node is unused and always zero, but checked, and not having it will result in out-of-bounds memory errors.
-        group_pointer_type            previous_group;         // Previous group in the linked list of all groups. nullptr if no preceding group.
-        skipfield_type                free_list_head;         // The index of the last erased element in the group. The last erased element will, in turn, contain the number of the index of the next erased element, and so on. If this is == maximum skipfield_type value then free_list is empty ie. no erasures have occurred in the group (or if they have, the erased locations have subsequently been reused via insert/emplace/assign).
-        const skipfield_type          capacity;               // The element capacity of this particular group - can also be calculated from reinterpret_cast<aligned_pointer_type>(group->skipfield) - group->elements, however this space is effectively free due to struct padding and the sizeof(skipfield_type), and calculating it once is faster in benchmarking.
-        skipfield_type                size;                   // The total number of active elements in group - changes with insert and erase commands - used to check for empty group in erase function, as an indication to remove the group. Also used in combination with capacity to check if group is full, which is used in the next/previous/advance/distance overloads, and range-erase.
-        group_pointer_type            erasures_list_next_group; // The next group in the singly-linked list of groups with erasures ie. with active erased-element free lists. nullptr if no next group.
-        size_type                     group_number;           // Used for comparison (> < >= <= <=>) iterator operators (used by distance function and user).
-
+        AlignedEltPtr last_endpoint;       // The address which is one-past the highest cell number that's been used so far in this group - does not change via erasure but may change via insertion/emplacement/assignment (if no previously-erased locations are available to insert to). This variable is necessary because an iterator cannot access the hive's end_. It is probably the most-used variable in general hive usage (being heavily used in operator ++, --), so is first in struct. If all cells in the group have been inserted into at some point, it will be == reinterpret_cast<AlignedEltPtr>(skipfield).
+        GroupPtr next_group;               // Next group in the intrusive list of all groups. nullptr if no next group.
+        const AlignedEltPtr elements;      // Element storage.
+        const SkipfieldPtr skipfield;      // Skipfield storage. The element and skipfield arrays are allocated contiguously, in a single allocation, in this implementation, hence the skipfield pointer also functions as a 'one-past-end' pointer for the elements array. There will always be one additional skipfield node allocated compared to the number of elements. This is to ensure a faster ++ iterator operation (fewer checks are required when this is present). The extra node is unused and always zero, but checked, and not having it will result in out-of-bounds memory errors.
+        GroupPtr previous_group;           // Previous group in the linked list of all groups. nullptr if no preceding group.
+        skipfield_type free_list_head;     // The index of the last erased element in the group. The last erased element will, in turn, contain the number of the index of the next erased element, and so on. If this is == maximum skipfield_type value then free_list is empty ie. no erasures have occurred in the group (or if they have, the erased locations have subsequently been reused via insert/emplace/assign).
+        const skipfield_type capacity;     // The element capacity of this particular group - can also be calculated from reinterpret_cast<AlignedEltPtr>(group->skipfield) - group->elements, however this space is effectively free due to struct padding and the sizeof(skipfield_type), and calculating it once is faster in benchmarking.
+        skipfield_type size;               // The total number of active elements in group - changes with insert and erase commands - used to check for empty group in erase function, as an indication to remove the group. Also used in combination with capacity to check if group is full, which is used in the next/previous/advance/distance overloads, and range-erase.
+        GroupPtr erasures_list_next_group; // The next group in the singly-linked list of groups with erasures ie. with active erased-element free lists. nullptr if no next group.
+        size_type group_number;            // Used for comparison (> < >= <= <=>) iterator operators (used by distance function and user).
 
         // Group elements allocation explanation: memory has to be allocated as an aligned type in order to align with memory boundaries correctly (as opposed to being allocated as char or uint_8). Unfortunately this makes combining the element memory block and the skipfield memory block into one allocation (which increases performance) a little more tricky. Specifically it means in many cases the allocation will amass more memory than is needed, particularly if the element type is large.
 
-        explicit group(aligned_struct_allocator_type aa, skipfield_type elements_per_group, group_pointer_type previous):
-            last_endpoint(bitcast_pointer<aligned_pointer_type>(
+        explicit group(aligned_struct_allocator_type aa, skipfield_type elements_per_group, GroupPtr previous):
+            last_endpoint(bitcast_pointer<AlignedEltPtr>(
                 std::allocator_traits<aligned_struct_allocator_type>::allocate(aa, get_aligned_block_capacity(elements_per_group), (previous == nullptr) ? 0 : previous->elements))),
  /* Because this variable occurs first in the struct, we allocate here initially, then increment its value in the element initialisation below. As opposed to doing a secondary assignment in the code */
             next_group(nullptr),
             elements(last_endpoint++), // we increment here because in 99% of cases, a group allocation occurs because of an insertion, so this saves a ++ call later
-            skipfield(bitcast_pointer<skipfield_pointer_type>(elements + elements_per_group)),
+            skipfield(bitcast_pointer<SkipfieldPtr>(elements + elements_per_group)),
             previous_group(previous),
             free_list_head(std::numeric_limits<skipfield_type>::max()),
             capacity(elements_per_group),
@@ -187,7 +186,7 @@ private:
             std::memset(bitcast_pointer<void *>(skipfield), 0, sizeof(skipfield_type) * (static_cast<size_type>(elements_per_group) + 1u));
         }
 
-        void reset(skipfield_type increment, group_pointer_type next, group_pointer_type previous, size_type group_num) {
+        void reset(skipfield_type increment, GroupPtr next, GroupPtr previous, size_type group_num) {
             last_endpoint = elements + increment;
             next_group = next;
             free_list_head = std::numeric_limits<skipfield_type>::max();
@@ -203,9 +202,9 @@ private:
 
     template <bool IsConst>
     class hive_iterator {
-        group_pointer_type group_pointer = group_pointer_type();
-        aligned_pointer_type element_pointer = aligned_pointer_type();
-        skipfield_pointer_type skipfield_pointer = skipfield_pointer_type();
+        GroupPtr group_ = GroupPtr();
+        AlignedEltPtr elt_ = AlignedEltPtr();
+        SkipfieldPtr skipf_ = SkipfieldPtr();
 
     public:
 #if PLF_HIVE_RANDOM_ACCESS_ITERATORS
@@ -230,117 +229,117 @@ private:
 
         template<bool IsConst_ = IsConst, class = std::enable_if_t<IsConst_>>
         hive_iterator(const hive_iterator<false>& rhs) :
-            group_pointer(rhs.group_pointer),
-            element_pointer(rhs.element_pointer),
-            skipfield_pointer(rhs.skipfield_pointer)
+            group_(rhs.group_),
+            elt_(rhs.elt_),
+            skipf_(rhs.skipf_)
         {}
 
         template<bool IsConst_ = IsConst, class = std::enable_if_t<IsConst_>>
         hive_iterator(hive_iterator<false>&& rhs) :
-            group_pointer(std::move(rhs.group_pointer)),
-            element_pointer(std::move(rhs.element_pointer)),
-            skipfield_pointer(std::move(rhs.skipfield_pointer))
+            group_(std::move(rhs.group_)),
+            elt_(std::move(rhs.elt_)),
+            skipf_(std::move(rhs.skipf_))
         {}
 
         friend void swap(hive_iterator& a, hive_iterator& b) noexcept {
             using std::swap;
-            swap(a.group_pointer, b.group_pointer);
-            swap(a.element_pointer, b.element_pointer);
-            swap(a.skipfield_pointer, b.skipfield_pointer);
+            swap(a.group_, b.group_);
+            swap(a.elt_, b.elt_);
+            swap(a.skipf_, b.skipf_);
         }
 
     private:
         template<bool IsConst_ = IsConst, class = std::enable_if_t<IsConst_>>
         hive_iterator<false> unconst() const {
             hive_iterator<false> it;
-            it.group_pointer = group_pointer;
-            it.element_pointer = element_pointer;
-            it.skipfield_pointer = skipfield_pointer;
+            it.group_ = group_;
+            it.elt_ = elt_;
+            it.skipf_ = skipf_;
             return it;
         }
 
     public:
         friend bool operator==(const hive_iterator& a, const hive_iterator& b) {
-            return a.element_pointer == b.element_pointer;
+            return a.elt_ == b.elt_;
         }
 
 #if __cpp_impl_three_way_comparison >= 201907
         friend std::strong_ordering operator<=>(const hive_iterator& a, const hive_iterator& b) {
             // TODO: what about fancy pointer types that don't support <=> natively?
-            return a.group_pointer == b.group_pointer ?
-                a.element_pointer <=> b.element_pointer :
-                a.group_pointer->group_number <=> b.group_pointer->group_number;
+            return a.group_ == b.group_ ?
+                a.elt_ <=> b.elt_ :
+                a.group_->group_number <=> b.group_->group_number;
         }
 #else
         friend bool operator!=(const hive_iterator& a, const hive_iterator& b) {
-            return a.element_pointer != b.element_pointer;
+            return a.elt_ != b.elt_;
         }
 
         friend bool operator<(const hive_iterator& a, const hive_iterator& b) {
-            return a.group_pointer == b.group_pointer ?
-                a.element_pointer < b.element_pointer :
-                a.group_pointer->group_number < b.group_pointer->group_number;
+            return a.group_ == b.group_ ?
+                a.elt_ < b.elt_ :
+                a.group_->group_number < b.group_->group_number;
         }
 
         friend bool operator>(const hive_iterator& a, const hive_iterator& b) {
-            return a.group_pointer == b.group_pointer ?
-                a.element_pointer > b.element_pointer :
-                a.group_pointer->group_number > b.group_pointer->group_number;
+            return a.group_ == b.group_ ?
+                a.elt_ > b.elt_ :
+                a.group_->group_number > b.group_->group_number;
         }
 
         friend bool operator<=(const hive_iterator& a, const hive_iterator& b) {
-            return a.group_pointer == b.group_pointer ?
-                a.element_pointer <= b.element_pointer :
-                a.group_pointer->group_number < b.group_pointer->group_number;
+            return a.group_ == b.group_ ?
+                a.elt_ <= b.elt_ :
+                a.group_->group_number < b.group_->group_number;
         }
 
         friend bool operator>=(const hive_iterator& a, const hive_iterator& b) {
-            return a.group_pointer == b.group_pointer ?
-                a.element_pointer >= b.element_pointer :
-                a.group_pointer->group_number > b.group_pointer->group_number;
+            return a.group_ == b.group_ ?
+                a.elt_ >= b.elt_ :
+                a.group_->group_number > b.group_->group_number;
         }
 #endif
 
         inline reference operator*() const noexcept {
-            return *bitcast_pointer<pointer>(element_pointer);
+            return *bitcast_pointer<pointer>(elt_);
         }
 
         inline pointer operator->() const noexcept {
-            return bitcast_pointer<pointer>(element_pointer);
+            return bitcast_pointer<pointer>(elt_);
         }
 
         hive_iterator& operator++() {
-            assert(group_pointer != nullptr);
-            skipfield_type skip = *(++skipfield_pointer);
-            element_pointer += static_cast<size_type>(skip) + 1u;
-            if (element_pointer == group_pointer->last_endpoint && group_pointer->next_group != nullptr) {
-                group_pointer = group_pointer->next_group;
-                const aligned_pointer_type elements = group_pointer->elements;
-                const skipfield_pointer_type skipfield = group_pointer->skipfield;
+            assert(group_ != nullptr);
+            skipfield_type skip = *(++skipf_);
+            elt_ += static_cast<size_type>(skip) + 1u;
+            if (elt_ == group_->last_endpoint && group_->next_group != nullptr) {
+                group_ = group_->next_group;
+                const AlignedEltPtr elements = group_->elements;
+                const SkipfieldPtr skipfield = group_->skipfield;
                 skip = *skipfield;
-                element_pointer = elements + skip;
-                skipfield_pointer = skipfield;
+                elt_ = elements + skip;
+                skipf_ = skipfield;
             }
-            skipfield_pointer += skip;
+            skipf_ += skip;
             return *this;
         }
 
         hive_iterator& operator--() {
-            assert(group_pointer != nullptr);
-            if (element_pointer != group_pointer->elements) {
+            assert(group_ != nullptr);
+            if (elt_ != group_->elements) {
                 // ie. not already at beginning of group
-                const skipfield_type skip = *(--skipfield_pointer);
-                skipfield_pointer -= skip;
-                if ((element_pointer -= static_cast<size_type>(skip) + 1u) != group_pointer->elements - 1) {
+                const skipfield_type skip = *(--skipf_);
+                skipf_ -= skip;
+                if ((elt_ -= static_cast<size_type>(skip) + 1u) != group_->elements - 1) {
                     // ie. iterator was not already at beginning of hive (with some previous consecutive deleted elements), and skipfield does not takes us into the previous group)
                     return *this;
                 }
             }
-            group_pointer = group_pointer->previous_group;
-            const skipfield_pointer_type skipfield = group_pointer->skipfield + group_pointer->capacity - 1;
+            group_ = group_->previous_group;
+            const SkipfieldPtr skipfield = group_->skipfield + group_->capacity - 1;
             const skipfield_type skip = *skipfield;
-            element_pointer = (bitcast_pointer<hive::aligned_pointer_type>(group_pointer->skipfield) - 1) - skip;
-            skipfield_pointer = skipfield - skip;
+            elt_ = (bitcast_pointer<hive::AlignedEltPtr>(group_->skipfield) - 1) - skip;
+            skipf_ = skipfield - skip;
             return *this;
         }
 
@@ -348,8 +347,8 @@ private:
         inline hive_iterator operator--(int) { auto copy = *this; --*this; return copy; }
 
     private:
-        explicit hive_iterator(group_pointer_type g, aligned_pointer_type e, skipfield_pointer_type s) :
-            group_pointer(std::move(g)), element_pointer(std::move(e)), skipfield_pointer(std::move(s)) {}
+        explicit hive_iterator(GroupPtr g, AlignedEltPtr e, SkipfieldPtr s) :
+            group_(std::move(g)), elt_(std::move(e)), skipf_(std::move(s)) {}
 
         void advance_forward(difference_type n) {
             // Code explanation:
@@ -369,166 +368,166 @@ private:
             //   b. If there are erased elements in the group, we manually iterate and subtract 1 from distance on each iteration,
             //      until the new iterator location is found ie. distance = 0.
 
-            // Note: incrementing element_pointer is avoided until necessary to avoid needless calculations.
+            // Note: incrementing elt_ is avoided until necessary to avoid needless calculations.
 
             // Check that we're not already at end()
-            assert(!(element_pointer == group_pointer->last_endpoint && group_pointer->next_group == nullptr));
+            assert(!(elt_ == group_->last_endpoint && group_->next_group == nullptr));
 
             // Special case for initial element pointer and initial group (we don't know how far into the group the element pointer is)
-            if (element_pointer != group_pointer->elements + group_pointer->skipfield[0]) {
+            if (elt_ != group_->elements + group_->skipfield[0]) {
                 // ie. != first non-erased element in group
-                const difference_type distance_from_end = static_cast<difference_type>(group_pointer->last_endpoint - element_pointer);
+                const difference_type distance_from_end = static_cast<difference_type>(group_->last_endpoint - elt_);
 
-                if (group_pointer->size == static_cast<skipfield_type>(distance_from_end)) {
+                if (group_->size == static_cast<skipfield_type>(distance_from_end)) {
                     // ie. if there are no erasures in the group (using endpoint - elements_start to determine number of elements in group just in case this is the last group of the hive, in which case group->last_endpoint != group->elements + group->capacity)
                     if (n < distance_from_end) {
-                        element_pointer += n;
-                        skipfield_pointer += n;
+                        elt_ += n;
+                        skipf_ += n;
                         return;
-                    } else if (group_pointer->next_group == nullptr) {
+                    } else if (group_->next_group == nullptr) {
                         // either we've reached end() or gone beyond it, so bound to end()
-                        element_pointer = group_pointer->last_endpoint;
-                        skipfield_pointer += distance_from_end;
+                        elt_ = group_->last_endpoint;
+                        skipf_ += distance_from_end;
                         return;
                     } else {
                         n -= distance_from_end;
                     }
                 } else {
-                    const skipfield_pointer_type endpoint = skipfield_pointer + distance_from_end;
+                    const SkipfieldPtr endpoint = skipf_ + distance_from_end;
 
                     while (true) {
-                        ++skipfield_pointer;
-                        skipfield_pointer += skipfield_pointer[0];
+                        ++skipf_;
+                        skipf_ += skipf_[0];
                         --n;
 
-                        if (skipfield_pointer == endpoint) {
+                        if (skipf_ == endpoint) {
                             break;
                         } else if (n == 0) {
-                            element_pointer = group_pointer->elements + (skipfield_pointer - group_pointer->skipfield);
+                            elt_ = group_->elements + (skipf_ - group_->skipfield);
                             return;
                         }
                     }
 
-                    if (group_pointer->next_group == nullptr) {
+                    if (group_->next_group == nullptr) {
                         // either we've reached end() or gone beyond it, so bound to end()
-                        element_pointer = group_pointer->last_endpoint;
+                        elt_ = group_->last_endpoint;
                         return;
                     }
                 }
 
-                group_pointer = group_pointer->next_group;
+                group_ = group_->next_group;
 
                 if (n == 0) {
-                    element_pointer = group_pointer->elements + group_pointer->skipfield[0];
-                    skipfield_pointer = group_pointer->skipfield + group_pointer->skipfield[0];
+                    elt_ = group_->elements + group_->skipfield[0];
+                    skipf_ = group_->skipfield + group_->skipfield[0];
                     return;
                 }
             }
 
             // Intermediary groups - at the start of this code block and the subsequent block, the position of the iterator is assumed to be the first non-erased element in the current group:
-            while (static_cast<difference_type>(group_pointer->size) <= n) {
-                if (group_pointer->next_group == nullptr) {
+            while (static_cast<difference_type>(group_->size) <= n) {
+                if (group_->next_group == nullptr) {
                     // either we've reached end() or gone beyond it, so bound to end()
-                    element_pointer = group_pointer->last_endpoint;
-                    skipfield_pointer = group_pointer->skipfield + (group_pointer->last_endpoint - group_pointer->elements);
+                    elt_ = group_->last_endpoint;
+                    skipf_ = group_->skipfield + (group_->last_endpoint - group_->elements);
                     return;
                 } else {
-                    n -= group_pointer->size;
-                    group_pointer = group_pointer->next_group;
+                    n -= group_->size;
+                    group_ = group_->next_group;
                     if (n == 0) {
-                        element_pointer = group_pointer->elements + group_pointer->skipfield[0];
-                        skipfield_pointer = group_pointer->skipfield + group_pointer->skipfield[0];
+                        elt_ = group_->elements + group_->skipfield[0];
+                        skipf_ = group_->skipfield + group_->skipfield[0];
                         return;
                     }
                 }
             }
 
             // Final group (if not already reached):
-            if (group_pointer->free_list_head == std::numeric_limits<skipfield_type>::max()) {
+            if (group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
                 // No erasures in this group, use straight pointer addition
-                element_pointer = group_pointer->elements + n;
-                skipfield_pointer = group_pointer->skipfield + n;
+                elt_ = group_->elements + n;
+                skipf_ = group_->skipfield + n;
             } else {
                 // ie. size > n - safe to ignore endpoint check condition while incrementing:
-                skipfield_pointer = group_pointer->skipfield + group_pointer->skipfield[0];
+                skipf_ = group_->skipfield + group_->skipfield[0];
                 do {
-                    ++skipfield_pointer;
-                    skipfield_pointer += *skipfield_pointer;
+                    ++skipf_;
+                    skipf_ += *skipf_;
                 } while (--n != 0);
-                element_pointer = group_pointer->elements + (skipfield_pointer - group_pointer->skipfield);
+                elt_ = group_->elements + (skipf_ - group_->skipfield);
             }
         }
 
         void advance_backward(difference_type n) {
             assert(n < 0);
-            assert(!((element_pointer == group_pointer->elements + *(group_pointer->skipfield)) && group_pointer->previous_group == nullptr)); // check that we're not already at begin()
+            assert(!((elt_ == group_->elements + *(group_->skipfield)) && group_->previous_group == nullptr)); // check that we're not already at begin()
 
             // Special case for initial element pointer and initial group (we don't know how far into the group the element pointer is)
-            if (element_pointer != group_pointer->last_endpoint) {
-                if (group_pointer->free_list_head == std::numeric_limits<skipfield_type>::max()) {
+            if (elt_ != group_->last_endpoint) {
+                if (group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
                     // ie. no prior erasures have occurred in this group
-                    difference_type distance_from_beginning = static_cast<difference_type>(group_pointer->elements - element_pointer);
+                    difference_type distance_from_beginning = static_cast<difference_type>(group_->elements - elt_);
 
                     if (n >= distance_from_beginning) {
-                        element_pointer += n;
-                        skipfield_pointer += n;
+                        elt_ += n;
+                        skipf_ += n;
                         return;
-                    } else if (group_pointer->previous_group == nullptr) {
+                    } else if (group_->previous_group == nullptr) {
                         // ie. we've gone before begin(), so bound to begin()
-                        element_pointer = group_pointer->elements;
-                        skipfield_pointer = group_pointer->skipfield;
+                        elt_ = group_->elements;
+                        skipf_ = group_->skipfield;
                         return;
                     } else {
                         n -= distance_from_beginning;
                     }
                 } else {
-                    const skipfield_pointer_type beginning_point = group_pointer->skipfield + group_pointer->skipfield[0];
-                    while (skipfield_pointer != beginning_point) {
-                        --skipfield_pointer;
-                        skipfield_pointer -= skipfield_pointer[0];
+                    const SkipfieldPtr beginning_point = group_->skipfield + group_->skipfield[0];
+                    while (skipf_ != beginning_point) {
+                        --skipf_;
+                        skipf_ -= skipf_[0];
                         if (++n == 0) {
-                            element_pointer = group_pointer->elements + (skipfield_pointer - group_pointer->skipfield);
+                            elt_ = group_->elements + (skipf_ - group_->skipfield);
                             return;
                         }
                     }
 
-                    if (group_pointer->previous_group == nullptr) {
-                        element_pointer = group_pointer->elements + group_pointer->skipfield[0]; // This is first group, so bound to begin() (just in case final decrement took us before begin())
-                        skipfield_pointer = group_pointer->skipfield + group_pointer->skipfield[0];
+                    if (group_->previous_group == nullptr) {
+                        elt_ = group_->elements + group_->skipfield[0]; // This is first group, so bound to begin() (just in case final decrement took us before begin())
+                        skipf_ = group_->skipfield + group_->skipfield[0];
                         return;
                     }
                 }
-                group_pointer = group_pointer->previous_group;
+                group_ = group_->previous_group;
             }
 
             // Intermediary groups - at the start of this code block and the subsequent block, the position of the iterator is assumed to be either the first non-erased element in the next group over, or end():
-            while (n < -static_cast<difference_type>(group_pointer->size)) {
-                if (group_pointer->previous_group == nullptr) {
+            while (n < -static_cast<difference_type>(group_->size)) {
+                if (group_->previous_group == nullptr) {
                     // we've gone beyond begin(), so bound to it
-                    element_pointer = group_pointer->elements + group_pointer->skipfield[0];
-                    skipfield_pointer = group_pointer->skipfield + group_pointer->skipfield[0];
+                    elt_ = group_->elements + group_->skipfield[0];
+                    skipf_ = group_->skipfield + group_->skipfield[0];
                     return;
                 }
-                n += group_pointer->size;
-                group_pointer = group_pointer->previous_group;
+                n += group_->size;
+                group_ = group_->previous_group;
             }
 
             // Final group (if not already reached):
-            if (n == -static_cast<difference_type>(group_pointer->size)) {
-                element_pointer = group_pointer->elements + group_pointer->skipfield[0];
-                skipfield_pointer = group_pointer->skipfield + group_pointer->skipfield[0];
-            } else if (group_pointer->free_list_head == std::numeric_limits<skipfield_type>::max()) {
+            if (n == -static_cast<difference_type>(group_->size)) {
+                elt_ = group_->elements + group_->skipfield[0];
+                skipf_ = group_->skipfield + group_->skipfield[0];
+            } else if (group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
                 // ie. no erased elements in this group
-                element_pointer = reinterpret_cast<aligned_pointer_type>(group_pointer->skipfield) + n;
-                skipfield_pointer = (group_pointer->skipfield + group_pointer->capacity) + n;
+                elt_ = reinterpret_cast<AlignedEltPtr>(group_->skipfield) + n;
+                skipf_ = (group_->skipfield + group_->capacity) + n;
             } else {
                 // ie. no more groups to traverse but there are erased elements in this group
-                skipfield_pointer = group_pointer->skipfield + group_pointer->capacity;
+                skipf_ = group_->skipfield + group_->capacity;
                 do {
-                    --skipfield_pointer;
-                    skipfield_pointer -= skipfield_pointer[0];
+                    --skipf_;
+                    skipf_ -= skipf_[0];
                 } while (++n != 0);
-                element_pointer = group_pointer->elements + (skipfield_pointer - group_pointer->skipfield);
+                elt_ = group_->elements + (skipf_ - group_->skipfield);
             }
         }
 
@@ -566,41 +565,41 @@ private:
             }
 
             difference_type distance = 0;
-            if (first.group_pointer != last.group_pointer) {
-                if (first.group_pointer->free_list_head == std::numeric_limits<skipfield_type>::max()) {
+            if (first.group_ != last.group_) {
+                if (first.group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
                     // If no prior erasures have occured in this group we can do simple addition
-                    distance += static_cast<difference_type>(first.group_pointer->last_endpoint - first.element_pointer);
-                } else if (first.element_pointer == first.group_pointer->elements + first.group_pointer->skipfield[0]) {
+                    distance += static_cast<difference_type>(first.group_->last_endpoint - first.elt_);
+                } else if (first.elt_ == first.group_->elements + first.group_->skipfield[0]) {
                     // ie. element is at start of group - rare case
-                    distance += static_cast<difference_type>(first.group_pointer->size);
+                    distance += static_cast<difference_type>(first.group_->size);
                 } else {
                     // Manually iterate to find distance to end of group:
-                    const skipfield_pointer_type endpoint = first.skipfield_pointer + (first.group_pointer->last_endpoint - first.element_pointer);
+                    const SkipfieldPtr endpoint = first.skipf_ + (first.group_->last_endpoint - first.elt_);
 
-                    while (first.skipfield_pointer != endpoint) {
-                        ++first.skipfield_pointer;
-                        first.skipfield_pointer += first.skipfield_pointer[0];
+                    while (first.skipf_ != endpoint) {
+                        ++first.skipf_;
+                        first.skipf_ += first.skipf_[0];
                         ++distance;
                     }
                 }
 
-                first.group_pointer = first.group_pointer->next_group;
-                while (first.group_pointer != last.group_pointer) {
-                    distance += static_cast<difference_type>(first.group_pointer->size);
-                    first.group_pointer = first.group_pointer->next_group;
+                first.group_ = first.group_->next_group;
+                while (first.group_ != last.group_) {
+                    distance += static_cast<difference_type>(first.group_->size);
+                    first.group_ = first.group_->next_group;
                 }
-                first.skipfield_pointer = first.group_pointer->skipfield;
+                first.skipf_ = first.group_->skipfield;
             }
 
-            if (last.group_pointer->free_list_head == std::numeric_limits<skipfield_type>::max()) {
-                distance += last.skipfield_pointer - first.skipfield_pointer;
-            } else if (last.group_pointer->last_endpoint - 1 >= last.element_pointer || last.element_pointer + *(last.skipfield_pointer + 1) == last.group_pointer->last_endpoint) {
+            if (last.group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
+                distance += last.skipf_ - first.skipf_;
+            } else if (last.group_->last_endpoint - 1 >= last.elt_ || last.elt_ + *(last.skipf_ + 1) == last.group_->last_endpoint) {
                 // ie. if last is .end() or the last element in the block
-                distance += static_cast<difference_type>(last.group_pointer->size) - (last.group_pointer->last_endpoint - last.element_pointer);
+                distance += static_cast<difference_type>(last.group_->size) - (last.group_->last_endpoint - last.elt_);
             } else {
-                while (first.skipfield_pointer != last.skipfield_pointer) {
-                    ++first.skipfield_pointer;
-                    first.skipfield_pointer += *first.skipfield_pointer;
+                while (first.skipf_ != last.skipf_) {
+                    ++first.skipf_;
+                    first.skipf_ += *first.skipf_;
                     ++distance;
                 }
             }
@@ -700,9 +699,9 @@ private:
 private:
     iterator end_;
     iterator begin_;
-    group_pointer_type groups_with_erasures_list_head = group_pointer_type();
+    GroupPtr groups_with_erasures_list_head = GroupPtr();
         // Head of the singly-linked list of groups which have erased-element memory locations available for re-use
-    group_pointer_type unused_groups_head = group_pointer_type();
+    GroupPtr unused_groups_head = GroupPtr();
        // Head of singly-linked list of groups retained by erase()/clear() or created by reserve()
     size_type size_ = 0;
     size_type capacity_ = 0;
@@ -770,12 +769,12 @@ public:
 
 private:
     inline void blank() {
-        end_.group_pointer = nullptr;
-        end_.element_pointer = nullptr;
-        end_.skipfield_pointer = nullptr;
-        begin_.group_pointer = nullptr;
-        begin_.element_pointer = nullptr;
-        begin_.skipfield_pointer = nullptr;
+        end_.group_ = nullptr;
+        end_.elt_ = nullptr;
+        end_.skipf_ = nullptr;
+        begin_.group_ = nullptr;
+        begin_.elt_ = nullptr;
+        begin_.skipf_ = nullptr;
         groups_with_erasures_list_head = nullptr;
         unused_groups_head = nullptr;
         size_ = 0;
@@ -952,7 +951,7 @@ public:
     inline const_reverse_iterator crend() const noexcept { return const_reverse_iterator(begin_); }
 
 private:
-    group_pointer_type allocate_new_group(skipfield_type elements_per_group, group_pointer_type previous = nullptr) {
+    GroupPtr allocate_new_group(skipfield_type elements_per_group, GroupPtr previous = nullptr) {
         auto ga = group_allocator_type(get_allocator());
         auto new_group = std::allocator_traits<group_allocator_type>::allocate(ga, 1, 0);
         hive_try_rollback([&]() {
@@ -963,7 +962,7 @@ private:
         return new_group;
     }
 
-    inline void deallocate_group(group_pointer_type g) {
+    inline void deallocate_group(GroupPtr g) {
         auto ga = group_allocator_type(get_allocator());
         auto aa = aligned_struct_allocator_type(get_allocator());
         std::allocator_traits<aligned_struct_allocator_type>::deallocate(aa, bitcast_pointer<aligned_struct_pointer_type>(g->elements), get_aligned_block_capacity(g->capacity));
@@ -971,66 +970,66 @@ private:
     }
 
     void destroy_all_data() {
-        if (begin_.group_pointer != nullptr) {
-            end_.group_pointer->next_group = unused_groups_head;
+        if (begin_.group_ != nullptr) {
+            end_.group_->next_group = unused_groups_head;
 
             if constexpr (!std::is_trivially_destructible<T>::value) {
                 if (size_ != 0) {
                     while (true) {
                         // Erase elements without bothering to update skipfield - much faster:
-                        const aligned_pointer_type end_pointer = begin_.group_pointer->last_endpoint;
+                        const AlignedEltPtr end_pointer = begin_.group_->last_endpoint;
                         do {
-                            std::allocator_traits<allocator_type>::destroy(allocator_, bitcast_pointer<pointer>(begin_.element_pointer));
-                            begin_.element_pointer += static_cast<size_type>(*++begin_.skipfield_pointer) + 1u;
-                            begin_.skipfield_pointer += *begin_.skipfield_pointer;
-                        } while (begin_.element_pointer != end_pointer); // ie. beyond end of available data
+                            std::allocator_traits<allocator_type>::destroy(allocator_, bitcast_pointer<pointer>(begin_.elt_));
+                            begin_.elt_ += static_cast<size_type>(*++begin_.skipf_) + 1u;
+                            begin_.skipf_ += *begin_.skipf_;
+                        } while (begin_.elt_ != end_pointer); // ie. beyond end of available data
 
-                        const group_pointer_type next_group = begin_.group_pointer->next_group;
-                        deallocate_group(begin_.group_pointer);
-                        begin_.group_pointer = next_group;
+                        const GroupPtr next_group = begin_.group_->next_group;
+                        deallocate_group(begin_.group_);
+                        begin_.group_ = next_group;
 
                         if (next_group == unused_groups_head) {
                             break;
                         }
-                        begin_.element_pointer = next_group->elements + next_group->skipfield[0];
-                        begin_.skipfield_pointer = next_group->skipfield + next_group->skipfield[0];
+                        begin_.elt_ = next_group->elements + next_group->skipfield[0];
+                        begin_.skipf_ = next_group->skipfield + next_group->skipfield[0];
                     }
                 }
             }
 
-            while (begin_.group_pointer != nullptr) {
-                const group_pointer_type next_group = begin_.group_pointer->next_group;
-                deallocate_group(begin_.group_pointer);
-                begin_.group_pointer = next_group;
+            while (begin_.group_ != nullptr) {
+                const GroupPtr next_group = begin_.group_->next_group;
+                deallocate_group(begin_.group_);
+                begin_.group_ = next_group;
             }
         }
     }
 
     void initialize(const skipfield_type first_group_size) {
-        end_.group_pointer = begin_.group_pointer = allocate_new_group(first_group_size);
-        end_.element_pointer = begin_.element_pointer = begin_.group_pointer->elements;
-        end_.skipfield_pointer = begin_.skipfield_pointer = begin_.group_pointer->skipfield;
+        end_.group_ = begin_.group_ = allocate_new_group(first_group_size);
+        end_.elt_ = begin_.elt_ = begin_.group_->elements;
+        end_.skipf_ = begin_.skipf_ = begin_.group_->skipfield;
         capacity_ = first_group_size;
     }
 
     void update_skipblock(const iterator &new_location, skipfield_type prev_free_list_index) {
-        const skipfield_type new_value = static_cast<skipfield_type>(*(new_location.skipfield_pointer) - 1);
+        const skipfield_type new_value = static_cast<skipfield_type>(*(new_location.skipf_) - 1);
 
         if (new_value != 0) // ie. skipfield was not 1, ie. a single-node skipblock, with no additional nodes to update
         {
             // set (new) start and (original) end of skipblock to new value:
-            *(new_location.skipfield_pointer + new_value) = *(new_location.skipfield_pointer + 1) = new_value;
+            *(new_location.skipf_ + new_value) = *(new_location.skipf_ + 1) = new_value;
 
             // transfer free list node to new start node:
             ++(groups_with_erasures_list_head->free_list_head);
 
             if (prev_free_list_index != std::numeric_limits<skipfield_type>::max()) // ie. not the tail free list node
             {
-                *(bitcast_pointer<skipfield_pointer_type>(new_location.group_pointer->elements + prev_free_list_index) + 1) = groups_with_erasures_list_head->free_list_head;
+                *(bitcast_pointer<SkipfieldPtr>(new_location.group_->elements + prev_free_list_index) + 1) = groups_with_erasures_list_head->free_list_head;
             }
 
-            *(bitcast_pointer<skipfield_pointer_type>(new_location.element_pointer + 1)) = prev_free_list_index;
-            *(bitcast_pointer<skipfield_pointer_type>(new_location.element_pointer + 1) + 1) = std::numeric_limits<skipfield_type>::max();
+            *(bitcast_pointer<SkipfieldPtr>(new_location.elt_ + 1)) = prev_free_list_index;
+            *(bitcast_pointer<SkipfieldPtr>(new_location.elt_ + 1) + 1) = std::numeric_limits<skipfield_type>::max();
         }
         else // single-node skipblock, remove skipblock
         {
@@ -1038,17 +1037,17 @@ private:
 
             if (prev_free_list_index != std::numeric_limits<skipfield_type>::max()) // ie. not the last free list node
             {
-                *(bitcast_pointer<skipfield_pointer_type>(new_location.group_pointer->elements + prev_free_list_index) + 1) = std::numeric_limits<skipfield_type>::max();
+                *(bitcast_pointer<SkipfieldPtr>(new_location.group_->elements + prev_free_list_index) + 1) = std::numeric_limits<skipfield_type>::max();
             } else {
                 // remove this group from the list of groups with erasures
                 groups_with_erasures_list_head = groups_with_erasures_list_head->erasures_list_next_group;
             }
         }
 
-        *(new_location.skipfield_pointer) = 0;
-        ++(new_location.group_pointer->size);
+        *(new_location.skipf_) = 0;
+        ++(new_location.group_->size);
 
-        if (new_location.group_pointer == begin_.group_pointer && new_location.element_pointer < begin_.element_pointer)
+        if (new_location.group_ == begin_.group_ && new_location.elt_ < begin_.elt_)
         { /* ie. begin_ was moved forwards as the result of an erasure at some point, this erased element is before the current begin, hence, set current begin iterator to this element */
             begin_ = new_location;
         }
@@ -1067,22 +1066,22 @@ public:
 
     template<class... Args>
     iterator emplace(Args&&... args) {
-        if (end_.element_pointer != nullptr) {
+        if (end_.elt_ != nullptr) {
             if (groups_with_erasures_list_head == nullptr) {
-                if (end_.element_pointer != bitcast_pointer<aligned_pointer_type>(end_.group_pointer->skipfield)) {
+                if (end_.elt_ != bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield)) {
                     const iterator return_iterator = end_;
-                    std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.element_pointer), static_cast<Args&&>(args)...);
-                    ++end_.element_pointer;
-                    end_.group_pointer->last_endpoint = end_.element_pointer;
-                    ++(end_.group_pointer->size);
-                    ++end_.skipfield_pointer;
+                    std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.elt_), static_cast<Args&&>(args)...);
+                    ++end_.elt_;
+                    end_.group_->last_endpoint = end_.elt_;
+                    ++(end_.group_->size);
+                    ++end_.skipf_;
                     ++size_;
                     return return_iterator;
                 }
-                group_pointer_type next_group;
+                GroupPtr next_group;
                 if (unused_groups_head == nullptr) {
                     const skipfield_type new_group_size = (size_ < static_cast<size_type>(max_group_capacity_)) ? static_cast<skipfield_type>(size_) : max_group_capacity_;
-                    next_group = allocate_new_group(new_group_size, end_.group_pointer);
+                    next_group = allocate_new_group(new_group_size, end_.group_);
                     hive_try_rollback([&]() {
                         std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(next_group->elements), static_cast<Args&&>(args)...);
                     }, [&]() {
@@ -1093,21 +1092,21 @@ public:
                     next_group = unused_groups_head;
                     std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(next_group->elements), static_cast<Args&&>(args)...);
                     unused_groups_head = next_group->next_group;
-                    next_group->reset(1, nullptr, end_.group_pointer, end_.group_pointer->group_number + 1u);
+                    next_group->reset(1, nullptr, end_.group_, end_.group_->group_number + 1u);
                 }
 
-                end_.group_pointer->next_group = next_group;
-                end_.group_pointer = next_group;
-                end_.element_pointer = next_group->last_endpoint;
-                end_.skipfield_pointer = next_group->skipfield + 1;
+                end_.group_->next_group = next_group;
+                end_.group_ = next_group;
+                end_.elt_ = next_group->last_endpoint;
+                end_.skipf_ = next_group->skipfield + 1;
                 ++size_;
 
                 return iterator(next_group, next_group->elements, next_group->skipfield);
             } else {
                 auto new_location = iterator(groups_with_erasures_list_head, groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head, groups_with_erasures_list_head->skipfield + groups_with_erasures_list_head->free_list_head);
 
-                skipfield_type prev_free_list_index = *(bitcast_pointer<skipfield_pointer_type>(new_location.element_pointer));
-                std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(new_location.element_pointer), static_cast<Args&&>(args)...);
+                skipfield_type prev_free_list_index = *(bitcast_pointer<SkipfieldPtr>(new_location.elt_));
+                std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(new_location.elt_), static_cast<Args&&>(args)...);
                 update_skipblock(new_location, prev_free_list_index);
 
                 return new_location;
@@ -1115,11 +1114,11 @@ public:
         } else {
             initialize(min_group_capacity_);
             hive_try_rollback([&]() {
-                std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.element_pointer++), static_cast<Args&&>(args)...);
+                std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.elt_++), static_cast<Args&&>(args)...);
             }, [&]() {
                 reset();
             });
-            ++end_.skipfield_pointer;
+            ++end_.skipf_;
             size_ = 1;
             return begin_;
         }
@@ -1128,13 +1127,13 @@ public:
 private:
     void recover_from_partial_fill() {
         if constexpr (!std::is_nothrow_copy_constructible<T>::value) {
-            end_.group_pointer->last_endpoint = end_.element_pointer;
-            auto elements_constructed_before_exception = static_cast<skipfield_type>(end_.element_pointer - end_.group_pointer->elements);
-            end_.group_pointer->size = elements_constructed_before_exception;
-            end_.skipfield_pointer = end_.group_pointer->skipfield + elements_constructed_before_exception;
+            end_.group_->last_endpoint = end_.elt_;
+            auto elements_constructed_before_exception = static_cast<skipfield_type>(end_.elt_ - end_.group_->elements);
+            end_.group_->size = elements_constructed_before_exception;
+            end_.skipf_ = end_.group_->skipfield + elements_constructed_before_exception;
             size_ += elements_constructed_before_exception;
-            unused_groups_head = end_.group_pointer->next_group;
-            end_.group_pointer->next_group = nullptr;
+            unused_groups_head = end_.group_->next_group;
+            end_.group_->next_group = nullptr;
         }
     }
 
@@ -1145,101 +1144,101 @@ private:
                 if constexpr (sizeof(aligned_T) != sizeof(T)) {
                     // to avoid potentially violating memory boundaries in line below, create an initial object copy of same (but aligned) type
                     alignas(aligned_T) T aligned_copy = element;
-                    std::fill_n(end_.element_pointer, n, *bitcast_pointer<aligned_pointer_type>(&aligned_copy));
+                    std::fill_n(end_.elt_, n, *bitcast_pointer<AlignedEltPtr>(&aligned_copy));
                 } else {
-                    std::fill_n(bitcast_pointer<pointer>(end_.element_pointer), n, element);
+                    std::fill_n(bitcast_pointer<pointer>(end_.elt_), n, element);
                 }
-                end_.element_pointer += n;
+                end_.elt_ += n;
             } else {
-                const aligned_pointer_type fill_end = end_.element_pointer + n;
+                const AlignedEltPtr fill_end = end_.elt_ + n;
                 do {
-                    std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.element_pointer), element);
-                } while (++end_.element_pointer != fill_end);
+                    std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.elt_), element);
+                } while (++end_.elt_ != fill_end);
             }
         } else {
-            const aligned_pointer_type fill_end = end_.element_pointer + n;
+            const AlignedEltPtr fill_end = end_.elt_ + n;
             do {
                 hive_try_rollback([&]() {
-                    std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.element_pointer), element);
+                    std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.elt_), element);
                 }, [&]() {
                     recover_from_partial_fill();
                 });
-            } while (++end_.element_pointer != fill_end);
+            } while (++end_.elt_ != fill_end);
         }
         size_ += n;
     }
 
     // For catch blocks in range_fill_skipblock and fill_skipblock
-    void recover_from_partial_skipblock_fill(aligned_pointer_type location, aligned_pointer_type current_location, skipfield_pointer_type skipfield_pointer, skipfield_type prev_free_list_node) {
+    void recover_from_partial_skipblock_fill(AlignedEltPtr location, AlignedEltPtr current_location, SkipfieldPtr skipf_, skipfield_type prev_free_list_node) {
         if constexpr (!std::is_nothrow_copy_constructible<T>::value) {
             // Reconstruct existing skipblock and free-list indexes to reflect partially-reused skipblock:
             const skipfield_type elements_constructed_before_exception = static_cast<skipfield_type>((current_location - 1) - location);
             groups_with_erasures_list_head->size = static_cast<skipfield_type>(groups_with_erasures_list_head->size + elements_constructed_before_exception);
             size_ += elements_constructed_before_exception;
 
-            std::memset(skipfield_pointer, 0, elements_constructed_before_exception * sizeof(skipfield_type));
+            std::memset(skipf_, 0, elements_constructed_before_exception * sizeof(skipfield_type));
 
-            *(bitcast_pointer<skipfield_pointer_type>(location + elements_constructed_before_exception)) = prev_free_list_node;
-            *(bitcast_pointer<skipfield_pointer_type>(location + elements_constructed_before_exception) + 1) = std::numeric_limits<skipfield_type>::max();
+            *(bitcast_pointer<SkipfieldPtr>(location + elements_constructed_before_exception)) = prev_free_list_node;
+            *(bitcast_pointer<SkipfieldPtr>(location + elements_constructed_before_exception) + 1) = std::numeric_limits<skipfield_type>::max();
 
             const skipfield_type new_skipblock_head_index = static_cast<skipfield_type>((location - groups_with_erasures_list_head->elements) + elements_constructed_before_exception);
             groups_with_erasures_list_head->free_list_head = new_skipblock_head_index;
 
             if (prev_free_list_node != std::numeric_limits<skipfield_type>::max()) {
-                *(bitcast_pointer<skipfield_pointer_type>(groups_with_erasures_list_head->elements + prev_free_list_node) + 1) = new_skipblock_head_index;
+                *(bitcast_pointer<SkipfieldPtr>(groups_with_erasures_list_head->elements + prev_free_list_node) + 1) = new_skipblock_head_index;
             }
         }
     }
 
-    void fill_skipblock(const T &element, aligned_pointer_type location, skipfield_pointer_type skipfield_pointer, skipfield_type size) {
+    void fill_skipblock(const T &element, AlignedEltPtr location, SkipfieldPtr skipf_, skipfield_type size) {
         if constexpr (std::is_nothrow_copy_constructible<T>::value) {
             if constexpr (std::is_trivially_copyable<T>::value && std::is_trivially_copy_constructible<T>::value) {
                 if constexpr (sizeof(aligned_T) != sizeof(T)) {
                     alignas (alignof(aligned_T)) T aligned_copy = element;
-                    std::fill_n(location, size, *(bitcast_pointer<aligned_pointer_type>(&aligned_copy)));
+                    std::fill_n(location, size, *(bitcast_pointer<AlignedEltPtr>(&aligned_copy)));
                 } else {
                     std::fill_n(bitcast_pointer<pointer>(location), size, element);
                 }
             } else {
-                const aligned_pointer_type fill_end = location + size;
-                for (aligned_pointer_type p = location; p != fill_end; ++p) {
+                const AlignedEltPtr fill_end = location + size;
+                for (AlignedEltPtr p = location; p != fill_end; ++p) {
                     std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(p), element);
                 }
             }
         } else {
-            const aligned_pointer_type fill_end = location + size;
-            const skipfield_type prev_free_list_node = *(bitcast_pointer<skipfield_pointer_type>(location)); // in case of exception, grabbing indexes before free_list node is reused
+            const AlignedEltPtr fill_end = location + size;
+            const skipfield_type prev_free_list_node = *(bitcast_pointer<SkipfieldPtr>(location)); // in case of exception, grabbing indexes before free_list node is reused
 
-            for (aligned_pointer_type current_location = location; current_location != fill_end; ++current_location) {
+            for (AlignedEltPtr current_location = location; current_location != fill_end; ++current_location) {
                 hive_try_rollback([&]() {
                     std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(current_location), element);
                 }, [&]() {
-                    recover_from_partial_skipblock_fill(location, current_location, skipfield_pointer, prev_free_list_node);
+                    recover_from_partial_skipblock_fill(location, current_location, skipf_, prev_free_list_node);
                 });
             }
         }
 
-        std::memset(skipfield_pointer, 0, size * sizeof(skipfield_type)); // reset skipfield nodes within skipblock to 0
+        std::memset(skipf_, 0, size * sizeof(skipfield_type)); // reset skipfield nodes within skipblock to 0
         groups_with_erasures_list_head->size = static_cast<skipfield_type>(groups_with_erasures_list_head->size + size);
         size_ += size;
     }
 
-    void fill_unused_groups(size_type size, const T& element, size_type group_number, group_pointer_type previous_group, group_pointer_type current_group) {
-        end_.group_pointer = current_group;
-        for (; end_.group_pointer->capacity < size; end_.group_pointer = end_.group_pointer->next_group) {
-            const skipfield_type capacity = end_.group_pointer->capacity;
-            end_.group_pointer->reset(capacity, end_.group_pointer->next_group, previous_group, group_number++);
-            previous_group = end_.group_pointer;
+    void fill_unused_groups(size_type size, const T& element, size_type group_number, GroupPtr previous_group, GroupPtr current_group) {
+        end_.group_ = current_group;
+        for (; end_.group_->capacity < size; end_.group_ = end_.group_->next_group) {
+            const skipfield_type capacity = end_.group_->capacity;
+            end_.group_->reset(capacity, end_.group_->next_group, previous_group, group_number++);
+            previous_group = end_.group_;
             size -= static_cast<size_type>(capacity);
-            end_.element_pointer = end_.group_pointer->elements;
+            end_.elt_ = end_.group_->elements;
             fill(element, capacity);
         }
 
         // Deal with final group (partial fill)
-        unused_groups_head = end_.group_pointer->next_group;
-        end_.group_pointer->reset(static_cast<skipfield_type>(size), nullptr, previous_group, group_number);
-        end_.element_pointer = end_.group_pointer->elements;
-        end_.skipfield_pointer = end_.group_pointer->skipfield + size;
+        unused_groups_head = end_.group_->next_group;
+        end_.group_->reset(static_cast<skipfield_type>(size), nullptr, previous_group, group_number);
+        end_.elt_ = end_.group_->elements;
+        end_.skipf_ = end_.group_->skipfield + size;
         fill(element, static_cast<skipfield_type>(size));
     }
 
@@ -1260,25 +1259,25 @@ public:
         // Use up erased locations if available:
         while (groups_with_erasures_list_head != nullptr) {
             // skipblock loop: breaks when hive is exhausted of reusable skipblocks, or returns if size == 0
-            aligned_pointer_type const element_pointer = groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head;
-            skipfield_pointer_type const skipfield_pointer = groups_with_erasures_list_head->skipfield + groups_with_erasures_list_head->free_list_head;
-            const skipfield_type skipblock_size = *skipfield_pointer;
+            AlignedEltPtr const elt_ = groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head;
+            SkipfieldPtr const skipf_ = groups_with_erasures_list_head->skipfield + groups_with_erasures_list_head->free_list_head;
+            const skipfield_type skipblock_size = *skipf_;
 
-            if (groups_with_erasures_list_head == begin_.group_pointer && element_pointer < begin_.element_pointer)
+            if (groups_with_erasures_list_head == begin_.group_ && elt_ < begin_.elt_)
             {
-                begin_.element_pointer = element_pointer;
-                begin_.skipfield_pointer = skipfield_pointer;
+                begin_.elt_ = elt_;
+                begin_.skipf_ = skipf_;
             }
 
             if (skipblock_size <= size)
             {
-                groups_with_erasures_list_head->free_list_head = *(bitcast_pointer<skipfield_pointer_type>(element_pointer)); // set free list head to previous free list node
-                fill_skipblock(element, element_pointer, skipfield_pointer, skipblock_size);
+                groups_with_erasures_list_head->free_list_head = *(bitcast_pointer<SkipfieldPtr>(elt_)); // set free list head to previous free list node
+                fill_skipblock(element, elt_, skipf_, skipblock_size);
                 size -= skipblock_size;
 
                 if (groups_with_erasures_list_head->free_list_head != std::numeric_limits<skipfield_type>::max()) {
                     // there are more skipblocks to be filled in this group
-                    *(bitcast_pointer<skipfield_pointer_type>(groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head) + 1) = std::numeric_limits<skipfield_type>::max(); // set 'next' index of new free list head to 'end' (numeric max)
+                    *(bitcast_pointer<SkipfieldPtr>(groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head) + 1) = std::numeric_limits<skipfield_type>::max(); // set 'next' index of new free list head to 'end' (numeric max)
                 } else {
                     groups_with_erasures_list_head = groups_with_erasures_list_head->erasures_list_next_group; // change groups
                 }
@@ -1288,22 +1287,22 @@ public:
                 }
             } else {
                 // skipblock is larger than remaining number of elements
-                const skipfield_type prev_index = *(bitcast_pointer<skipfield_pointer_type>(element_pointer)); // save before element location is overwritten
-                fill_skipblock(element, element_pointer, skipfield_pointer, static_cast<skipfield_type>(size));
+                const skipfield_type prev_index = *(bitcast_pointer<SkipfieldPtr>(elt_)); // save before element location is overwritten
+                fill_skipblock(element, elt_, skipf_, static_cast<skipfield_type>(size));
                 const skipfield_type new_skipblock_size = static_cast<skipfield_type>(skipblock_size - size);
 
                 // Update skipfield (earlier nodes already memset'd in fill_skipblock function):
-                *(skipfield_pointer + size) = new_skipblock_size;
-                *(skipfield_pointer + skipblock_size - 1) = new_skipblock_size;
+                *(skipf_ + size) = new_skipblock_size;
+                *(skipf_ + skipblock_size - 1) = new_skipblock_size;
                 groups_with_erasures_list_head->free_list_head = static_cast<skipfield_type>(groups_with_erasures_list_head->free_list_head + size); // set free list head to new start node
 
                 // Update free list with new head:
-                *(bitcast_pointer<skipfield_pointer_type>(element_pointer + size)) = prev_index;
-                *(bitcast_pointer<skipfield_pointer_type>(element_pointer + size) + 1) = std::numeric_limits<skipfield_type>::max();
+                *(bitcast_pointer<SkipfieldPtr>(elt_ + size)) = prev_index;
+                *(bitcast_pointer<SkipfieldPtr>(elt_ + size) + 1) = std::numeric_limits<skipfield_type>::max();
 
                 if (prev_index != std::numeric_limits<skipfield_type>::max())
                 {
-                    *(bitcast_pointer<skipfield_pointer_type>(groups_with_erasures_list_head->elements + prev_index) + 1) = groups_with_erasures_list_head->free_list_head; // set 'next' index of previous skipblock to new start of skipblock
+                    *(bitcast_pointer<SkipfieldPtr>(groups_with_erasures_list_head->elements + prev_index) + 1) = groups_with_erasures_list_head->free_list_head; // set 'next' index of previous skipblock to new start of skipblock
                 }
 
                 return;
@@ -1314,19 +1313,19 @@ public:
         // Use up remaining available element locations in end group:
         // This variable is either the remaining capacity of the group or the number of elements yet to be filled, whichever is smaller:
         const skipfield_type group_remainder = (static_cast<skipfield_type>(
-            bitcast_pointer<aligned_pointer_type>(end_.group_pointer->skipfield) - end_.element_pointer) >= size) ?
+            bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield) - end_.elt_) >= size) ?
             static_cast<skipfield_type>(size) :
-            static_cast<skipfield_type>(bitcast_pointer<aligned_pointer_type>(end_.group_pointer->skipfield) - end_.element_pointer);
+            static_cast<skipfield_type>(bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield) - end_.elt_);
 
         if (group_remainder != 0)
         {
             fill(element, group_remainder);
-            end_.group_pointer->last_endpoint = end_.element_pointer;
-            end_.group_pointer->size = static_cast<skipfield_type>(end_.group_pointer->size + group_remainder);
+            end_.group_->last_endpoint = end_.elt_;
+            end_.group_->size = static_cast<skipfield_type>(end_.group_->size + group_remainder);
 
             if (size == group_remainder) // Ie. remaining capacity was >= remaining elements to be filled
             {
-                end_.skipfield_pointer = end_.group_pointer->skipfield + end_.group_pointer->size;
+                end_.skipf_ = end_.group_->skipfield + end_.group_->size;
                 return;
             }
 
@@ -1335,8 +1334,8 @@ public:
 
 
         // Use unused groups:
-        end_.group_pointer->next_group = unused_groups_head;
-        fill_unused_groups(size, element, end_.group_pointer->group_number + 1, end_.group_pointer, unused_groups_head);
+        end_.group_->next_group = unused_groups_head;
+        fill_unused_groups(size, element, end_.group_->group_number + 1, end_.group_, unused_groups_head);
     }
 
 
@@ -1346,19 +1345,19 @@ private:
     template <class iterator_type>
     iterator_type range_fill(iterator_type it, skipfield_type size) {
         if constexpr (std::is_nothrow_copy_constructible<T>::value) {
-            const aligned_pointer_type fill_end = end_.element_pointer + size;
+            const AlignedEltPtr fill_end = end_.elt_ + size;
             do {
-                std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.element_pointer), *it++);
-            } while (++end_.element_pointer != fill_end);
+                std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.elt_), *it++);
+            } while (++end_.elt_ != fill_end);
         } else {
-            const aligned_pointer_type fill_end = end_.element_pointer + size;
+            const AlignedEltPtr fill_end = end_.elt_ + size;
             do {
                 hive_try_rollback([&]() {
-                    std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.element_pointer), *it++);
+                    std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(end_.elt_), *it++);
                 }, [&]() {
                     recover_from_partial_fill();
                 });
-            } while (++end_.element_pointer != fill_end);
+            } while (++end_.elt_ != fill_end);
         }
 
         size_ += size;
@@ -1366,48 +1365,48 @@ private:
     }
 
     template<class It>
-    It range_fill_skipblock(It it, aligned_pointer_type location, skipfield_pointer_type skipfield_pointer, skipfield_type n) {
-        const aligned_pointer_type fill_end = location + n;
+    It range_fill_skipblock(It it, AlignedEltPtr location, SkipfieldPtr skipf_, skipfield_type n) {
+        const AlignedEltPtr fill_end = location + n;
         if constexpr (std::is_nothrow_copy_constructible<T>::value) {
-            for (aligned_pointer_type current_location = location; current_location != fill_end; ++current_location) {
+            for (AlignedEltPtr current_location = location; current_location != fill_end; ++current_location) {
                 std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(current_location), *it++);
             }
         } else {
             // in case of exception, grabbing indexes before free_list node is reused
-            const skipfield_type prev_free_list_node = *bitcast_pointer<skipfield_pointer_type>(location);
-            for (aligned_pointer_type current_location = location; current_location != fill_end; ++current_location) {
+            const skipfield_type prev_free_list_node = *bitcast_pointer<SkipfieldPtr>(location);
+            for (AlignedEltPtr current_location = location; current_location != fill_end; ++current_location) {
                 hive_try_rollback([&]() {
                     std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(current_location), *it++);
                 }, [&]() {
-                    recover_from_partial_skipblock_fill(location, current_location, skipfield_pointer, prev_free_list_node);
+                    recover_from_partial_skipblock_fill(location, current_location, skipf_, prev_free_list_node);
                 });
             }
         }
-        std::memset(skipfield_pointer, 0, n * sizeof(skipfield_type)); // reset skipfield nodes within skipblock to 0
+        std::memset(skipf_, 0, n * sizeof(skipfield_type)); // reset skipfield nodes within skipblock to 0
         groups_with_erasures_list_head->size = static_cast<skipfield_type>(groups_with_erasures_list_head->size + n);
         size_ += n;
         return it;
     }
 
     template<class It>
-    void range_fill_unused_groups(size_type size, It it, size_type group_number, group_pointer_type previous_group, group_pointer_type current_group) {
-        end_.group_pointer = current_group;
+    void range_fill_unused_groups(size_type size, It it, size_type group_number, GroupPtr previous_group, GroupPtr current_group) {
+        end_.group_ = current_group;
 
-        for (; end_.group_pointer->capacity < size; end_.group_pointer = end_.group_pointer->next_group)
+        for (; end_.group_->capacity < size; end_.group_ = end_.group_->next_group)
         {
-            const skipfield_type capacity = end_.group_pointer->capacity;
-            end_.group_pointer->reset(capacity, end_.group_pointer->next_group, previous_group, group_number++);
-            previous_group = end_.group_pointer;
+            const skipfield_type capacity = end_.group_->capacity;
+            end_.group_->reset(capacity, end_.group_->next_group, previous_group, group_number++);
+            previous_group = end_.group_;
             size -= static_cast<size_type>(capacity);
-            end_.element_pointer = end_.group_pointer->elements;
+            end_.elt_ = end_.group_->elements;
             it = range_fill(it, capacity);
         }
 
         // Deal with final group (partial fill)
-        unused_groups_head = end_.group_pointer->next_group;
-        end_.group_pointer->reset(static_cast<skipfield_type>(size), nullptr, previous_group, group_number);
-        end_.element_pointer = end_.group_pointer->elements;
-        end_.skipfield_pointer = end_.group_pointer->skipfield + size;
+        unused_groups_head = end_.group_->next_group;
+        end_.group_->reset(static_cast<skipfield_type>(size), nullptr, previous_group, group_number);
+        end_.elt_ = end_.group_->elements;
+        end_.skipf_ = end_.group_->skipfield + size;
         range_fill(it, static_cast<skipfield_type>(size));
     }
 
@@ -1431,21 +1430,21 @@ private:
 #endif
             reserve(size_ + n);
             while (groups_with_erasures_list_head != nullptr) {
-                aligned_pointer_type element_pointer = groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head;
-                skipfield_pointer_type skipfield_pointer = groups_with_erasures_list_head->skipfield + groups_with_erasures_list_head->free_list_head;
-                skipfield_type skipblock_size = *skipfield_pointer;
+                AlignedEltPtr elt_ = groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head;
+                SkipfieldPtr skipf_ = groups_with_erasures_list_head->skipfield + groups_with_erasures_list_head->free_list_head;
+                skipfield_type skipblock_size = *skipf_;
 
-                if (groups_with_erasures_list_head == begin_.group_pointer && element_pointer < begin_.element_pointer) {
-                    begin_.element_pointer = element_pointer;
-                    begin_.skipfield_pointer = skipfield_pointer;
+                if (groups_with_erasures_list_head == begin_.group_ && elt_ < begin_.elt_) {
+                    begin_.elt_ = elt_;
+                    begin_.skipf_ = skipf_;
                 }
 
                 if (skipblock_size <= n) {
-                    groups_with_erasures_list_head->free_list_head = *(bitcast_pointer<skipfield_pointer_type>(element_pointer));
-                    first = range_fill_skipblock(std::move(first), element_pointer, skipfield_pointer, skipblock_size);
+                    groups_with_erasures_list_head->free_list_head = *(bitcast_pointer<SkipfieldPtr>(elt_));
+                    first = range_fill_skipblock(std::move(first), elt_, skipf_, skipblock_size);
                     n -= skipblock_size;
                     if (groups_with_erasures_list_head->free_list_head != std::numeric_limits<skipfield_type>::max()) {
-                        *(bitcast_pointer<skipfield_pointer_type>(groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head) + 1) = std::numeric_limits<skipfield_type>::max();
+                        *(bitcast_pointer<SkipfieldPtr>(groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head) + 1) = std::numeric_limits<skipfield_type>::max();
                     } else {
                         groups_with_erasures_list_head = groups_with_erasures_list_head->erasures_list_next_group;
                     }
@@ -1453,38 +1452,38 @@ private:
                         return;
                     }
                 } else {
-                    const skipfield_type prev_index = *(bitcast_pointer<skipfield_pointer_type>(element_pointer));
-                    first = range_fill_skipblock(std::move(first), element_pointer, skipfield_pointer, static_cast<skipfield_type>(n));
+                    const skipfield_type prev_index = *(bitcast_pointer<SkipfieldPtr>(elt_));
+                    first = range_fill_skipblock(std::move(first), elt_, skipf_, static_cast<skipfield_type>(n));
                     const skipfield_type new_skipblock_size = static_cast<skipfield_type>(skipblock_size - n);
-                    skipfield_pointer[n] = new_skipblock_size;
-                    skipfield_pointer[skipblock_size - 1] = new_skipblock_size;
+                    skipf_[n] = new_skipblock_size;
+                    skipf_[skipblock_size - 1] = new_skipblock_size;
                     groups_with_erasures_list_head->free_list_head = static_cast<skipfield_type>(groups_with_erasures_list_head->free_list_head + n);
-                    *(bitcast_pointer<skipfield_pointer_type>(element_pointer + n)) = prev_index;
-                    *(bitcast_pointer<skipfield_pointer_type>(element_pointer + n) + 1) = std::numeric_limits<skipfield_type>::max();
+                    *(bitcast_pointer<SkipfieldPtr>(elt_ + n)) = prev_index;
+                    *(bitcast_pointer<SkipfieldPtr>(elt_ + n) + 1) = std::numeric_limits<skipfield_type>::max();
                     if (prev_index != std::numeric_limits<skipfield_type>::max()) {
-                        *(bitcast_pointer<skipfield_pointer_type>(groups_with_erasures_list_head->elements + prev_index) + 1) = groups_with_erasures_list_head->free_list_head;
+                        *(bitcast_pointer<SkipfieldPtr>(groups_with_erasures_list_head->elements + prev_index) + 1) = groups_with_erasures_list_head->free_list_head;
                     }
                     return;
                 }
             }
             const skipfield_type group_remainder = (static_cast<skipfield_type>(
-                bitcast_pointer<aligned_pointer_type>(end_.group_pointer->skipfield) - end_.element_pointer) >= n) ?
+                bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield) - end_.elt_) >= n) ?
                 static_cast<skipfield_type>(n) :
-                static_cast<skipfield_type>(bitcast_pointer<aligned_pointer_type>(end_.group_pointer->skipfield) - end_.element_pointer);
+                static_cast<skipfield_type>(bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield) - end_.elt_);
 
             if (group_remainder != 0) {
                 first = range_fill(std::move(first), group_remainder);
-                end_.group_pointer->last_endpoint = end_.element_pointer;
-                end_.group_pointer->size = static_cast<skipfield_type>(end_.group_pointer->size + group_remainder);
+                end_.group_->last_endpoint = end_.elt_;
+                end_.group_->size = static_cast<skipfield_type>(end_.group_->size + group_remainder);
 
                 if (n == group_remainder) {
-                    end_.skipfield_pointer = end_.group_pointer->skipfield + end_.group_pointer->size;
+                    end_.skipf_ = end_.group_->skipfield + end_.group_->size;
                     return;
                 }
                 n -= group_remainder;
             }
-            end_.group_pointer->next_group = unused_groups_head;
-            range_fill_unused_groups(n, first, end_.group_pointer->group_number + 1, end_.group_pointer, unused_groups_head);
+            end_.group_->next_group = unused_groups_head;
+            range_fill_unused_groups(n, first, end_.group_->group_number + 1, end_.group_, unused_groups_head);
         }
     }
 
@@ -1514,20 +1513,20 @@ public:
     }
 
 private:
-    inline void update_subsequent_group_numbers(group_pointer_type current_group) {
+    inline void update_subsequent_group_numbers(GroupPtr current_group) {
         do {
             --(current_group->group_number);
             current_group = current_group->next_group;
         } while (current_group != nullptr);
     }
 
-    void remove_from_groups_with_erasures_list(group_pointer_type group_to_remove) {
+    void remove_from_groups_with_erasures_list(GroupPtr group_to_remove) {
         if (group_to_remove == groups_with_erasures_list_head) {
             groups_with_erasures_list_head = groups_with_erasures_list_head->erasures_list_next_group;
             return;
         }
 
-        group_pointer_type previous_group = groups_with_erasures_list_head, current_group = groups_with_erasures_list_head->erasures_list_next_group;
+        GroupPtr previous_group = groups_with_erasures_list_head, current_group = groups_with_erasures_list_head->erasures_list_next_group;
 
         while (group_to_remove != current_group)
         {
@@ -1538,34 +1537,34 @@ private:
         previous_group->erasures_list_next_group = current_group->erasures_list_next_group;
     }
 
-    inline void reset_only_group_left(group_pointer_type const group_pointer) {
+    inline void reset_only_group_left(GroupPtr const group_) {
         groups_with_erasures_list_head = nullptr;
-        group_pointer->reset(0, nullptr, nullptr, 0);
+        group_->reset(0, nullptr, nullptr, 0);
 
         // Reset begin and end iterators:
-        end_.element_pointer = begin_.element_pointer = group_pointer->last_endpoint;
-        end_.skipfield_pointer = begin_.skipfield_pointer = group_pointer->skipfield;
+        end_.elt_ = begin_.elt_ = group_->last_endpoint;
+        end_.skipf_ = begin_.skipf_ = group_->skipfield;
     }
 
-    inline void add_group_to_unused_groups_list(group *group_pointer) {
-        group_pointer->next_group = unused_groups_head;
-        unused_groups_head = group_pointer;
+    inline void add_group_to_unused_groups_list(group *group_) {
+        group_->next_group = unused_groups_head;
+        unused_groups_head = group_;
     }
 
 public:
     iterator erase(const_iterator it) {
         assert(size_ != 0);
-        assert(it.group_pointer != nullptr); // ie. not uninitialized iterator
-        assert(it.element_pointer != it.group_pointer->last_endpoint); // ie. != end()
-        assert(*(it.skipfield_pointer) == 0); // ie. element pointed to by iterator has not been erased previously
+        assert(it.group_ != nullptr); // ie. not uninitialized iterator
+        assert(it.elt_ != it.group_->last_endpoint); // ie. != end()
+        assert(*(it.skipf_) == 0); // ie. element pointed to by iterator has not been erased previously
 
         if constexpr (!std::is_trivially_destructible<T>::value) {
-            std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(it.element_pointer));
+            std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(it.elt_));
         }
 
         --size_;
 
-        if (it.group_pointer->size-- != 1) {
+        if (it.group_->size-- != 1) {
             // ie. non-empty group at this point in time, don't consolidate
             // optimization note: GCC optimizes postfix - 1 comparison better than prefix - 1 comparison in some cases.
 
@@ -1579,87 +1578,87 @@ public:
             // Optimization explanation:
             // The contextual logic below is the same as that in the insert() functions but in this case the value of the current skipfield node will always be
             // zero (since it is not yet erased), meaning no additional manipulations are necessary for the previous skipfield node comparison - we only have to check against zero
-            const char prev_skipfield = *(it.skipfield_pointer - (it.skipfield_pointer != it.group_pointer->skipfield)) != 0;
-            const char after_skipfield = *(it.skipfield_pointer + 1) != 0;  // NOTE: boundary test (checking against end-of-elements) is able to be skipped due to the extra skipfield node (compared to element field) - which is present to enable faster iterator operator ++ operations
+            const char prev_skipfield = *(it.skipf_ - (it.skipf_ != it.group_->skipfield)) != 0;
+            const char after_skipfield = *(it.skipf_ + 1) != 0;  // NOTE: boundary test (checking against end-of-elements) is able to be skipped due to the extra skipfield node (compared to element field) - which is present to enable faster iterator operator ++ operations
             skipfield_type update_value = 1;
 
             if (!(prev_skipfield | after_skipfield)) {
                 // no consecutive erased elements
-                *it.skipfield_pointer = 1; // solo skipped node
-                const skipfield_type index = static_cast<skipfield_type>(it.element_pointer - it.group_pointer->elements);
+                *it.skipf_ = 1; // solo skipped node
+                const skipfield_type index = static_cast<skipfield_type>(it.elt_ - it.group_->elements);
 
-                if (it.group_pointer->free_list_head != std::numeric_limits<skipfield_type>::max()) {
+                if (it.group_->free_list_head != std::numeric_limits<skipfield_type>::max()) {
                     // ie. if this group already has some erased elements
-                    *(bitcast_pointer<skipfield_pointer_type>(it.group_pointer->elements + it.group_pointer->free_list_head) + 1) = index; // set prev free list head's 'next index' number to the index of the current element
+                    *(bitcast_pointer<SkipfieldPtr>(it.group_->elements + it.group_->free_list_head) + 1) = index; // set prev free list head's 'next index' number to the index of the current element
                 } else {
-                    it.group_pointer->erasures_list_next_group = groups_with_erasures_list_head; // add it to the groups-with-erasures free list
-                    groups_with_erasures_list_head = it.group_pointer;
+                    it.group_->erasures_list_next_group = groups_with_erasures_list_head; // add it to the groups-with-erasures free list
+                    groups_with_erasures_list_head = it.group_;
                 }
 
-                *(bitcast_pointer<skipfield_pointer_type>(it.element_pointer)) = it.group_pointer->free_list_head;
-                *(bitcast_pointer<skipfield_pointer_type>(it.element_pointer) + 1) = std::numeric_limits<skipfield_type>::max();
-                it.group_pointer->free_list_head = index;
+                *(bitcast_pointer<SkipfieldPtr>(it.elt_)) = it.group_->free_list_head;
+                *(bitcast_pointer<SkipfieldPtr>(it.elt_) + 1) = std::numeric_limits<skipfield_type>::max();
+                it.group_->free_list_head = index;
             } else if (prev_skipfield & (!after_skipfield)) {
                 // previous erased consecutive elements, none following
-                *(it.skipfield_pointer - *(it.skipfield_pointer - 1)) = *it.skipfield_pointer = static_cast<skipfield_type>(*(it.skipfield_pointer - 1) + 1);
+                *(it.skipf_ - *(it.skipf_ - 1)) = *it.skipf_ = static_cast<skipfield_type>(*(it.skipf_ - 1) + 1);
             } else if ((!prev_skipfield) & after_skipfield) {
                 // following erased consecutive elements, none preceding
-                const skipfield_type following_value = static_cast<skipfield_type>(*(it.skipfield_pointer + 1) + 1);
-                *(it.skipfield_pointer + following_value - 1) = *(it.skipfield_pointer) = following_value;
+                const skipfield_type following_value = static_cast<skipfield_type>(*(it.skipf_ + 1) + 1);
+                *(it.skipf_ + following_value - 1) = *(it.skipf_) = following_value;
 
-                const skipfield_type following_previous = *(bitcast_pointer<skipfield_pointer_type>(it.element_pointer + 1));
-                const skipfield_type following_next = *(bitcast_pointer<skipfield_pointer_type>(it.element_pointer + 1) + 1);
-                *(bitcast_pointer<skipfield_pointer_type>(it.element_pointer)) = following_previous;
-                *(bitcast_pointer<skipfield_pointer_type>(it.element_pointer) + 1) = following_next;
+                const skipfield_type following_previous = *(bitcast_pointer<SkipfieldPtr>(it.elt_ + 1));
+                const skipfield_type following_next = *(bitcast_pointer<SkipfieldPtr>(it.elt_ + 1) + 1);
+                *(bitcast_pointer<SkipfieldPtr>(it.elt_)) = following_previous;
+                *(bitcast_pointer<SkipfieldPtr>(it.elt_) + 1) = following_next;
 
-                const skipfield_type index = static_cast<skipfield_type>(it.element_pointer - it.group_pointer->elements);
+                const skipfield_type index = static_cast<skipfield_type>(it.elt_ - it.group_->elements);
 
                 if (following_previous != std::numeric_limits<skipfield_type>::max()) {
-                    *(bitcast_pointer<skipfield_pointer_type>(it.group_pointer->elements + following_previous) + 1) = index; // Set next index of previous free list node to this node's 'next' index
+                    *(bitcast_pointer<SkipfieldPtr>(it.group_->elements + following_previous) + 1) = index; // Set next index of previous free list node to this node's 'next' index
                 }
 
                 if (following_next != std::numeric_limits<skipfield_type>::max()) {
-                    *(bitcast_pointer<skipfield_pointer_type>(it.group_pointer->elements + following_next)) = index;    // Set previous index of next free list node to this node's 'previous' index
+                    *(bitcast_pointer<SkipfieldPtr>(it.group_->elements + following_next)) = index;    // Set previous index of next free list node to this node's 'previous' index
                 } else {
-                    it.group_pointer->free_list_head = index;
+                    it.group_->free_list_head = index;
                 }
                 update_value = following_value;
             } else {
                 // both preceding and following consecutive erased elements - erased element is between two skipblocks
-                const skipfield_type preceding_value = *(it.skipfield_pointer - 1);
-                const skipfield_type following_value = static_cast<skipfield_type>(*(it.skipfield_pointer + 1) + 1);
+                const skipfield_type preceding_value = *(it.skipf_ - 1);
+                const skipfield_type following_value = static_cast<skipfield_type>(*(it.skipf_ + 1) + 1);
 
                 // Join the skipblocks
-                *(it.skipfield_pointer - preceding_value) = *(it.skipfield_pointer + following_value - 1) = static_cast<skipfield_type>(preceding_value + following_value);
+                *(it.skipf_ - preceding_value) = *(it.skipf_ + following_value - 1) = static_cast<skipfield_type>(preceding_value + following_value);
 
                 // Remove the following skipblock's entry from the free list
-                const skipfield_type following_previous = *(bitcast_pointer<skipfield_pointer_type>(it.element_pointer + 1));
-                const skipfield_type following_next = *(bitcast_pointer<skipfield_pointer_type>(it.element_pointer + 1) + 1);
+                const skipfield_type following_previous = *(bitcast_pointer<SkipfieldPtr>(it.elt_ + 1));
+                const skipfield_type following_next = *(bitcast_pointer<SkipfieldPtr>(it.elt_ + 1) + 1);
 
                 if (following_previous != std::numeric_limits<skipfield_type>::max()) {
-                    *(bitcast_pointer<skipfield_pointer_type>(it.group_pointer->elements + following_previous) + 1) = following_next; // Set next index of previous free list node to this node's 'next' index
+                    *(bitcast_pointer<SkipfieldPtr>(it.group_->elements + following_previous) + 1) = following_next; // Set next index of previous free list node to this node's 'next' index
                 }
 
                 if (following_next != std::numeric_limits<skipfield_type>::max()) {
-                    *(bitcast_pointer<skipfield_pointer_type>(it.group_pointer->elements + following_next)) = following_previous; // Set previous index of next free list node to this node's 'previous' index
+                    *(bitcast_pointer<SkipfieldPtr>(it.group_->elements + following_next)) = following_previous; // Set previous index of next free list node to this node's 'previous' index
                 } else {
-                    it.group_pointer->free_list_head = following_previous;
+                    it.group_->free_list_head = following_previous;
                 }
                 update_value = following_value;
             }
 
-            iterator return_iterator(it.group_pointer, it.element_pointer + update_value, it.skipfield_pointer + update_value);
+            iterator return_iterator(it.group_, it.elt_ + update_value, it.skipf_ + update_value);
 
-            if (return_iterator.element_pointer == it.group_pointer->last_endpoint && it.group_pointer->next_group != nullptr) {
-                return_iterator.group_pointer = it.group_pointer->next_group;
-                const aligned_pointer_type elements = return_iterator.group_pointer->elements;
-                const skipfield_pointer_type skipfield = return_iterator.group_pointer->skipfield;
+            if (return_iterator.elt_ == it.group_->last_endpoint && it.group_->next_group != nullptr) {
+                return_iterator.group_ = it.group_->next_group;
+                const AlignedEltPtr elements = return_iterator.group_->elements;
+                const SkipfieldPtr skipfield = return_iterator.group_->skipfield;
                 const skipfield_type skip = *skipfield;
-                return_iterator.element_pointer = elements + skip;
-                return_iterator.skipfield_pointer = skipfield + skip;
+                return_iterator.elt_ = elements + skip;
+                return_iterator.skipf_ = skipfield + skip;
             }
 
-            if (it.element_pointer == begin_.element_pointer) {
+            if (it.elt_ == begin_.elt_) {
                 // If original iterator was first element in hive, update it's value with the next non-erased element:
                 begin_ = return_iterator;
             }
@@ -1667,63 +1666,63 @@ public:
         }
 
         // else: group is empty, consolidate groups
-        const bool in_back_block = (it.group_pointer->next_group == nullptr), in_front_block = (it.group_pointer == begin_.group_pointer);
+        const bool in_back_block = (it.group_->next_group == nullptr), in_front_block = (it.group_ == begin_.group_);
 
         if (in_back_block & in_front_block) {
             // ie. only group in hive
             // Reset skipfield and free list rather than clearing - leads to fewer allocations/deallocations:
-            reset_only_group_left(it.group_pointer);
+            reset_only_group_left(it.group_);
             return end_;
         } else if ((!in_back_block) & in_front_block) {
             // ie. Remove first group, change first group to next group
-            it.group_pointer->next_group->previous_group = nullptr; // Cut off this group from the chain
-            begin_.group_pointer = it.group_pointer->next_group; // Make the next group the first group
+            it.group_->next_group->previous_group = nullptr; // Cut off this group from the chain
+            begin_.group_ = it.group_->next_group; // Make the next group the first group
 
-            update_subsequent_group_numbers(begin_.group_pointer);
+            update_subsequent_group_numbers(begin_.group_);
 
-            if (it.group_pointer->free_list_head != std::numeric_limits<skipfield_type>::max()) {
+            if (it.group_->free_list_head != std::numeric_limits<skipfield_type>::max()) {
                 // Erasures present within the group, ie. was part of the linked list of groups with erasures.
-                remove_from_groups_with_erasures_list(it.group_pointer);
+                remove_from_groups_with_erasures_list(it.group_);
             }
 
-            capacity_ -= it.group_pointer->capacity;
-            deallocate_group(it.group_pointer);
+            capacity_ -= it.group_->capacity;
+            deallocate_group(it.group_);
 
             // note: end iterator only needs to be changed if the deleted group was the final group in the chain ie. not in this case
-            begin_.element_pointer = begin_.group_pointer->elements + *(begin_.group_pointer->skipfield); // If the beginning index has been erased (ie. skipfield != 0), skip to next non-erased element
-            begin_.skipfield_pointer = begin_.group_pointer->skipfield + *(begin_.group_pointer->skipfield);
+            begin_.elt_ = begin_.group_->elements + *(begin_.group_->skipfield); // If the beginning index has been erased (ie. skipfield != 0), skip to next non-erased element
+            begin_.skipf_ = begin_.group_->skipfield + *(begin_.group_->skipfield);
 
             return begin_;
         } else if (!(in_back_block | in_front_block)) {
             // this is a non-first group but not final group in chain: delete the group, then link previous group to the next group in the chain:
-            it.group_pointer->next_group->previous_group = it.group_pointer->previous_group;
-            const group_pointer_type return_group = it.group_pointer->previous_group->next_group = it.group_pointer->next_group; // close the chain, removing this group from it
+            it.group_->next_group->previous_group = it.group_->previous_group;
+            const GroupPtr return_group = it.group_->previous_group->next_group = it.group_->next_group; // close the chain, removing this group from it
 
             update_subsequent_group_numbers(return_group);
 
-            if (it.group_pointer->free_list_head != std::numeric_limits<skipfield_type>::max()) {
-                remove_from_groups_with_erasures_list(it.group_pointer);
+            if (it.group_->free_list_head != std::numeric_limits<skipfield_type>::max()) {
+                remove_from_groups_with_erasures_list(it.group_);
             }
 
-            if (it.group_pointer->next_group != end_.group_pointer) {
-                capacity_ -= it.group_pointer->capacity;
-                deallocate_group(it.group_pointer);
+            if (it.group_->next_group != end_.group_) {
+                capacity_ -= it.group_->capacity;
+                deallocate_group(it.group_);
             } else {
-                add_group_to_unused_groups_list(it.group_pointer);
+                add_group_to_unused_groups_list(it.group_);
             }
 
             // Return next group's first non-erased element:
             return iterator(return_group, return_group->elements + *(return_group->skipfield), return_group->skipfield + *(return_group->skipfield));
         } else {
             // this is a non-first group and the final group in the chain
-            if (it.group_pointer->free_list_head != std::numeric_limits<skipfield_type>::max()) {
-                remove_from_groups_with_erasures_list(it.group_pointer);
+            if (it.group_->free_list_head != std::numeric_limits<skipfield_type>::max()) {
+                remove_from_groups_with_erasures_list(it.group_);
             }
-            it.group_pointer->previous_group->next_group = nullptr;
-            end_.group_pointer = it.group_pointer->previous_group; // end iterator needs to be changed as element supplied was the back element of the hive
-            end_.element_pointer = bitcast_pointer<aligned_pointer_type>(end_.group_pointer->skipfield);
-            end_.skipfield_pointer = end_.group_pointer->skipfield + end_.group_pointer->capacity;
-            add_group_to_unused_groups_list(it.group_pointer);
+            it.group_->previous_group->next_group = nullptr;
+            end_.group_ = it.group_->previous_group; // end iterator needs to be changed as element supplied was the back element of the hive
+            end_.elt_ = bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield);
+            end_.skipf_ = end_.group_->skipfield + end_.group_->capacity;
+            add_group_to_unused_groups_list(it.group_);
             return end_;
         }
     }
@@ -1731,125 +1730,125 @@ public:
     iterator erase(const_iterator iterator1, const_iterator iterator2) {
         // if uninitialized/invalid iterators supplied, function could generate an exception. If iterator1 > iterator2, behaviour is undefined.
         const_iterator current = iterator1;
-        if (current.group_pointer != iterator2.group_pointer) {
-            if (current.element_pointer != current.group_pointer->elements + *(current.group_pointer->skipfield)) {
+        if (current.group_ != iterator2.group_) {
+            if (current.elt_ != current.group_->elements + *(current.group_->skipfield)) {
                 // if iterator1 is not the first non-erased element in it's group - most common case
                 size_type number_of_group_erasures = 0;
 
                 // Now update skipfield:
-                const aligned_pointer_type end = iterator1.group_pointer->last_endpoint;
+                const AlignedEltPtr end = iterator1.group_->last_endpoint;
 
                 // Schema: first erase all non-erased elements until end of group & remove all skipblocks post-iterator1 from the free_list. Then, either update preceding skipblock or create new one:
 
-                if (std::is_trivially_destructible<T>::value && current.group_pointer->free_list_head == std::numeric_limits<skipfield_type>::max()) {
-                    number_of_group_erasures += static_cast<size_type>(end - current.element_pointer);
+                if (std::is_trivially_destructible<T>::value && current.group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
+                    number_of_group_erasures += static_cast<size_type>(end - current.elt_);
                 } else {
-                    while (current.element_pointer != end) {
-                        if (*current.skipfield_pointer == 0) {
+                    while (current.elt_ != end) {
+                        if (*current.skipf_ == 0) {
                             if constexpr (!std::is_trivially_destructible<T>::value) {
-                                std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.element_pointer)); // Destruct element
+                                std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.elt_)); // Destruct element
                             }
                             ++number_of_group_erasures;
-                            ++current.element_pointer;
-                            ++current.skipfield_pointer;
+                            ++current.elt_;
+                            ++current.skipf_;
                         } else {
                             // remove skipblock from group:
-                            const skipfield_type prev_free_list_index = *(bitcast_pointer<skipfield_pointer_type>(current.element_pointer));
-                            const skipfield_type next_free_list_index = *(bitcast_pointer<skipfield_pointer_type>(current.element_pointer) + 1);
+                            const skipfield_type prev_free_list_index = *(bitcast_pointer<SkipfieldPtr>(current.elt_));
+                            const skipfield_type next_free_list_index = *(bitcast_pointer<SkipfieldPtr>(current.elt_) + 1);
 
-                            current.element_pointer += *(current.skipfield_pointer);
-                            current.skipfield_pointer += *(current.skipfield_pointer);
+                            current.elt_ += *(current.skipf_);
+                            current.skipf_ += *(current.skipf_);
 
                             if (next_free_list_index == std::numeric_limits<skipfield_type>::max() && prev_free_list_index == std::numeric_limits<skipfield_type>::max()) {
                                 // if this is the last skipblock in the free list
-                                remove_from_groups_with_erasures_list(iterator1.group_pointer); // remove group from list of free-list groups - will be added back in down below, but not worth optimizing for
-                                iterator1.group_pointer->free_list_head = std::numeric_limits<skipfield_type>::max();
-                                number_of_group_erasures += static_cast<size_type>(end - current.element_pointer);
+                                remove_from_groups_with_erasures_list(iterator1.group_); // remove group from list of free-list groups - will be added back in down below, but not worth optimizing for
+                                iterator1.group_->free_list_head = std::numeric_limits<skipfield_type>::max();
+                                number_of_group_erasures += static_cast<size_type>(end - current.elt_);
                                 if constexpr (!std::is_trivially_destructible<T>::value) {
-                                    while (current.element_pointer != end) {
-                                        std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.element_pointer));
-                                        ++current.element_pointer;
+                                    while (current.elt_ != end) {
+                                        std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.elt_));
+                                        ++current.elt_;
                                     }
                                 }
                                 break; // end overall while loop
                             } else if (next_free_list_index == std::numeric_limits<skipfield_type>::max()) {
                                 // if this is the head of the free list
-                                current.group_pointer->free_list_head = prev_free_list_index; // make free list head equal to next free list node
-                                *(bitcast_pointer<skipfield_pointer_type>(current.group_pointer->elements + prev_free_list_index) + 1) = std::numeric_limits<skipfield_type>::max();
+                                current.group_->free_list_head = prev_free_list_index; // make free list head equal to next free list node
+                                *(bitcast_pointer<SkipfieldPtr>(current.group_->elements + prev_free_list_index) + 1) = std::numeric_limits<skipfield_type>::max();
                             } else {
                                 // either a tail or middle free list node
-                                *(bitcast_pointer<skipfield_pointer_type>(current.group_pointer->elements + next_free_list_index)) = prev_free_list_index;
+                                *(bitcast_pointer<SkipfieldPtr>(current.group_->elements + next_free_list_index)) = prev_free_list_index;
 
                                 if (prev_free_list_index != std::numeric_limits<skipfield_type>::max()) {
                                     // ie. not the tail free list node
-                                    bitcast_pointer<skipfield_pointer_type>(current.group_pointer->elements + prev_free_list_index)[1] = next_free_list_index;
+                                    bitcast_pointer<SkipfieldPtr>(current.group_->elements + prev_free_list_index)[1] = next_free_list_index;
                                 }
                             }
                         }
                     }
                 }
 
-                const skipfield_type previous_node_value = *(iterator1.skipfield_pointer - 1);
-                const skipfield_type distance_to_end = static_cast<skipfield_type>(end - iterator1.element_pointer);
+                const skipfield_type previous_node_value = *(iterator1.skipf_ - 1);
+                const skipfield_type distance_to_end = static_cast<skipfield_type>(end - iterator1.elt_);
 
                 if (previous_node_value == 0) {
                     // no previous skipblock
-                    *iterator1.skipfield_pointer = distance_to_end; // set start node value
-                    *(iterator1.skipfield_pointer + distance_to_end - 1) = distance_to_end; // set end node value
+                    *iterator1.skipf_ = distance_to_end; // set start node value
+                    *(iterator1.skipf_ + distance_to_end - 1) = distance_to_end; // set end node value
 
-                    const skipfield_type index = static_cast<skipfield_type>(iterator1.element_pointer - iterator1.group_pointer->elements);
+                    const skipfield_type index = static_cast<skipfield_type>(iterator1.elt_ - iterator1.group_->elements);
 
-                    if (iterator1.group_pointer->free_list_head != std::numeric_limits<skipfield_type>::max()) // ie. if this group already has some erased elements
+                    if (iterator1.group_->free_list_head != std::numeric_limits<skipfield_type>::max()) // ie. if this group already has some erased elements
                     {
-                        *(bitcast_pointer<skipfield_pointer_type>(iterator1.group_pointer->elements + iterator1.group_pointer->free_list_head) + 1) = index; // set prev free list head's 'next index' number to the index of the iterator1 element
+                        *(bitcast_pointer<SkipfieldPtr>(iterator1.group_->elements + iterator1.group_->free_list_head) + 1) = index; // set prev free list head's 'next index' number to the index of the iterator1 element
                     }
                     else
                     {
-                        iterator1.group_pointer->erasures_list_next_group = groups_with_erasures_list_head; // add it to the groups-with-erasures free list
-                        groups_with_erasures_list_head = iterator1.group_pointer;
+                        iterator1.group_->erasures_list_next_group = groups_with_erasures_list_head; // add it to the groups-with-erasures free list
+                        groups_with_erasures_list_head = iterator1.group_;
                     }
 
-                    *(bitcast_pointer<skipfield_pointer_type>(iterator1.element_pointer)) = iterator1.group_pointer->free_list_head;
-                    *(bitcast_pointer<skipfield_pointer_type>(iterator1.element_pointer) + 1) = std::numeric_limits<skipfield_type>::max();
-                    iterator1.group_pointer->free_list_head = index;
+                    *(bitcast_pointer<SkipfieldPtr>(iterator1.elt_)) = iterator1.group_->free_list_head;
+                    *(bitcast_pointer<SkipfieldPtr>(iterator1.elt_) + 1) = std::numeric_limits<skipfield_type>::max();
+                    iterator1.group_->free_list_head = index;
                 } else {
                     // update previous skipblock, no need to update free list:
-                    *(iterator1.skipfield_pointer - previous_node_value) = *(iterator1.skipfield_pointer + distance_to_end - 1) = static_cast<skipfield_type>(previous_node_value + distance_to_end);
+                    *(iterator1.skipf_ - previous_node_value) = *(iterator1.skipf_ + distance_to_end - 1) = static_cast<skipfield_type>(previous_node_value + distance_to_end);
                 }
 
-                iterator1.group_pointer->size = static_cast<skipfield_type>(iterator1.group_pointer->size - number_of_group_erasures);
+                iterator1.group_->size = static_cast<skipfield_type>(iterator1.group_->size - number_of_group_erasures);
                 size_ -= number_of_group_erasures;
 
-                current.group_pointer = current.group_pointer->next_group;
+                current.group_ = current.group_->next_group;
             }
 
 
             // Intermediate groups:
-            const group_pointer_type previous_group = current.group_pointer->previous_group;
+            const GroupPtr previous_group = current.group_->previous_group;
 
-            while (current.group_pointer != iterator2.group_pointer) {
+            while (current.group_ != iterator2.group_) {
                 if constexpr (!std::is_trivially_destructible<T>::value) {
-                    current.element_pointer = current.group_pointer->elements + *(current.group_pointer->skipfield);
-                    current.skipfield_pointer = current.group_pointer->skipfield + *(current.group_pointer->skipfield);
-                    const aligned_pointer_type end = current.group_pointer->last_endpoint;
+                    current.elt_ = current.group_->elements + *(current.group_->skipfield);
+                    current.skipf_ = current.group_->skipfield + *(current.group_->skipfield);
+                    const AlignedEltPtr end = current.group_->last_endpoint;
 
                     do {
-                        std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.element_pointer)); // Destruct element
-                        const skipfield_type skip = *(++current.skipfield_pointer);
-                        current.element_pointer += static_cast<size_type>(skip) + 1u;
-                        current.skipfield_pointer += skip;
-                    } while (current.element_pointer != end);
+                        std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.elt_)); // Destruct element
+                        const skipfield_type skip = *(++current.skipf_);
+                        current.elt_ += static_cast<size_type>(skip) + 1u;
+                        current.skipf_ += skip;
+                    } while (current.elt_ != end);
                 }
 
-                if (current.group_pointer->free_list_head != std::numeric_limits<skipfield_type>::max()) {
-                    remove_from_groups_with_erasures_list(current.group_pointer);
+                if (current.group_->free_list_head != std::numeric_limits<skipfield_type>::max()) {
+                    remove_from_groups_with_erasures_list(current.group_);
                 }
 
-                size_ -= current.group_pointer->size;
-                const group_pointer_type current_group = current.group_pointer;
-                current.group_pointer = current.group_pointer->next_group;
+                size_ -= current.group_->size;
+                const GroupPtr current_group = current.group_;
+                current.group_ = current.group_->next_group;
 
-                if (current_group != end_.group_pointer && current_group->next_group != end_.group_pointer) {
+                if (current_group != end_.group_ && current_group->next_group != end_.group_) {
                     capacity_ -= current_group->capacity;
                     deallocate_group(current_group);
                 } else {
@@ -1857,19 +1856,19 @@ public:
                 }
             }
 
-            current.element_pointer = current.group_pointer->elements + *(current.group_pointer->skipfield);
-            current.skipfield_pointer = current.group_pointer->skipfield + *(current.group_pointer->skipfield);
-            current.group_pointer->previous_group = previous_group;
+            current.elt_ = current.group_->elements + *(current.group_->skipfield);
+            current.skipf_ = current.group_->skipfield + *(current.group_->skipfield);
+            current.group_->previous_group = previous_group;
 
             if (previous_group != nullptr) {
-                previous_group->next_group = current.group_pointer;
+                previous_group->next_group = current.group_;
             } else {
                 // This line is included here primarily to avoid a secondary if statement within the if block below - it will not be needed in any other situation
                 begin_ = iterator2.unconst();
             }
         }
 
-        if (current.element_pointer == iterator2.element_pointer) // in case iterator2 was at beginning of it's group - also covers empty range case (first == last)
+        if (current.elt_ == iterator2.elt_) // in case iterator2 was at beginning of it's group - also covers empty range case (first == last)
         {
             return iterator2.unconst();
         }
@@ -1879,148 +1878,148 @@ public:
         // If not erasing entire final group, 1. Destruct elements (if non-trivial destructor) and add locations to group free list. 2. process skipfield.
         // If erasing entire group, 1. Destruct elements (if non-trivial destructor), 2. if no elements left in hive, reset the group 3. otherwise reset end_ and remove group from groups-with-erasures list (if free list of erasures present)
 
-        if (iterator2.element_pointer != end_.element_pointer || current.element_pointer != current.group_pointer->elements + *(current.group_pointer->skipfield)) // ie. not erasing entire group
+        if (iterator2.elt_ != end_.elt_ || current.elt_ != current.group_->elements + *(current.group_->skipfield)) // ie. not erasing entire group
         {
             size_type number_of_group_erasures = 0;
             // Schema: first erased all non-erased elements until end of group & remove all skipblocks post-iterator2 from the free_list. Then, either update preceding skipblock or create new one:
 
             const const_iterator current_saved = current;
 
-            if (std::is_trivially_destructible<T>::value && current.group_pointer->free_list_head == std::numeric_limits<skipfield_type>::max()) {
-                number_of_group_erasures += static_cast<size_type>(iterator2.element_pointer - current.element_pointer);
+            if (std::is_trivially_destructible<T>::value && current.group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
+                number_of_group_erasures += static_cast<size_type>(iterator2.elt_ - current.elt_);
             } else {
-                while (current.element_pointer != iterator2.element_pointer) {
-                    if (*current.skipfield_pointer == 0) {
+                while (current.elt_ != iterator2.elt_) {
+                    if (*current.skipf_ == 0) {
                         if constexpr (!std::is_trivially_destructible<T>::value) {
-                            std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.element_pointer)); // Destruct element
+                            std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.elt_)); // Destruct element
                         }
 
                         ++number_of_group_erasures;
-                        ++current.element_pointer;
-                        ++current.skipfield_pointer;
+                        ++current.elt_;
+                        ++current.skipf_;
                     }
                     else // remove skipblock from group:
                     {
-                        const skipfield_type prev_free_list_index = *(bitcast_pointer<skipfield_pointer_type>(current.element_pointer));
-                        const skipfield_type next_free_list_index = *(bitcast_pointer<skipfield_pointer_type>(current.element_pointer) + 1);
+                        const skipfield_type prev_free_list_index = *(bitcast_pointer<SkipfieldPtr>(current.elt_));
+                        const skipfield_type next_free_list_index = *(bitcast_pointer<SkipfieldPtr>(current.elt_) + 1);
 
-                        current.element_pointer += *(current.skipfield_pointer);
-                        current.skipfield_pointer += *(current.skipfield_pointer);
+                        current.elt_ += *(current.skipf_);
+                        current.skipf_ += *(current.skipf_);
 
                         if (next_free_list_index == std::numeric_limits<skipfield_type>::max() && prev_free_list_index == std::numeric_limits<skipfield_type>::max()) // if this is the last skipblock in the free list
                         {
-                            remove_from_groups_with_erasures_list(iterator2.group_pointer); // remove group from list of free-list groups - will be added back in down below, but not worth optimizing for
-                            iterator2.group_pointer->free_list_head = std::numeric_limits<skipfield_type>::max();
-                            number_of_group_erasures += static_cast<size_type>(iterator2.element_pointer - current.element_pointer);
+                            remove_from_groups_with_erasures_list(iterator2.group_); // remove group from list of free-list groups - will be added back in down below, but not worth optimizing for
+                            iterator2.group_->free_list_head = std::numeric_limits<skipfield_type>::max();
+                            number_of_group_erasures += static_cast<size_type>(iterator2.elt_ - current.elt_);
 
                             if constexpr (!std::is_trivially_destructible<T>::value) {
-                                while (current.element_pointer != iterator2.element_pointer) {
-                                    std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.element_pointer++)); // Destruct element
+                                while (current.elt_ != iterator2.elt_) {
+                                    std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.elt_++)); // Destruct element
                                 }
                             }
                             break; // end overall while loop
                         }
                         else if (next_free_list_index == std::numeric_limits<skipfield_type>::max()) // if this is the head of the free list
                         {
-                            current.group_pointer->free_list_head = prev_free_list_index;
-                            *(bitcast_pointer<skipfield_pointer_type>(current.group_pointer->elements + prev_free_list_index) + 1) = std::numeric_limits<skipfield_type>::max();
+                            current.group_->free_list_head = prev_free_list_index;
+                            *(bitcast_pointer<SkipfieldPtr>(current.group_->elements + prev_free_list_index) + 1) = std::numeric_limits<skipfield_type>::max();
                         }
                         else
                         {
-                            *(bitcast_pointer<skipfield_pointer_type>(current.group_pointer->elements + next_free_list_index)) = prev_free_list_index;
+                            *(bitcast_pointer<SkipfieldPtr>(current.group_->elements + next_free_list_index)) = prev_free_list_index;
 
                             if (prev_free_list_index != std::numeric_limits<skipfield_type>::max()) // ie. not the tail free list node
                             {
-                                *(bitcast_pointer<skipfield_pointer_type>(current.group_pointer->elements + prev_free_list_index) + 1) = next_free_list_index;
+                                *(bitcast_pointer<SkipfieldPtr>(current.group_->elements + prev_free_list_index) + 1) = next_free_list_index;
                             }
                         }
                     }
                 }
             }
 
-            const skipfield_type distance_to_iterator2 = static_cast<skipfield_type>(iterator2.element_pointer - current_saved.element_pointer);
-            const skipfield_type index = static_cast<skipfield_type>(current_saved.element_pointer - iterator2.group_pointer->elements);
+            const skipfield_type distance_to_iterator2 = static_cast<skipfield_type>(iterator2.elt_ - current_saved.elt_);
+            const skipfield_type index = static_cast<skipfield_type>(current_saved.elt_ - iterator2.group_->elements);
 
-            if (index == 0 || *(current_saved.skipfield_pointer - 1) == 0) // element is either at start of group or previous skipfield node is 0
+            if (index == 0 || *(current_saved.skipf_ - 1) == 0) // element is either at start of group or previous skipfield node is 0
             {
-                *(current_saved.skipfield_pointer) = distance_to_iterator2;
-                *(iterator2.skipfield_pointer - 1) = distance_to_iterator2;
+                *(current_saved.skipf_) = distance_to_iterator2;
+                *(iterator2.skipf_ - 1) = distance_to_iterator2;
 
-                if (iterator2.group_pointer->free_list_head != std::numeric_limits<skipfield_type>::max()) // ie. if this group already has some erased elements
+                if (iterator2.group_->free_list_head != std::numeric_limits<skipfield_type>::max()) // ie. if this group already has some erased elements
                 {
-                    *(bitcast_pointer<skipfield_pointer_type>(iterator2.group_pointer->elements + iterator2.group_pointer->free_list_head) + 1) = index;
+                    *(bitcast_pointer<SkipfieldPtr>(iterator2.group_->elements + iterator2.group_->free_list_head) + 1) = index;
                 }
                 else
                 {
-                    iterator2.group_pointer->erasures_list_next_group = groups_with_erasures_list_head; // add it to the groups-with-erasures free list
-                    groups_with_erasures_list_head = iterator2.group_pointer;
+                    iterator2.group_->erasures_list_next_group = groups_with_erasures_list_head; // add it to the groups-with-erasures free list
+                    groups_with_erasures_list_head = iterator2.group_;
                 }
 
-                *(bitcast_pointer<skipfield_pointer_type>(current_saved.element_pointer)) = iterator2.group_pointer->free_list_head;
-                *(bitcast_pointer<skipfield_pointer_type>(current_saved.element_pointer) + 1) = std::numeric_limits<skipfield_type>::max();
-                iterator2.group_pointer->free_list_head = index;
+                *(bitcast_pointer<SkipfieldPtr>(current_saved.elt_)) = iterator2.group_->free_list_head;
+                *(bitcast_pointer<SkipfieldPtr>(current_saved.elt_) + 1) = std::numeric_limits<skipfield_type>::max();
+                iterator2.group_->free_list_head = index;
             }
             else // If iterator 1 & 2 are in same group, but iterator 1 was not at start of group, and previous skipfield node is an end node in a skipblock:
             {
                 // Just update existing skipblock, no need to create new free list node:
-                const skipfield_type prev_node_value = *(current_saved.skipfield_pointer - 1);
-                *(current_saved.skipfield_pointer - prev_node_value) = static_cast<skipfield_type>(prev_node_value + distance_to_iterator2);
-                *(iterator2.skipfield_pointer - 1) = static_cast<skipfield_type>(prev_node_value + distance_to_iterator2);
+                const skipfield_type prev_node_value = *(current_saved.skipf_ - 1);
+                *(current_saved.skipf_ - prev_node_value) = static_cast<skipfield_type>(prev_node_value + distance_to_iterator2);
+                *(iterator2.skipf_ - 1) = static_cast<skipfield_type>(prev_node_value + distance_to_iterator2);
             }
 
 
-            if (iterator1.element_pointer == begin_.element_pointer)
+            if (iterator1.elt_ == begin_.elt_)
             {
                 begin_ = iterator2.unconst();
             }
 
-            iterator2.group_pointer->size = static_cast<skipfield_type>(iterator2.group_pointer->size - number_of_group_erasures);
+            iterator2.group_->size = static_cast<skipfield_type>(iterator2.group_->size - number_of_group_erasures);
             size_ -= number_of_group_erasures;
         } else {
             if constexpr (!std::is_trivially_destructible<T>::value) {
-                while (current.element_pointer != iterator2.element_pointer) {
-                    std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.element_pointer));
-                    ++current.skipfield_pointer;
-                    current.element_pointer += static_cast<size_type>(*current.skipfield_pointer) + 1u;
-                    current.skipfield_pointer += *current.skipfield_pointer;
+                while (current.elt_ != iterator2.elt_) {
+                    std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.elt_));
+                    ++current.skipf_;
+                    current.elt_ += static_cast<size_type>(*current.skipf_) + 1u;
+                    current.skipf_ += *current.skipf_;
                 }
             }
 
 
-            if ((size_ -= current.group_pointer->size) != 0) {
+            if ((size_ -= current.group_->size) != 0) {
                 // ie. either previous_group != nullptr or next_group != nullptr
-                if (current.group_pointer->free_list_head != std::numeric_limits<skipfield_type>::max()) {
-                    remove_from_groups_with_erasures_list(current.group_pointer);
+                if (current.group_->free_list_head != std::numeric_limits<skipfield_type>::max()) {
+                    remove_from_groups_with_erasures_list(current.group_);
                 }
 
-                current.group_pointer->previous_group->next_group = current.group_pointer->next_group;
+                current.group_->previous_group->next_group = current.group_->next_group;
 
-                if (current.group_pointer == end_.group_pointer) {
-                    end_.group_pointer = current.group_pointer->previous_group;
-                    end_.element_pointer = end_.group_pointer->last_endpoint;
-                    end_.skipfield_pointer = end_.group_pointer->skipfield + end_.group_pointer->capacity;
-                    add_group_to_unused_groups_list(current.group_pointer);
+                if (current.group_ == end_.group_) {
+                    end_.group_ = current.group_->previous_group;
+                    end_.elt_ = end_.group_->last_endpoint;
+                    end_.skipf_ = end_.group_->skipfield + end_.group_->capacity;
+                    add_group_to_unused_groups_list(current.group_);
                     return end_;
-                } else if (current.group_pointer == begin_.group_pointer) {
-                    begin_.group_pointer = current.group_pointer->next_group;
-                    const skipfield_type skip = *(begin_.group_pointer->skipfield);
-                    begin_.element_pointer = begin_.group_pointer->elements + skip;
-                    begin_.skipfield_pointer = begin_.group_pointer->skipfield + skip;
+                } else if (current.group_ == begin_.group_) {
+                    begin_.group_ = current.group_->next_group;
+                    const skipfield_type skip = *(begin_.group_->skipfield);
+                    begin_.elt_ = begin_.group_->elements + skip;
+                    begin_.skipf_ = begin_.group_->skipfield + skip;
                 }
 
-                if (current.group_pointer->next_group != end_.group_pointer) {
-                    capacity_ -= current.group_pointer->capacity;
+                if (current.group_->next_group != end_.group_) {
+                    capacity_ -= current.group_->capacity;
                 } else {
-                    add_group_to_unused_groups_list(current.group_pointer);
+                    add_group_to_unused_groups_list(current.group_);
                     return iterator2.unconst();
                 }
             } else {
                 // Reset skipfield and free list rather than clearing - leads to fewer allocations/deallocations:
-                reset_only_group_left(current.group_pointer);
+                reset_only_group_left(current.group_);
                 return end_;
             }
 
-            deallocate_group(current.group_pointer);
+            deallocate_group(current.group_);
         }
 
         return iterator2.unconst();
@@ -2031,28 +2030,28 @@ private:
         // Destroy all elements if non-trivial:
         if constexpr (!std::is_trivially_destructible<T>::value) {
             for (iterator current = begin_; current != end_; ++current) {
-                std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.element_pointer)); // Destruct element
+                std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.elt_)); // Destruct element
             }
         }
 
         if (size < capacity_ && (capacity_ - size) >= min_group_capacity_) {
             size_type difference = capacity_ - size;
-            end_.group_pointer->next_group = unused_groups_head;
+            end_.group_->next_group = unused_groups_head;
 
             // Remove surplus groups which're under the difference limit:
-            group_pointer_type current_group = begin_.group_pointer;
-            group_pointer_type previous_group = nullptr;
+            GroupPtr current_group = begin_.group_;
+            GroupPtr previous_group = nullptr;
 
             do {
-                const group_pointer_type next_group = current_group->next_group;
+                const GroupPtr next_group = current_group->next_group;
 
                 if (current_group->capacity <= difference) {
                     // Remove group:
                     difference -= current_group->capacity;
                     capacity_ -= current_group->capacity;
                     deallocate_group(current_group);
-                    if (current_group == begin_.group_pointer) {
-                        begin_.group_pointer = next_group;
+                    if (current_group == begin_.group_) {
+                        begin_.group_ = next_group;
                     }
                 } else {
                     if (previous_group != nullptr) {
@@ -2070,11 +2069,11 @@ private:
             }
 
             // Join all unused_groups to main chain:
-            end_.group_pointer->next_group = unused_groups_head;
+            end_.group_->next_group = unused_groups_head;
         }
 
-        begin_.element_pointer = begin_.group_pointer->elements;
-        begin_.skipfield_pointer = begin_.group_pointer->skipfield;
+        begin_.elt_ = begin_.group_->elements;
+        begin_.skipf_ = begin_.group_->skipfield;
         groups_with_erasures_list_head = nullptr;
         size_ = 0;
     }
@@ -2091,7 +2090,7 @@ private:
             size_type n = std::distance(first, last);
 #endif
             prepare_groups_for_assign(n);
-            range_fill_unused_groups(n, std::move(first), 0, nullptr, begin_.group_pointer);
+            range_fill_unused_groups(n, std::move(first), 0, nullptr, begin_.group_);
         }
     }
 
@@ -2101,7 +2100,7 @@ public:
             reset();
         } else {
             prepare_groups_for_assign(n);
-            fill_unused_groups(n, value, 0, nullptr, begin_.group_pointer);
+            fill_unused_groups(n, value, 0, nullptr, begin_.group_);
         }
     }
 
@@ -2147,7 +2146,7 @@ public:
         max_group_capacity_ = static_cast<skipfield_type>(limits.max);
 
         // Need to check all group sizes here, because splice might append smaller blocks to the end of a larger block:
-        for (group_pointer_type current = begin_.group_pointer; current != end_.group_pointer; current = current->next_group) {
+        for (GroupPtr current = begin_.group_; current != end_.group_; current = current->next_group) {
             if (current->capacity < min_group_capacity_ || current->capacity > max_group_capacity_) {
                 consolidate();
                 return;
@@ -2171,18 +2170,18 @@ public:
         // Destroy all elements if element type is non-trivial:
         if constexpr (!std::is_trivially_destructible<T>::value) {
             for (iterator current = begin_; current != end_; ++current) {
-                std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.element_pointer));
+                std::allocator_traits<allocator_type>::destroy(elt_allocator(), bitcast_pointer<pointer>(current.elt_));
             }
         }
 
-        if (begin_.group_pointer != end_.group_pointer) {
+        if (begin_.group_ != end_.group_) {
             // Move all other groups onto the unused_groups list
-            end_.group_pointer->next_group = unused_groups_head;
-            unused_groups_head = begin_.group_pointer->next_group;
-            end_.group_pointer = begin_.group_pointer; // other parts of iterator reset in the function below
+            end_.group_->next_group = unused_groups_head;
+            unused_groups_head = begin_.group_->next_group;
+            end_.group_ = begin_.group_; // other parts of iterator reset in the function below
         }
 
-        reset_only_group_left(begin_.group_pointer);
+        reset_only_group_left(begin_.group_);
         groups_with_erasures_list_head = nullptr;
         size_ = 0;
     }
@@ -2214,9 +2213,9 @@ public:
         if (should_use_source_allocator) {
             constexpr bool can_just_memcpy = (
                 std::is_trivially_copyable<allocator_type>::value &&
-                std::is_trivial<group_pointer_type>::value &&
-                std::is_trivial<aligned_pointer_type>::value &&
-                std::is_trivial<skipfield_pointer_type>::value
+                std::is_trivial<GroupPtr>::value &&
+                std::is_trivial<AlignedEltPtr>::value &&
+                std::is_trivial<SkipfieldPtr>::value
             );
             if constexpr (can_just_memcpy) {
                 std::memcpy(static_cast<void *>(this), &source, sizeof(hive));
@@ -2261,7 +2260,7 @@ public:
     void trim() noexcept {
         while (unused_groups_head != nullptr) {
             capacity_ -= unused_groups_head->capacity;
-            const group_pointer_type next_group = unused_groups_head->next_group;
+            const GroupPtr next_group = unused_groups_head->next_group;
             deallocate_group(unused_groups_head);
             unused_groups_head = next_group;
         }
@@ -2288,23 +2287,23 @@ public:
             remainder = min_group_capacity_;
         }
 
-        group_pointer_type current_group;
-        group_pointer_type first_unused_group;
+        GroupPtr current_group;
+        GroupPtr first_unused_group;
 
-        if (begin_.group_pointer == nullptr) {
+        if (begin_.group_ == nullptr) {
             initialize(remainder);
-            begin_.group_pointer->last_endpoint = begin_.group_pointer->elements; // last_endpoint initially == elements + 1 via default constructor
-            begin_.group_pointer->size = 0; // 1 by default
+            begin_.group_->last_endpoint = begin_.group_->elements; // last_endpoint initially == elements + 1 via default constructor
+            begin_.group_->size = 0; // 1 by default
 
             if (number_of_max_groups == 0) {
                 return;
             } else {
-                first_unused_group = current_group = allocate_new_group(max_group_capacity_, begin_.group_pointer);
+                first_unused_group = current_group = allocate_new_group(max_group_capacity_, begin_.group_);
                 capacity_ += max_group_capacity_;
                 --number_of_max_groups;
             }
         } else {
-            first_unused_group = current_group = allocate_new_group(remainder, end_.group_pointer);
+            first_unused_group = current_group = allocate_new_group(remainder, end_.group_);
             capacity_ += remainder;
         }
 
@@ -2329,11 +2328,11 @@ private:
         if (size_ != 0) {
             // Necessary here to prevent a pointer matching to an empty hive with one memory block retained with the skipfield wiped (see erase())
             // Start with last group first, as will be the largest group in most cases:
-            for (group_pointer_type current_group = end_.group_pointer; current_group != nullptr; current_group = current_group->previous_group) {
-                auto ap = bitcast_pointer<aligned_pointer_type>(pointer(p));
-                if (current_group->elements <= ap && ap < bitcast_pointer<aligned_pointer_type>(current_group->skipfield)) {
-                    auto skipfield_pointer = current_group->skipfield + (ap - current_group->elements);
-                    return (*skipfield_pointer == 0) ? iterator(current_group, ap, skipfield_pointer) : end_;
+            for (GroupPtr current_group = end_.group_; current_group != nullptr; current_group = current_group->previous_group) {
+                auto ap = bitcast_pointer<AlignedEltPtr>(pointer(p));
+                if (current_group->elements <= ap && ap < bitcast_pointer<AlignedEltPtr>(current_group->skipfield)) {
+                    auto skipf_ = current_group->skipfield + (ap - current_group->elements);
+                    return (*skipf_ == 0) ? iterator(current_group, ap, skipf_) : end_;
                 }
             }
         }
@@ -2364,13 +2363,13 @@ public:
         }
 
         // If there's more unused element locations in back memory block of destination than in back memory block of source, swap with source to reduce number of skipped elements during iteration, and reduce size of free-list:
-        if ((bitcast_pointer<aligned_pointer_type>(end_.group_pointer->skipfield) - end_.element_pointer) > (bitcast_pointer<aligned_pointer_type>(source.end_.group_pointer->skipfield) - source.end_.element_pointer)) {
+        if ((bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield) - end_.elt_) > (bitcast_pointer<AlignedEltPtr>(source.end_.group_->skipfield) - source.end_.elt_)) {
             swap(source);
         }
 
         // Throw if incompatible group capacity found:
         if (source.min_group_capacity_ < min_group_capacity_ || source.max_group_capacity_ > max_group_capacity_) {
-            for (group_pointer_type current_group = source.begin_.group_pointer; current_group != nullptr; current_group = current_group->next_group) {
+            for (GroupPtr current_group = source.begin_.group_; current_group != nullptr; current_group = current_group->next_group) {
                 if (current_group->capacity < min_group_capacity_ || current_group->capacity > max_group_capacity_) {
                     throw std::length_error("A source memory block capacity is outside of the destination's minimum or maximum memory block capacity limits - please change either the source or the destination's min/max block capacity limits using reshape() before calling splice() in this case");
                 }
@@ -2380,7 +2379,7 @@ public:
         // Add source list of groups-with-erasures to destination list of groups-with-erasures:
         if (source.groups_with_erasures_list_head != nullptr) {
             if (groups_with_erasures_list_head != nullptr) {
-                group_pointer_type tail_group = groups_with_erasures_list_head;
+                GroupPtr tail_group = groups_with_erasures_list_head;
                 while (tail_group->erasures_list_next_group != nullptr) {
                     tail_group = tail_group->erasures_list_next_group;
                 }
@@ -2390,40 +2389,40 @@ public:
             }
         }
 
-        const skipfield_type distance_to_end = static_cast<skipfield_type>(bitcast_pointer<aligned_pointer_type>(end_.group_pointer->skipfield) - end_.element_pointer);
+        const skipfield_type distance_to_end = static_cast<skipfield_type>(bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield) - end_.elt_);
 
         if (distance_to_end != 0) {
             // Mark unused element memory locations from back group as skipped/erased:
             // Update skipfield:
-            const skipfield_type previous_node_value = *(end_.skipfield_pointer - 1);
-            end_.group_pointer->last_endpoint = bitcast_pointer<aligned_pointer_type>(end_.group_pointer->skipfield);
+            const skipfield_type previous_node_value = *(end_.skipf_ - 1);
+            end_.group_->last_endpoint = bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield);
 
             if (previous_node_value == 0) {
-                end_.skipfield_pointer[0] = distance_to_end;
-                end_.skipfield_pointer[distance_to_end - 1] = distance_to_end;
+                end_.skipf_[0] = distance_to_end;
+                end_.skipf_[distance_to_end - 1] = distance_to_end;
 
-                const skipfield_type index = static_cast<skipfield_type>(end_.element_pointer - end_.group_pointer->elements);
+                const skipfield_type index = static_cast<skipfield_type>(end_.elt_ - end_.group_->elements);
 
-                if (end_.group_pointer->free_list_head != std::numeric_limits<skipfield_type>::max()) {
+                if (end_.group_->free_list_head != std::numeric_limits<skipfield_type>::max()) {
                     // ie. if this group already has some erased elements
-                    *(bitcast_pointer<skipfield_pointer_type>(end_.group_pointer->elements + end_.group_pointer->free_list_head) + 1) = index; // set prev free list head's 'next index' number to the index of the current element
+                    *(bitcast_pointer<SkipfieldPtr>(end_.group_->elements + end_.group_->free_list_head) + 1) = index; // set prev free list head's 'next index' number to the index of the current element
                 } else {
-                    end_.group_pointer->erasures_list_next_group = groups_with_erasures_list_head; // add it to the groups-with-erasures free list
-                    groups_with_erasures_list_head = end_.group_pointer;
+                    end_.group_->erasures_list_next_group = groups_with_erasures_list_head; // add it to the groups-with-erasures free list
+                    groups_with_erasures_list_head = end_.group_;
                 }
 
-                bitcast_pointer<skipfield_pointer_type>(end_.element_pointer)[0] = end_.group_pointer->free_list_head;
-                bitcast_pointer<skipfield_pointer_type>(end_.element_pointer)[1] = std::numeric_limits<skipfield_type>::max();
-                end_.group_pointer->free_list_head = index;
+                bitcast_pointer<SkipfieldPtr>(end_.elt_)[0] = end_.group_->free_list_head;
+                bitcast_pointer<SkipfieldPtr>(end_.elt_)[1] = std::numeric_limits<skipfield_type>::max();
+                end_.group_->free_list_head = index;
             } else {
                 // update previous skipblock, no need to update free list:
-                *(end_.skipfield_pointer - previous_node_value) = *(end_.skipfield_pointer + distance_to_end - 1) = static_cast<skipfield_type>(previous_node_value + distance_to_end);
+                *(end_.skipf_ - previous_node_value) = *(end_.skipf_ + distance_to_end - 1) = static_cast<skipfield_type>(previous_node_value + distance_to_end);
             }
         }
 
         // Update subsequent group numbers:
-        group_pointer_type current_group = source.begin_.group_pointer;
-        size_type current_group_number = end_.group_pointer->group_number;
+        GroupPtr current_group = source.begin_.group_;
+        size_type current_group_number = end_.group_->group_number;
 
         do {
             current_group->group_number = ++current_group_number;
@@ -2431,8 +2430,8 @@ public:
         } while (current_group != nullptr);
 
         // Join the destination and source group chains:
-        end_.group_pointer->next_group = source.begin_.group_pointer;
-        source.begin_.group_pointer->previous_group = end_.group_pointer;
+        end_.group_->next_group = source.begin_.group_;
+        source.begin_.group_->previous_group = end_.group_;
         end_ = source.end_;
         size_ += source.size_;
         capacity_ += source.capacity_;
@@ -2530,21 +2529,21 @@ public:
     void swap(hive &source)
         noexcept(std::allocator_traits<allocator_type>::propagate_on_container_swap::value || std::allocator_traits<allocator_type>::is_always_equal::value)
     {
-        if constexpr (std::allocator_traits<allocator_type>::is_always_equal::value && std::is_trivial<group_pointer_type>::value && std::is_trivial<aligned_pointer_type>::value && std::is_trivial<skipfield_pointer_type>::value) {
+        if constexpr (std::allocator_traits<allocator_type>::is_always_equal::value && std::is_trivial<GroupPtr>::value && std::is_trivial<AlignedEltPtr>::value && std::is_trivial<SkipfieldPtr>::value) {
             // if all pointer types are trivial we can just copy using memcpy - avoids constructors/destructors etc and is faster
             char temp[sizeof(hive)];
             std::memcpy(&temp, static_cast<void *>(this), sizeof(hive));
             std::memcpy(static_cast<void *>(this), static_cast<void *>(&source), sizeof(hive));
             std::memcpy(static_cast<void *>(&source), &temp, sizeof(hive));
-        } else if constexpr (std::is_move_assignable<group_pointer_type>::value && std::is_move_assignable<aligned_pointer_type>::value && std::is_move_assignable<skipfield_pointer_type>::value && std::is_move_constructible<group_pointer_type>::value && std::is_move_constructible<aligned_pointer_type>::value && std::is_move_constructible<skipfield_pointer_type>::value) {
+        } else if constexpr (std::is_move_assignable<GroupPtr>::value && std::is_move_assignable<AlignedEltPtr>::value && std::is_move_assignable<SkipfieldPtr>::value && std::is_move_constructible<GroupPtr>::value && std::is_move_constructible<AlignedEltPtr>::value && std::is_move_constructible<SkipfieldPtr>::value) {
             hive temp = std::move(source);
             source = std::move(*this);
             *this = std::move(temp);
         } else {
             const iterator swap_end_ = end_;
             const iterator swap_begin_ = begin_;
-            const group_pointer_type swap_groups_with_erasures_list_head = groups_with_erasures_list_head;
-            const group_pointer_type swap_unused_groups_head = unused_groups_head;
+            const GroupPtr swap_groups_with_erasures_list_head = groups_with_erasures_list_head;
+            const GroupPtr swap_unused_groups_head = unused_groups_head;
             const size_type swap_size_ = size_;
             const size_type swap_capacity_ = capacity_;
             const skipfield_type swap_min_group_capacity = min_group_capacity_;
