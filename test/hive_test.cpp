@@ -1282,6 +1282,21 @@ TYPED_TEST(hivet, EraseEmptyRange)
     EXPECT_INVARIANTS(h);
 }
 
+TEST(hive, DISABLED_RegressionTestIssue8)
+{
+    plf::hive<int> h = {1,2,3,4,5};
+    h.erase(h.begin());
+    h.erase(h.begin());
+    h.insert(6);
+    assert(h.size() == 4);  // {6,3,4,5}
+
+    auto it = h.begin();
+    for (int i = 0; i < 4; ++i, ++it) {
+        EXPECT_EQ(h.begin().distance(it), i);
+        EXPECT_EQ(h.end().distance(it), i - 4);
+    }
+}
+
 TYPED_TEST(hivet, Sort)
 {
     using Hive = TypeParam;
