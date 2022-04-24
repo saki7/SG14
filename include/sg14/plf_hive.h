@@ -156,14 +156,14 @@ private:
     // group == element memory block + skipfield + block metadata
     struct group {
         aligned_pointer_type          last_endpoint;          // The address which is one-past the highest cell number that's been used so far in this group - does not change via erasure but may change via insertion/emplacement/assignment (if no previously-erased locations are available to insert to). This variable is necessary because an iterator cannot access the hive's end_. It is probably the most-used variable in general hive usage (being heavily used in operator ++, --), so is first in struct. If all cells in the group have been inserted into at some point, it will be == reinterpret_cast<aligned_pointer_type>(skipfield).
-        group_pointer_type            next_group;             // Next group in the intrusive list of all groups. NULL if no next group.
+        group_pointer_type            next_group;             // Next group in the intrusive list of all groups. nullptr if no next group.
         const aligned_pointer_type    elements;               // Element storage.
         const skipfield_pointer_type  skipfield;              // Skipfield storage. The element and skipfield arrays are allocated contiguously, in a single allocation, in this implementation, hence the skipfield pointer also functions as a 'one-past-end' pointer for the elements array. There will always be one additional skipfield node allocated compared to the number of elements. This is to ensure a faster ++ iterator operation (fewer checks are required when this is present). The extra node is unused and always zero, but checked, and not having it will result in out-of-bounds memory errors.
-        group_pointer_type            previous_group;         // Previous group in the linked list of all groups. NULL if no preceding group.
+        group_pointer_type            previous_group;         // Previous group in the linked list of all groups. nullptr if no preceding group.
         skipfield_type                free_list_head;         // The index of the last erased element in the group. The last erased element will, in turn, contain the number of the index of the next erased element, and so on. If this is == maximum skipfield_type value then free_list is empty ie. no erasures have occurred in the group (or if they have, the erased locations have subsequently been reused via insert/emplace/assign).
         const skipfield_type          capacity;               // The element capacity of this particular group - can also be calculated from reinterpret_cast<aligned_pointer_type>(group->skipfield) - group->elements, however this space is effectively free due to struct padding and the sizeof(skipfield_type), and calculating it once is faster in benchmarking.
         skipfield_type                size;                   // The total number of active elements in group - changes with insert and erase commands - used to check for empty group in erase function, as an indication to remove the group. Also used in combination with capacity to check if group is full, which is used in the next/previous/advance/distance overloads, and range-erase.
-        group_pointer_type            erasures_list_next_group; // The next group in the singly-linked list of groups with erasures ie. with active erased-element free lists. NULL if no next group.
+        group_pointer_type            erasures_list_next_group; // The next group in the singly-linked list of groups with erasures ie. with active erased-element free lists. nullptr if no next group.
         size_type                     group_number;           // Used for comparison (> < >= <= <=>) iterator operators (used by distance function and user).
 
 
@@ -171,7 +171,7 @@ private:
 
         explicit group(aligned_struct_allocator_type aa, skipfield_type elements_per_group, group_pointer_type previous):
             last_endpoint(bitcast_pointer<aligned_pointer_type>(
-                std::allocator_traits<aligned_struct_allocator_type>::allocate(aa, get_aligned_block_capacity(elements_per_group), (previous == NULL) ? 0 : previous->elements))),
+                std::allocator_traits<aligned_struct_allocator_type>::allocate(aa, get_aligned_block_capacity(elements_per_group), (previous == nullptr) ? 0 : previous->elements))),
  /* Because this variable occurs first in the struct, we allocate here initially, then increment its value in the element initialisation below. As opposed to doing a secondary assignment in the code */
             next_group(nullptr),
             elements(last_endpoint++), // we increment here because in 99% of cases, a group allocation occurs because of an insertion, so this saves a ++ call later
@@ -193,7 +193,7 @@ private:
             free_list_head = std::numeric_limits<skipfield_type>::max();
             previous_group = previous;
             size = increment;
-            erasures_list_next_group = NULL;
+            erasures_list_next_group = nullptr;
             group_number = group_num;
 
             std::memset(bitcast_pointer<void *>(skipfield), 0, sizeof(skipfield_type) * static_cast<size_type>(capacity));
@@ -313,7 +313,7 @@ private:
             assert(group_pointer != nullptr);
             skipfield_type skip = *(++skipfield_pointer);
             element_pointer += static_cast<size_type>(skip) + 1u;
-            if (element_pointer == group_pointer->last_endpoint && group_pointer->next_group != NULL) {
+            if (element_pointer == group_pointer->last_endpoint && group_pointer->next_group != nullptr) {
                 group_pointer = group_pointer->next_group;
                 const aligned_pointer_type elements = group_pointer->elements;
                 const skipfield_pointer_type skipfield = group_pointer->skipfield;
@@ -461,7 +461,7 @@ private:
 
         void advance_backward(difference_type n) {
             assert(n < 0);
-            assert(!((element_pointer == group_pointer->elements + *(group_pointer->skipfield)) && group_pointer->previous_group == NULL)); // check that we're not already at begin()
+            assert(!((element_pointer == group_pointer->elements + *(group_pointer->skipfield)) && group_pointer->previous_group == nullptr)); // check that we're not already at begin()
 
             // Special case for initial element pointer and initial group (we don't know how far into the group the element pointer is)
             if (element_pointer != group_pointer->last_endpoint) {
@@ -473,7 +473,7 @@ private:
                         element_pointer += n;
                         skipfield_pointer += n;
                         return;
-                    } else if (group_pointer->previous_group == NULL) {
+                    } else if (group_pointer->previous_group == nullptr) {
                         // ie. we've gone before begin(), so bound to begin()
                         element_pointer = group_pointer->elements;
                         skipfield_pointer = group_pointer->skipfield;
@@ -1134,7 +1134,7 @@ private:
             end_.skipfield_pointer = end_.group_pointer->skipfield + elements_constructed_before_exception;
             size_ += elements_constructed_before_exception;
             unused_groups_head = end_.group_pointer->next_group;
-            end_.group_pointer->next_group = NULL;
+            end_.group_pointer->next_group = nullptr;
         }
     }
 
@@ -1237,7 +1237,7 @@ private:
 
         // Deal with final group (partial fill)
         unused_groups_head = end_.group_pointer->next_group;
-        end_.group_pointer->reset(static_cast<skipfield_type>(size), NULL, previous_group, group_number);
+        end_.group_pointer->reset(static_cast<skipfield_type>(size), nullptr, previous_group, group_number);
         end_.element_pointer = end_.group_pointer->elements;
         end_.skipfield_pointer = end_.group_pointer->skipfield + size;
         fill(element, static_cast<skipfield_type>(size));
@@ -1258,7 +1258,7 @@ public:
         reserve(size_ + size);
 
         // Use up erased locations if available:
-        while (groups_with_erasures_list_head != NULL) {
+        while (groups_with_erasures_list_head != nullptr) {
             // skipblock loop: breaks when hive is exhausted of reusable skipblocks, or returns if size == 0
             aligned_pointer_type const element_pointer = groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head;
             skipfield_pointer_type const skipfield_pointer = groups_with_erasures_list_head->skipfield + groups_with_erasures_list_head->free_list_head;
@@ -1405,7 +1405,7 @@ private:
 
         // Deal with final group (partial fill)
         unused_groups_head = end_.group_pointer->next_group;
-        end_.group_pointer->reset(static_cast<skipfield_type>(size), NULL, previous_group, group_number);
+        end_.group_pointer->reset(static_cast<skipfield_type>(size), nullptr, previous_group, group_number);
         end_.element_pointer = end_.group_pointer->elements;
         end_.skipfield_pointer = end_.group_pointer->skipfield + size;
         range_fill(it, static_cast<skipfield_type>(size));
@@ -1539,8 +1539,8 @@ private:
     }
 
     inline void reset_only_group_left(group_pointer_type const group_pointer) {
-        groups_with_erasures_list_head = NULL;
-        group_pointer->reset(0, NULL, NULL, 0);
+        groups_with_erasures_list_head = nullptr;
+        group_pointer->reset(0, nullptr, nullptr, 0);
 
         // Reset begin and end iterators:
         end_.element_pointer = begin_.element_pointer = group_pointer->last_endpoint;
@@ -1667,7 +1667,7 @@ public:
         }
 
         // else: group is empty, consolidate groups
-        const bool in_back_block = (it.group_pointer->next_group == NULL), in_front_block = (it.group_pointer == begin_.group_pointer);
+        const bool in_back_block = (it.group_pointer->next_group == nullptr), in_front_block = (it.group_pointer == begin_.group_pointer);
 
         if (in_back_block & in_front_block) {
             // ie. only group in hive
@@ -1676,7 +1676,7 @@ public:
             return end_;
         } else if ((!in_back_block) & in_front_block) {
             // ie. Remove first group, change first group to next group
-            it.group_pointer->next_group->previous_group = NULL; // Cut off this group from the chain
+            it.group_pointer->next_group->previous_group = nullptr; // Cut off this group from the chain
             begin_.group_pointer = it.group_pointer->next_group; // Make the next group the first group
 
             update_subsequent_group_numbers(begin_.group_pointer);
@@ -1719,7 +1719,7 @@ public:
             if (it.group_pointer->free_list_head != std::numeric_limits<skipfield_type>::max()) {
                 remove_from_groups_with_erasures_list(it.group_pointer);
             }
-            it.group_pointer->previous_group->next_group = NULL;
+            it.group_pointer->previous_group->next_group = nullptr;
             end_.group_pointer = it.group_pointer->previous_group; // end iterator needs to be changed as element supplied was the back element of the hive
             end_.element_pointer = bitcast_pointer<aligned_pointer_type>(end_.group_pointer->skipfield);
             end_.skipfield_pointer = end_.group_pointer->skipfield + end_.group_pointer->capacity;
@@ -1988,7 +1988,7 @@ public:
 
 
             if ((size_ -= current.group_pointer->size) != 0) {
-                // ie. either previous_group != NULL or next_group != NULL
+                // ie. either previous_group != nullptr or next_group != nullptr
                 if (current.group_pointer->free_list_head != std::numeric_limits<skipfield_type>::max()) {
                     remove_from_groups_with_erasures_list(current.group_pointer);
                 }
@@ -2329,7 +2329,7 @@ private:
         if (size_ != 0) {
             // Necessary here to prevent a pointer matching to an empty hive with one memory block retained with the skipfield wiped (see erase())
             // Start with last group first, as will be the largest group in most cases:
-            for (group_pointer_type current_group = end_.group_pointer; current_group != NULL; current_group = current_group->previous_group) {
+            for (group_pointer_type current_group = end_.group_pointer; current_group != nullptr; current_group = current_group->previous_group) {
                 auto ap = bitcast_pointer<aligned_pointer_type>(pointer(p));
                 if (current_group->elements <= ap && ap < bitcast_pointer<aligned_pointer_type>(current_group->skipfield)) {
                     auto skipfield_pointer = current_group->skipfield + (ap - current_group->elements);
@@ -2370,7 +2370,7 @@ public:
 
         // Throw if incompatible group capacity found:
         if (source.min_group_capacity_ < min_group_capacity_ || source.max_group_capacity_ > max_group_capacity_) {
-            for (group_pointer_type current_group = source.begin_.group_pointer; current_group != NULL; current_group = current_group->next_group) {
+            for (group_pointer_type current_group = source.begin_.group_pointer; current_group != nullptr; current_group = current_group->next_group) {
                 if (current_group->capacity < min_group_capacity_ || current_group->capacity > max_group_capacity_) {
                     throw std::length_error("A source memory block capacity is outside of the destination's minimum or maximum memory block capacity limits - please change either the source or the destination's min/max block capacity limits using reshape() before calling splice() in this case");
                 }
