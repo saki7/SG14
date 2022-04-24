@@ -1,7 +1,7 @@
 // Original source:
 // https://github.com/mattreecebentley/plf_hive/blob/7b7763f/plf_hive_test_suite.cpp
 
-#if __cplusplus >= 201703L
+#if __cplusplus >= 201703
 
 #include <sg14/plf_hive.h>
 
@@ -858,7 +858,7 @@ TEST(hive, InsertAndErase)
     EXPECT_INVARIANTS(h);
 
     h.clear();
-    h.trim_capacity();
+    h.trim();
     h.reshape(plf::hive_limits(10000, h.block_capacity_limits().max));
     h.insert(30'000, 1);
     EXPECT_EQ(h.size(), 30'000u);
@@ -986,7 +986,7 @@ TEST(hive, InsertAndErase2)
         ASSERT_NE(temp, h.end());
 
         auto temp2 = h.get_iterator(&*temp);
-        auto temp3 = std::as_const(h).get_iterator(&*temp);
+        auto temp3 = const_cast<const plf::hive<int>&>(h).get_iterator(&*temp);
         static_assert(std::is_same<decltype(temp2), plf::hive<int>::iterator>::value, "");
         static_assert(std::is_same<decltype(temp3), plf::hive<int>::const_iterator>::value, "");
         EXPECT_EQ(temp, temp2);
@@ -1453,7 +1453,7 @@ TYPED_TEST(hivet, InsertOverloadsForRanges)
 TEST(hive, ReserveAndFill)
 {
     plf::hive<int> v;
-    v.trim_capacity();
+    v.trim();
     v.reserve(50'000);
     v.insert(60'000, 1);
     EXPECT_EQ(v.size(), 60'000u);
@@ -1786,27 +1786,54 @@ TEST(hive, SpliceUnequalSize2)
     EXPECT_INVARIANTS(h2);
 }
 
+TEST(hive, TrimDoesntMove)
+{
+    struct S {
+        int i;
+        explicit S(int i) : i(i) {}
+        S(S&&) { throw 42; }
+    };
+    plf::hive<S> h({10, 10});
+    for (int i=0; i < 100; ++i) {
+        h.emplace(i);
+    }
+    for (auto it = h.begin(); it != h.end(); ) {
+        if (it->i % 3 == 0 || (35 < it->i && it->i < 65)) {
+            it = h.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    size_t oldcap = h.capacity();
+    h.reserve(oldcap + 100);
+    EXPECT_GE(h.capacity(), oldcap + 100);
+    h.trim();
+    EXPECT_LE(h.capacity(), oldcap);
+}
+
 TEST(hive, StdErase)
 {
     std::mt19937 g;
-    plf::hive<int> h;
+    plf::hive<int> h1;
     for (int count = 0; count != 1000; ++count) {
-        h.insert(g() & 1);
+        h1.insert(g() & 1);
     }
-    plf::hive<int> h2 = h;
-    ASSERT_EQ(h.size(), 1000u);
+    plf::hive<int> h2 = h1;
+    ASSERT_EQ(h1.size(), 1000u);
 
-    int count0 = std::count(h.begin(), h.end(), 0);
-    int count1 = std::count(h.begin(), h.end(), 1);
+    int count0 = std::count(h1.begin(), h1.end(), 0);
+    int count1 = std::count(h1.begin(), h1.end(), 1);
     ASSERT_EQ(count0 + count1, 1000);
 
-    erase(h, 0);
+    erase(h1, 0);
     erase(h2, 1);
 
-    EXPECT_EQ(h.size(), count1);
-    EXPECT_TRUE(std::all_of(h.begin(), h.end(), [](int i){ return i == 1; }));
+    EXPECT_EQ(h1.size(), count1);
+    EXPECT_INVARIANTS(h1);
+    EXPECT_TRUE(std::all_of(h1.begin(), h1.end(), [](int i){ return i == 1; }));
 
     EXPECT_EQ(h2.size(), count0);
+    EXPECT_INVARIANTS(h2);
     EXPECT_TRUE(std::all_of(h2.begin(), h2.end(), [](int i){ return i == 0; }));
 }
 
@@ -1843,6 +1870,7 @@ TEST(hive, StdEraseIf)
 
     erase_if(h, [](int i){ return i >= 500; });
     EXPECT_EQ(h.size(), 500u);
+    EXPECT_INVARIANTS(h);
     EXPECT_TRUE(std::all_of(h.begin(), h.end(), [](int i){ return i < 500; }));
 }
 
@@ -1918,4 +1946,4 @@ TEST(hive, PmrCorrectness)
 }
 #endif // __cpp_lib_memory_resource >= 201603
 
-#endif // __cplusplus >= 201703L
+#endif // __cplusplus >= 201703
