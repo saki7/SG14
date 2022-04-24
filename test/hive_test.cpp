@@ -8,7 +8,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#if __has_include(<concepts>)
+#include <concepts>
+#endif
 #include <functional>
+#include <iterator>
 #include <memory>
 #if __has_include(<memory_resource>)
 #include <memory_resource>
@@ -556,6 +560,73 @@ TEST(hive, IteratorConvertibility)
     static_assert(!std::is_convertible<CRIt, RIt>::value, "");
     static_assert( std::is_convertible<CRIt, CRIt>::value, "");
 }
+
+template<class T> using Tag = typename std::iterator_traits<T>::iterator_category;
+
+TEST(hive, IteratorCategory)
+{
+    using H = plf::hive<int>;
+    using It = H::iterator;
+    using CIt = H::const_iterator;
+    using RIt = H::reverse_iterator;
+    using CRIt = H::const_reverse_iterator;
+
+    static_assert(std::is_base_of<std::bidirectional_iterator_tag, Tag<It>>::value, "");
+    static_assert(std::is_base_of<std::bidirectional_iterator_tag, Tag<CIt>>::value, "");
+    static_assert(std::is_base_of<std::bidirectional_iterator_tag, Tag<RIt>>::value, "");
+    static_assert(std::is_base_of<std::bidirectional_iterator_tag, Tag<CRIt>>::value, "");
+#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+    static_assert(std::is_base_of<std::random_access_iterator_tag, Tag<It>>::value, "");
+    static_assert(std::is_base_of<std::random_access_iterator_tag, Tag<CIt>>::value, "");
+    static_assert(std::is_base_of<std::random_access_iterator_tag, Tag<RIt>>::value, "");
+    static_assert(std::is_base_of<std::random_access_iterator_tag, Tag<CRIt>>::value, "");
+#else
+    static_assert(!std::is_base_of<std::random_access_iterator_tag, Tag<It>>::value, "");
+    static_assert(!std::is_base_of<std::random_access_iterator_tag, Tag<CIt>>::value, "");
+    static_assert(!std::is_base_of<std::random_access_iterator_tag, Tag<RIt>>::value, "");
+    static_assert(!std::is_base_of<std::random_access_iterator_tag, Tag<CRIt>>::value, "");
+#endif
+}
+
+#if __cpp_lib_ranges >= 201911
+TEST(hive, RangeConcepts)
+{
+    using H = plf::hive<int>;
+    using It = H::iterator;
+    using CIt = H::const_iterator;
+    using RIt = H::reverse_iterator;
+    using CRIt = H::const_reverse_iterator;
+
+    static_assert(std::bidirectional_iterator<It>, "");
+    static_assert(std::bidirectional_iterator<CIt>, "");
+    static_assert(std::bidirectional_iterator<RIt>, "");
+    static_assert(std::bidirectional_iterator<CRIt>, "");
+    static_assert(std::ranges::bidirectional_range<H>, "");
+#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+    static_assert(std::random_access_iterator<It>, "");
+    static_assert(std::random_access_iterator<CIt>, "");
+    static_assert(std::random_access_iterator<RIt>, "");
+    static_assert(std::random_access_iterator<CRIt>, "");
+    static_assert(std::ranges::random_access_range<H>, "");
+#else
+    static_assert(!std::random_access_iterator<It>, "");
+    static_assert(!std::random_access_iterator<CIt>, "");
+    static_assert(!std::random_access_iterator<RIt>, "");
+    static_assert(!std::random_access_iterator<CRIt>, "");
+    static_assert(!std::ranges::random_access_range<H>, "");
+#endif
+    static_assert(!std::contiguous_iterator<It>, "");
+    static_assert(!std::contiguous_iterator<CIt>, "");
+    static_assert(!std::contiguous_iterator<RIt>, "");
+    static_assert(!std::contiguous_iterator<CRIt>, "");
+    static_assert(!std::ranges::contiguous_range<H>, "");
+
+    static_assert(std::ranges::sized_range<H>, "");
+    static_assert(std::ranges::sized_range<const H>, "");
+    static_assert(!std::ranges::view<H>, "");
+    static_assert(!std::ranges::view<const H>, "");
+}
+#endif
 
 TYPED_TEST(hivet, IteratorComparison)
 {

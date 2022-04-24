@@ -22,6 +22,10 @@
 #ifndef PLF_HIVE_H
 #define PLF_HIVE_H
 
+#ifndef PLF_HIVE_RANDOM_ACCESS_ITERATORS
+ #define PLF_HIVE_RANDOM_ACCESS_ITERATORS 0
+#endif
+
 #include <algorithm>
 #if __has_include(<bit>)
 #include <bit>
@@ -199,13 +203,16 @@ private:
 
     template <bool IsConst>
     class hive_iterator {
-    private:
         group_pointer_type group_pointer = group_pointer_type();
         aligned_pointer_type element_pointer = aligned_pointer_type();
         skipfield_pointer_type skipfield_pointer = skipfield_pointer_type();
 
     public:
+#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+        using iterator_category = std::random_access_iterator_tag;
+#else
         using iterator_category = std::bidirectional_iterator_tag;
+#endif
         using value_type = typename hive::value_type;
         using difference_type = typename hive::difference_type;
         using pointer = std::conditional_t<IsConst, typename hive::const_pointer, typename hive::pointer>;
@@ -236,9 +243,10 @@ private:
         {}
 
         friend void swap(hive_iterator& a, hive_iterator& b) noexcept {
-            std::swap(a.group_pointer, b.group_pointer);
-            std::swap(a.element_pointer, b.element_pointer);
-            std::swap(a.skipfield_pointer, b.skipfield_pointer);
+            using std::swap;
+            swap(a.group_pointer, b.group_pointer);
+            swap(a.element_pointer, b.element_pointer);
+            swap(a.skipfield_pointer, b.skipfield_pointer);
         }
 
     private:
@@ -304,9 +312,8 @@ private:
         hive_iterator& operator++() {
             assert(group_pointer != nullptr);
             skipfield_type skip = *(++skipfield_pointer);
-
-            if ((element_pointer += static_cast<size_type>(skip) + 1u) == group_pointer->last_endpoint && group_pointer->next_group != NULL) {
-                // ie. beyond end of current memory block. Second condition allows iterator to reach end(), which may be 1 past end of block, if block has been fully used and another block is not allocated
+            element_pointer += static_cast<size_type>(skip) + 1u;
+            if (element_pointer == group_pointer->last_endpoint && group_pointer->next_group != NULL) {
                 group_pointer = group_pointer->next_group;
                 const aligned_pointer_type elements = group_pointer->elements;
                 const skipfield_pointer_type skipfield = group_pointer->skipfield;
@@ -314,25 +321,21 @@ private:
                 element_pointer = elements + skip;
                 skipfield_pointer = skipfield;
             }
-
             skipfield_pointer += skip;
             return *this;
         }
 
         hive_iterator& operator--() {
             assert(group_pointer != nullptr);
-
             if (element_pointer != group_pointer->elements) {
                 // ie. not already at beginning of group
                 const skipfield_type skip = *(--skipfield_pointer);
                 skipfield_pointer -= skip;
-
                 if ((element_pointer -= static_cast<size_type>(skip) + 1u) != group_pointer->elements - 1) {
                     // ie. iterator was not already at beginning of hive (with some previous consecutive deleted elements), and skipfield does not takes us into the previous group)
                     return *this;
                 }
             }
-
             group_pointer = group_pointer->previous_group;
             const skipfield_pointer_type skipfield = group_pointer->skipfield + group_pointer->capacity - 1;
             const skipfield_type skip = *skipfield;
@@ -603,15 +606,27 @@ private:
             }
             return should_swap ? -distance : distance;
         }
+
+#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+        friend hive_iterator& operator+=(hive_iterator& a, difference_type n) { a.advance(n); return a; }
+        friend hive_iterator& operator-=(hive_iterator& a, difference_type n) { a.advance(-n); return a; }
+        friend hive_iterator operator+(const hive_iterator& a, difference_type n) { return a.next(n); }
+        friend hive_iterator operator+(difference_type n, const hive_iterator& a) { return a.next(n); }
+        friend hive_iterator operator-(const hive_iterator& a, difference_type n) { return a.prev(n); }
+        friend difference_type operator-(const hive_iterator& a, const hive_iterator& b) { return b.distance(a); }
+#endif
     }; // class hive_iterator
 
     template <bool IsConst>
     class hive_reverse_iterator {
-    private:
         hive_iterator<IsConst> it_;
 
     public:
+#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+        using iterator_category = std::random_access_iterator_tag;
+#else
         using iterator_category = std::bidirectional_iterator_tag;
+#endif
         using value_type = typename hive::value_type;
         using difference_type = typename hive::difference_type;
         using pointer = std::conditional_t<IsConst, typename hive::const_pointer, typename hive::pointer>;
@@ -652,7 +667,6 @@ private:
 
         hive_iterator<IsConst> base() const noexcept { return it_; }
 
-    public:
         hive_reverse_iterator next(difference_type n) const {
             auto copy = *this;
             copy.it_.advance(-n);
@@ -672,6 +686,15 @@ private:
         void advance(difference_type n) {
             it_.advance(-n);
         }
+
+#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+        friend hive_reverse_iterator& operator+=(hive_reverse_iterator& a, difference_type n) { a.advance(n); return a; }
+        friend hive_reverse_iterator& operator-=(hive_reverse_iterator& a, difference_type n) { a.advance(-n); return a; }
+        friend hive_reverse_iterator operator+(const hive_reverse_iterator& a, difference_type n) { return a.next(n); }
+        friend hive_reverse_iterator operator+(difference_type n, const hive_reverse_iterator& a) { return a.next(n); }
+        friend hive_reverse_iterator operator-(const hive_reverse_iterator& a, difference_type n) { return a.prev(n); }
+        friend difference_type operator-(const hive_reverse_iterator& a, const hive_reverse_iterator& b) { return b.distance(a); }
+#endif
     }; // hive_reverse_iterator
 
 private:
