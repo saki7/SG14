@@ -58,7 +58,8 @@ template<class A, class P> struct hivet_setup<plf::hive<std::pmr::string, A, P>>
     EXPECT_EQ(std::distance(h.begin(), h.end()), h.size()); \
     EXPECT_EQ(h.begin().distance(h.end()), h.size()); \
     EXPECT_EQ(h.begin().next(h.size()), h.end()); \
-    EXPECT_EQ(h.end().prev(h.size()), h.begin());
+    EXPECT_EQ(h.end().prev(h.size()), h.begin()); \
+    h.debug_dump();
 
 namespace {
 template<class BidirIt>
@@ -1289,6 +1290,7 @@ TEST(hive, DISABLED_RegressionTestIssue8)
     h.erase(h.begin());
     h.insert(6);
     assert(h.size() == 4);  // {6,3,4,5}
+    EXPECT_INVARIANTS(h);
 
     auto it = h.begin();
     for (int i = 0; i < 4; ++i, ++it) {
