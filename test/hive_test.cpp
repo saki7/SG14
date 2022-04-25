@@ -40,13 +40,16 @@ TYPED_TEST_SUITE(hivet, hivet_types);
 template<class> struct hivet_setup;
 template<class A, class P> struct hivet_setup<plf::hive<int, A, P>> {
     static int value(int i) { return i; }
+    static bool int_eq_t(int i, int v) { return v == i; }
 };
 template<class A, class P> struct hivet_setup<plf::hive<std::string, A, P>> {
     static std::string value(int i) { return std::to_string(i); }
+    static bool int_eq_t(int i, const std::string& v) { return v == std::to_string(i); }
 };
 #if __cpp_lib_memory_resource >= 201603
 template<class A, class P> struct hivet_setup<plf::hive<std::pmr::string, A, P>> {
     static std::pmr::string value(int i) { return std::to_string(i).c_str(); }
+    static bool int_eq_t(int i, std::string_view v) { return v == std::to_string(i); }
 };
 #endif
 
@@ -1313,6 +1316,40 @@ TEST(hive, RegressionTestIssue14)
     int a[] = {1, 2, 3, 4, 5};
     ASSERT_THROW(h.assign(a, a + 5), int);
     EXPECT_INVARIANTS(h);
+}
+
+TYPED_TEST(hivet, RegressionTestIssue15)
+{
+    using Hive = TypeParam;
+    int a[] = {1, 2, 1, 0, 2, 1, 0, 1, 2, 0};
+    Hive h;
+    for (int i : {1, 2, 1, 0, 2, 1, 0, 1, 2, 0}) {
+        h.insert(hivet_setup<Hive>::value(i));
+    }
+    h.unique();
+    EXPECT_INVARIANTS(h);
+    EXPECT_TRUE(std::equal(a, a + 10, h.begin(), h.end(), hivet_setup<Hive>::int_eq_t));
+}
+
+TEST(hive, RegressionTestIssue16)
+{
+    for (int n = 0; n < 15; ++n) {
+        plf::hive<char> h(plf::hive_limits(4, 4));
+        h.insert(n, 'x');
+        for (int i = 0; i <= n; ++i) {
+            for (int j = 0; j <= n - i; ++j) {
+                auto it = h.begin().next(i);
+                auto jt = it.next(j);
+                EXPECT_EQ(it.distance(jt), j);
+                EXPECT_EQ(jt.distance(it), -j);
+
+                auto kt = h.end().prev(i);
+                auto lt = kt.prev(j);
+                EXPECT_EQ(lt.distance(kt), j);
+                EXPECT_EQ(kt.distance(lt), -j);
+            }
+        }
+    }
 }
 
 TYPED_TEST(hivet, Sort)
