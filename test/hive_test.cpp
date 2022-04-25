@@ -61,8 +61,7 @@ template<class A, class P> struct hivet_setup<plf::hive<std::pmr::string, A, P>>
     EXPECT_EQ(std::distance(h.begin(), h.end()), h.size()); \
     EXPECT_EQ(h.begin().distance(h.end()), h.size()); \
     EXPECT_EQ(h.begin().next(h.size()), h.end()); \
-    EXPECT_EQ(h.end().prev(h.size()), h.begin()); \
-    h.debug_dump();
+    EXPECT_EQ(h.end().prev(h.size()), h.begin());
 
 namespace {
 template<class BidirIt>
@@ -1203,7 +1202,7 @@ TEST(hive, RangeEraseThirdErasedRandomized)
     EXPECT_INVARIANTS(v);
 }    
 
-TYPED_TEST(hivet, EraseRandomlyUntilEmpty)
+TYPED_TEST(hivet, DISABLED_EraseRandomlyUntilEmpty)
 {
     using Hive = TypeParam;
 
@@ -1222,6 +1221,7 @@ TYPED_TEST(hivet, EraseRandomlyUntilEmpty)
             size_t len = g() % (n + 1 - offset);
             std::advance(it1, offset);
             std::advance(it2, offset + len);
+            EXPECT_EQ(it1.distance(it2), len);
             EXPECT_EQ(std::distance(it1, it2), len);
             h.erase(it1, it2);
             EXPECT_EQ(h.size(), n - len);
@@ -2008,7 +2008,6 @@ TEST(hive, StdEraseIf)
     for (int count = 0; count != 1000; ++count) {
         h.insert(count);
     }
-
     erase_if(h, [](int i){ return i >= 500; });
     EXPECT_EQ(h.size(), 500u);
     EXPECT_INVARIANTS(h);

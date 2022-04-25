@@ -634,16 +634,14 @@ private:
                 }
                 first.skipf_ = first.group_->skipfield;
             }
-
             if (last.group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
                 distance += last.skipf_ - first.skipf_;
-            } else if (last.group_->last_endpoint - 1 >= last.elt_ || last.elt_ + last.skipf_[1] == last.group_->last_endpoint) {
-                // ie. if last is .end() or the last element in the block
-                distance += static_cast<difference_type>(last.group_->size) - (last.group_->last_endpoint - last.elt_);
+            } else if (last.elt_ == last.group_->last_endpoint) {
+                distance += static_cast<difference_type>(last.group_->size);
             } else {
                 while (first.skipf_ != last.skipf_) {
                     ++first.skipf_;
-                    first.skipf_ += *first.skipf_;
+                    first.skipf_ += first.skipf_[0];
                     ++distance;
                 }
             }
