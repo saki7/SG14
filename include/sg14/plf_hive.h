@@ -23,11 +23,19 @@
 #define PLF_HIVE_H
 
 #ifndef PLF_HIVE_RANDOM_ACCESS_ITERATORS
- #define PLF_HIVE_RANDOM_ACCESS_ITERATORS 0
+ #define PLF_HIVE_RANDOM_ACCESS_ITERATORS 1
+#endif
+
+#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+ #define PLF_HIVE_RELATIONAL_OPERATORS 1  // random access iterators require relational operators
+#endif
+
+#ifndef PLF_HIVE_RELATIONAL_OPERATORS
+ #define PLF_HIVE_RELATIONAL_OPERATORS 0
 #endif
 
 #ifndef PLF_HIVE_DEBUGGING
- #define PLF_HIVE_DEBUGGING 0
+ #define PLF_HIVE_DEBUGGING 1
 #endif
 
 #include <algorithm>
@@ -182,28 +190,38 @@ private:
             // as an indication to remove the group. Also used in combination with capacity to check if group is full.
         GroupPtr erasures_list_next_group;
             // The next group in the singly-linked list of groups with erasures ie. with active erased-element free lists. nullptr if no next group.
-        size_type group_number;
+#if PLF_HIVE_RELATIONAL_OPERATORS
+        size_type groupno_ = 0;
             // Used for comparison (> < >= <= <=>) iterator operators (used by distance function and user).
+#endif
 
         // Group elements allocation explanation: memory has to be allocated as an aligned type in order to align with memory boundaries correctly
         // (as opposed to being allocated as char or uint_8). Unfortunately this makes combining the element memory block and the skipfield memory block
         // into one allocation (which increases performance) a little more tricky. Specifically it means in many cases the allocation will amass more
         // memory than is needed, particularly if the element type is large.
 
+#if PLF_HIVE_RELATIONAL_OPERATORS
+        inline size_t group_number() const { return groupno_; }
+        inline void set_group_number(size_type x) { groupno_ = x; }
+#else
+        inline size_t group_number() const { return 42; }
+        inline void set_group_number(size_type) { }
+#endif
+
 #if PLF_HIVE_DEBUGGING
         void debug_dump() const {
             printf(
                 "  group #%zu [%zu/%zu used] (last_endpoint=%p, elts=%p, skipfield=%p, freelist=%zu, erasenext=%p)",
-                size_t(group_number), size_t(size), size_t(capacity),
+                group_number(), size_t(size), size_t(capacity),
                 (void*)last_endpoint, (void*)elements, (void*)skipfield, size_t(free_list_head), (void*)erasures_list_next_group
             );
             if (next_group) {
-                printf(" next: #%zu", size_t(next_group->group_number));
+                printf(" next: #%zu", next_group->group_number());
             } else {
                 printf(" next: null");
             }
             if (previous_group) {
-                printf(" prev: #%zu\n", size_t(previous_group->group_number));
+                printf(" prev: #%zu\n", previous_group->group_number());
             } else {
                 printf(" prev: null\n");
             }
@@ -219,20 +237,20 @@ private:
             previous_group(prevg),
             capacity(cap),
             size(1),
-            erasures_list_next_group(nullptr),
-            group_number((prevg == nullptr) ? 0 : prevg->group_number + 1u)
+            erasures_list_next_group(nullptr)
         {
+            set_group_number(prevg == nullptr ? 0 : prevg->group_number() + 1u);
             std::memset(bitcast_pointer<void *>(skipfield), 0, sizeof(skipfield_type) * (cap + 1));
         }
 
-        void reset(skipfield_type increment, GroupPtr next, GroupPtr prev, size_type group_num) {
+        void reset(skipfield_type increment, GroupPtr next, GroupPtr prev, size_type groupno) {
             last_endpoint = elements + increment;
             next_group = next;
             free_list_head = std::numeric_limits<skipfield_type>::max();
             previous_group = prev;
             size = increment;
             erasures_list_next_group = nullptr;
-            group_number = group_num;
+            set_group_number(groupno);
 
             std::memset(bitcast_pointer<void *>(skipfield), 0, sizeof(skipfield_type) * static_cast<size_type>(capacity));
             // capacity + 1 is not necessary here as the end skipfield is never written to after initialization
@@ -311,12 +329,13 @@ private:
             return a.elt_ == b.elt_;
         }
 
+#if PLF_HIVE_RELATIONAL_OPERATORS
 #if __cpp_impl_three_way_comparison >= 201907
         friend std::strong_ordering operator<=>(const hive_iterator& a, const hive_iterator& b) {
             // TODO: what about fancy pointer types that don't support <=> natively?
             return a.group_ == b.group_ ?
                 a.elt_ <=> b.elt_ :
-                a.group_->group_number <=> b.group_->group_number;
+                a.group_->groupno_ <=> b.group_->groupno_;
         }
 #else
         friend bool operator!=(const hive_iterator& a, const hive_iterator& b) {
@@ -326,26 +345,27 @@ private:
         friend bool operator<(const hive_iterator& a, const hive_iterator& b) {
             return a.group_ == b.group_ ?
                 a.elt_ < b.elt_ :
-                a.group_->group_number < b.group_->group_number;
+                a.group_->groupno_ < b.group_->groupno_;
         }
 
         friend bool operator>(const hive_iterator& a, const hive_iterator& b) {
             return a.group_ == b.group_ ?
                 a.elt_ > b.elt_ :
-                a.group_->group_number > b.group_->group_number;
+                a.group_->groupno_ > b.group_->groupno_;
         }
 
         friend bool operator<=(const hive_iterator& a, const hive_iterator& b) {
             return a.group_ == b.group_ ?
                 a.elt_ <= b.elt_ :
-                a.group_->group_number < b.group_->group_number;
+                a.group_->groupno_ < b.group_->groupno_;
         }
 
         friend bool operator>=(const hive_iterator& a, const hive_iterator& b) {
             return a.group_ == b.group_ ?
                 a.elt_ >= b.elt_ :
-                a.group_->group_number > b.group_->group_number;
+                a.group_->groupno_ > b.group_->groupno_;
         }
+#endif
 #endif
 
         inline reference operator*() const noexcept {
@@ -575,40 +595,10 @@ private:
             }
         }
 
-    public:
-        inline void advance(difference_type n) {
-            if (n > 0) {
-                advance_forward(n);
-            } else if (n < 0) {
-                advance_backward(n);
-            }
-        }
-
-        inline hive_iterator next(difference_type n) const {
-            auto copy = *this;
-            copy.advance(n);
-            return copy;
-        }
-
-        inline hive_iterator prev(difference_type n) const {
-            auto copy = *this;
-            copy.advance(-n);
-            return copy;
-        }
-
-        difference_type distance(hive_iterator last) const {
-            auto first = *this;
-            if (first == last) {
-                return 0;
-            }
-
-            const bool should_swap = first > last;
-            if (should_swap) {
-                using std::swap;
-                swap(first, last);
-            }
-
+        difference_type distance_forward(hive_iterator last) const {
             difference_type distance = 0;
+            auto first = *this;
+
             if (first.group_ != last.group_) {
                 if (first.group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
                     // If no prior erasures have occured in this group we can do simple addition
@@ -634,7 +624,9 @@ private:
                 }
                 first.skipf_ = first.group_->skipfield;
             }
-            if (last.group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
+            if (first.elt_ == last.elt_) {
+                // do nothing
+            } else if (last.group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
                 distance += last.skipf_ - first.skipf_;
             } else if (last.elt_ == last.group_->last_endpoint) {
                 distance += static_cast<difference_type>(last.group_->size);
@@ -645,7 +637,41 @@ private:
                     ++distance;
                 }
             }
-            return should_swap ? -distance : distance;
+            return distance;
+        }
+
+    public:
+        inline void advance(difference_type n) {
+            if (n > 0) {
+                advance_forward(n);
+            } else if (n < 0) {
+                advance_backward(n);
+            }
+        }
+
+        inline hive_iterator next(difference_type n) const {
+            auto copy = *this;
+            copy.advance(n);
+            return copy;
+        }
+
+        inline hive_iterator prev(difference_type n) const {
+            auto copy = *this;
+            copy.advance(-n);
+            return copy;
+        }
+
+        difference_type distance(hive_iterator last) const {
+            if (*this == last) {
+                return 0;
+            }
+
+#if PLF_HIVE_RELATIONAL_OPERATORS
+            if (last < *this) {
+                return -last.distance_forward(*this);
+            }
+#endif
+            return distance_forward(last);
         }
 
 #if PLF_HIVE_RANDOM_ACCESS_ITERATORS
@@ -1167,7 +1193,7 @@ public:
                     next_group = unused_groups_head;
                     std::allocator_traits<allocator_type>::construct(elt_allocator(), bitcast_pointer<pointer>(next_group->elements), static_cast<Args&&>(args)...);
                     unused_groups_head = next_group->next_group;
-                    next_group->reset(1, nullptr, end_.group_, end_.group_->group_number + 1u);
+                    next_group->reset(1, nullptr, end_.group_, end_.group_->group_number() + 1u);
                 }
 
                 end_.group_->next_group = next_group;
@@ -1296,11 +1322,11 @@ private:
         size_ += size;
     }
 
-    void fill_unused_groups(size_type size, const T& element, size_type group_number, GroupPtr previous_group, GroupPtr current_group) {
+    void fill_unused_groups(size_type size, const T& element, size_type groupno, GroupPtr previous_group, GroupPtr current_group) {
         end_.group_ = current_group;
         for (; end_.group_->capacity < size; end_.group_ = end_.group_->next_group) {
             const skipfield_type capacity = end_.group_->capacity;
-            end_.group_->reset(capacity, end_.group_->next_group, previous_group, group_number++);
+            end_.group_->reset(capacity, end_.group_->next_group, previous_group, groupno++);
             previous_group = end_.group_;
             size -= static_cast<size_type>(capacity);
             end_.elt_ = end_.group_->elements;
@@ -1309,7 +1335,7 @@ private:
 
         // Deal with final group (partial fill)
         unused_groups_head = end_.group_->next_group;
-        end_.group_->reset(static_cast<skipfield_type>(size), nullptr, previous_group, group_number);
+        end_.group_->reset(static_cast<skipfield_type>(size), nullptr, previous_group, groupno);
         end_.elt_ = end_.group_->elements;
         end_.skipf_ = end_.group_->skipfield + size;
         fill_impl(element, static_cast<skipfield_type>(size));
@@ -1399,7 +1425,7 @@ public:
 
         // Use unused groups:
         end_.group_->next_group = unused_groups_head;
-        fill_unused_groups(size, element, end_.group_->group_number + 1, end_.group_, unused_groups_head);
+        fill_unused_groups(size, element, end_.group_->group_number() + 1, end_.group_, unused_groups_head);
     }
 
 private:
@@ -1442,11 +1468,11 @@ private:
     }
 
     template<class It>
-    void range_fill_unused_groups(size_type size, It it, size_type group_number, GroupPtr previous_group, GroupPtr current_group) {
+    void range_fill_unused_groups(size_type size, It it, size_type groupno, GroupPtr previous_group, GroupPtr current_group) {
         end_.group_ = current_group;
         for (; end_.group_->capacity < size; end_.group_ = end_.group_->next_group) {
             const skipfield_type capacity = end_.group_->capacity;
-            end_.group_->reset(capacity, end_.group_->next_group, previous_group, group_number++);
+            end_.group_->reset(capacity, end_.group_->next_group, previous_group, groupno++);
             previous_group = end_.group_;
             size -= static_cast<size_type>(capacity);
             end_.elt_ = end_.group_->elements;
@@ -1454,7 +1480,7 @@ private:
         }
         // Deal with final group (partial fill)
         unused_groups_head = end_.group_->next_group;
-        end_.group_->reset(static_cast<skipfield_type>(size), nullptr, previous_group, group_number);
+        end_.group_->reset(static_cast<skipfield_type>(size), nullptr, previous_group, groupno);
         end_.elt_ = end_.group_->elements;
         end_.skipf_ = end_.group_->skipfield + size;
         range_fill_impl(it, static_cast<skipfield_type>(size));
@@ -1533,7 +1559,7 @@ private:
                 n -= group_remainder;
             }
             end_.group_->next_group = unused_groups_head;
-            range_fill_unused_groups(n, first, end_.group_->group_number + 1, end_.group_, unused_groups_head);
+            range_fill_unused_groups(n, first, end_.group_->group_number() + 1, end_.group_, unused_groups_head);
         }
     }
 
@@ -1563,12 +1589,16 @@ public:
     }
 
 private:
+#if PLF_HIVE_RELATIONAL_OPERATORS
     inline void update_subsequent_group_numbers(GroupPtr g) {
         do {
-            g->group_number -= 1;
+            g->groupno_ -= 1;
             g = g->next_group;
         } while (g != nullptr);
     }
+#else
+    inline void update_subsequent_group_numbers(GroupPtr) { }
+#endif
 
     void remove_from_groups_with_erasures_list(GroupPtr g) {
         assert(groups_with_erasures_list_head != nullptr);
@@ -2441,10 +2471,10 @@ public:
 
         // Update subsequent group numbers:
         GroupPtr current_group = source.begin_.group_;
-        size_type current_group_number = end_.group_->group_number;
+        size_type groupno = end_.group_->group_number();
 
         do {
-            current_group->group_number = ++current_group_number;
+            current_group->set_group_number(++groupno);
             current_group = current_group->next_group;
         } while (current_group != nullptr);
 

@@ -63,40 +63,6 @@ template<class A, class P> struct hivet_setup<plf::hive<std::pmr::string, A, P>>
     EXPECT_EQ(h.begin().next(h.size()), h.end()); \
     EXPECT_EQ(h.end().prev(h.size()), h.begin());
 
-namespace {
-template<class BidirIt>
-struct Adaptor {
-    using value_type = typename BidirIt::value_type;
-    using difference_type = typename BidirIt::difference_type;
-    using iterator_category = std::random_access_iterator_tag;
-    using pointer = typename BidirIt::pointer;
-    using reference = typename BidirIt::reference;
-    BidirIt it_;
-    reference operator*() const { return *it_; }
-    reference operator[](difference_type n) const { return *(*this + n); }
-    auto& operator++() { ++it_; return *this; }
-    auto& operator++(int) { auto copy = *this; ++it_; return copy; }
-    auto& operator--() { --it_; return *this; }
-    auto& operator--(int) { auto copy = *this; --it_; return copy; }
-    auto& operator+=(difference_type n) { it_.advance(n); return *this; }
-    auto& operator-=(difference_type n) { it_.advance(-n); return *this; }
-    friend Adaptor operator+(Adaptor a, difference_type n) { a += n; return a; }
-    friend Adaptor operator+(difference_type n, Adaptor a) { a += n; return a; }
-    friend Adaptor operator-(Adaptor a, difference_type n) { a -= n; return a; }
-    friend difference_type operator-(const Adaptor& a, const Adaptor& b) { return b.it_.distance(a.it_); }
-    friend bool operator==(const Adaptor& a, const Adaptor& b) { return a.it_ == b.it_; }
-    friend bool operator!=(const Adaptor& a, const Adaptor& b) { return a.it_ != b.it_; }
-    friend bool operator<(const Adaptor& a, const Adaptor& b) { return a.it_ < b.it_; }
-    friend bool operator>(const Adaptor& a, const Adaptor& b) { return a.it_ > b.it_; }
-    friend bool operator<=(const Adaptor& a, const Adaptor& b) { return a.it_ <= b.it_; }
-    friend bool operator>=(const Adaptor& a, const Adaptor& b) { return a.it_ >= b.it_; }
-};
-template<class BidirIt>
-static Adaptor<BidirIt> adapt_iterator(BidirIt it) {
-    return Adaptor<BidirIt>{it};
-}
-} // anonymous namespace
-
 TYPED_TEST(hivet, BasicInsertClear)
 {
     using Hive = TypeParam;
@@ -245,9 +211,11 @@ TYPED_TEST(hivet, CustomDistanceFunction)
     EXPECT_EQ(h.begin().distance(plus20), 20);
     EXPECT_EQ(h.begin().distance(plus200), 200);
     EXPECT_EQ(plus20.distance(plus200), 180);
+#if PLF_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(plus20.distance(h.begin()), -20);
     EXPECT_EQ(plus200.distance(h.begin()), -200);
     EXPECT_EQ(plus200.distance(plus20), -180);
+#endif
     EXPECT_EQ(plus200.distance(plus200), 0);
 
     // Test const iterators also
@@ -256,9 +224,11 @@ TYPED_TEST(hivet, CustomDistanceFunction)
     EXPECT_EQ(h.cbegin().distance(c20), 20);
     EXPECT_EQ(h.cbegin().distance(c200), 200);
     EXPECT_EQ(c20.distance(c200), 180);
+#if PLF_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(c20.distance(h.cbegin()), -20);
     EXPECT_EQ(c200.distance(h.cbegin()), -200);
     EXPECT_EQ(c200.distance(c20), -180);
+#endif
     EXPECT_EQ(c200.distance(c200), 0);
 }
 
@@ -642,19 +612,21 @@ TYPED_TEST(hivet, IteratorComparison)
         std::advance(it1, n / 10);
         std::advance(it2, -2);
 
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
+
+#if PLF_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
         EXPECT_EQ((it1 >= it2), false);
-        EXPECT_EQ((it1 == it2), false);
-        EXPECT_EQ((it1 != it2), true);
 
         EXPECT_EQ((it2 < it1), false);
         EXPECT_EQ((it2 <= it1), false);
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
-        EXPECT_EQ((it2 == it1), false);
-        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
@@ -663,13 +635,16 @@ TYPED_TEST(hivet, IteratorComparison)
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
 #endif
+#endif
     }
 
+#if PLF_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered<typename Hive::iterator>);
 #endif
 #if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
     static_assert(std::three_way_comparable<typename Hive::iterator>);
+#endif
 #endif
 }
 
@@ -684,19 +659,21 @@ TYPED_TEST(hivet, ConstIteratorComparison)
         std::advance(it1, n / 10);
         std::advance(it2, -2);
 
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
+
+#if PLF_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
         EXPECT_EQ((it1 >= it2), false);
-        EXPECT_EQ((it1 == it2), false);
-        EXPECT_EQ((it1 != it2), true);
 
         EXPECT_EQ((it2 < it1), false);
         EXPECT_EQ((it2 <= it1), false);
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
-        EXPECT_EQ((it2 == it1), false);
-        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
@@ -705,13 +682,16 @@ TYPED_TEST(hivet, ConstIteratorComparison)
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
 #endif
+#endif
     }
 
+#if PLF_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered<typename Hive::const_iterator>);
 #endif
 #if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
     static_assert(std::three_way_comparable<typename Hive::const_iterator>);
+#endif
 #endif
 }
 
@@ -726,19 +706,21 @@ TYPED_TEST(hivet, MixedIteratorComparison)
         std::advance(it1, n / 10);
         std::advance(it2, -2);
 
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
+
+#if PLF_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
         EXPECT_EQ((it1 >= it2), false);
-        EXPECT_EQ((it1 == it2), false);
-        EXPECT_EQ((it1 != it2), true);
 
         EXPECT_EQ((it2 < it1), false);
         EXPECT_EQ((it2 <= it1), false);
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
-        EXPECT_EQ((it2 == it1), false);
-        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
@@ -747,8 +729,10 @@ TYPED_TEST(hivet, MixedIteratorComparison)
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
 #endif
+#endif
     }
 
+#if PLF_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered_with<
         typename Hive::iterator,
@@ -760,6 +744,7 @@ TYPED_TEST(hivet, MixedIteratorComparison)
         typename Hive::iterator,
         typename Hive::const_iterator
     >);
+#endif
 #endif
 }
 
@@ -774,19 +759,21 @@ TYPED_TEST(hivet, ReverseIteratorComparison)
         std::advance(it1, n / 10);
         std::advance(it2, -2);
 
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
+
+#if PLF_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
         EXPECT_EQ((it1 >= it2), false);
-        EXPECT_EQ((it1 == it2), false);
-        EXPECT_EQ((it1 != it2), true);
 
         EXPECT_EQ((it2 < it1), false);
         EXPECT_EQ((it2 <= it1), false);
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
-        EXPECT_EQ((it2 == it1), false);
-        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
@@ -795,13 +782,16 @@ TYPED_TEST(hivet, ReverseIteratorComparison)
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
 #endif
+#endif
     }
 
+#if PLF_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered<typename Hive::reverse_iterator>);
 #endif
 #if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
     static_assert(std::three_way_comparable<typename Hive::reverse_iterator>);
+#endif
 #endif
 }
 
@@ -816,19 +806,21 @@ TYPED_TEST(hivet, ConstReverseIteratorComparison)
         std::advance(it1, n / 10);
         std::advance(it2, -2);
 
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
+
+#if PLF_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
         EXPECT_EQ((it1 >= it2), false);
-        EXPECT_EQ((it1 == it2), false);
-        EXPECT_EQ((it1 != it2), true);
 
         EXPECT_EQ((it2 < it1), false);
         EXPECT_EQ((it2 <= it1), false);
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
-        EXPECT_EQ((it2 == it1), false);
-        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
@@ -837,13 +829,16 @@ TYPED_TEST(hivet, ConstReverseIteratorComparison)
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
 #endif
+#endif
     }
 
+#if PLF_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered<typename Hive::const_reverse_iterator>);
 #endif
 #if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
     static_assert(std::three_way_comparable<typename Hive::const_reverse_iterator>);
+#endif
 #endif
 }
 
@@ -858,19 +853,21 @@ TYPED_TEST(hivet, MixedReverseIteratorComparison)
         std::advance(it1, n / 10);
         std::advance(it2, -2);
 
+        EXPECT_EQ((it1 == it2), false);
+        EXPECT_EQ((it1 != it2), true);
+        EXPECT_EQ((it2 == it1), false);
+        EXPECT_EQ((it2 != it1), true);
+
+#if PLF_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
         EXPECT_EQ((it1 >= it2), false);
-        EXPECT_EQ((it1 == it2), false);
-        EXPECT_EQ((it1 != it2), true);
 
         EXPECT_EQ((it2 < it1), false);
         EXPECT_EQ((it2 <= it1), false);
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
-        EXPECT_EQ((it2 == it1), false);
-        EXPECT_EQ((it2 != it1), true);
 
 #if __cpp_impl_three_way_comparison >= 201907
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
@@ -879,8 +876,10 @@ TYPED_TEST(hivet, MixedReverseIteratorComparison)
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::equal);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::equal);
 #endif
+#endif
     }
 
+#if PLF_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered_with<
         typename Hive::reverse_iterator,
@@ -892,6 +891,7 @@ TYPED_TEST(hivet, MixedReverseIteratorComparison)
         typename Hive::reverse_iterator,
         typename Hive::const_reverse_iterator
     >);
+#endif
 #endif
 }
 
@@ -1298,7 +1298,9 @@ TEST(hive, DISABLED_RegressionTestIssue8)
     auto it = h.begin();
     for (int i = 0; i < 4; ++i, ++it) {
         EXPECT_EQ(h.begin().distance(it), i);
+#if PLF_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ(h.end().distance(it), i - 4);
+#endif
     }
 }
 
@@ -1341,12 +1343,15 @@ TEST(hive, RegressionTestIssue16)
                 auto it = h.begin().next(i);
                 auto jt = it.next(j);
                 EXPECT_EQ(it.distance(jt), j);
-                EXPECT_EQ(jt.distance(it), -j);
 
                 auto kt = h.end().prev(i);
                 auto lt = kt.prev(j);
                 EXPECT_EQ(lt.distance(kt), j);
+
+#if PLF_HIVE_RELATIONAL_OPERATORS
+                EXPECT_EQ(jt.distance(it), -j);
                 EXPECT_EQ(kt.distance(lt), -j);
+#endif
             }
         }
     }
@@ -1355,6 +1360,7 @@ TEST(hive, RegressionTestIssue16)
 TYPED_TEST(hivet, Sort)
 {
     using Hive = TypeParam;
+    using Value = typename Hive::value_type;
 
     std::mt19937 g;
     Hive h;
@@ -1369,8 +1375,10 @@ TYPED_TEST(hivet, Sort)
     EXPECT_FALSE(std::is_sorted(h.begin(), h.end()));
     EXPECT_EQ(h2.size(), 50'000u);
     EXPECT_TRUE(std::is_sorted(h2.begin(), h2.end()));
-    std::sort(adapt_iterator(h.begin()), adapt_iterator(h.end()));
-    EXPECT_TRUE(std::equal(h2.begin(), h2.end(), h.begin(), h.end()));
+
+    std::vector<Value> v(h.begin(), h.end());
+    std::sort(v.begin(), v.end());
+    EXPECT_TRUE(std::equal(h2.begin(), h2.end(), v.begin(), v.end()));
     EXPECT_INVARIANTS(h);
     EXPECT_INVARIANTS(h2);
 }
@@ -1391,8 +1399,10 @@ TYPED_TEST(hivet, SortGreater)
     EXPECT_FALSE(std::is_sorted(h.begin(), h.end()));
     EXPECT_EQ(h2.size(), 50'000u);
     EXPECT_TRUE(std::is_sorted(h2.begin(), h2.end(), std::greater<Value>()));
-    std::sort(adapt_iterator(h.begin()), adapt_iterator(h.end()), std::greater<Value>());
-    EXPECT_TRUE(std::equal(h2.begin(), h2.end(), h.begin(), h.end()));
+
+    std::vector<Value> v(h.begin(), h.end());
+    std::sort(v.begin(), v.end(), std::greater<Value>());
+    EXPECT_TRUE(std::equal(h2.begin(), h2.end(), v.begin(), v.end()));
     EXPECT_INVARIANTS(h);
     EXPECT_INVARIANTS(h2);
 }
