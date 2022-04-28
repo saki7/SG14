@@ -932,7 +932,7 @@ TEST(hive, InsertAndErase)
     EXPECT_INVARIANTS(h);
 
     h.clear();
-    h.trim();
+    h.trim_capacity();
     h.reshape(plf::hive_limits(10000, h.block_capacity_limits().max));
     h.insert(30'000, 1);
     EXPECT_EQ(h.size(), 30'000u);
@@ -1604,7 +1604,7 @@ TYPED_TEST(hivet, InsertOverloadsForRanges)
 TEST(hive, ReserveAndFill)
 {
     plf::hive<int> v;
-    v.trim();
+    v.trim_capacity();
     v.reserve(50'000);
     v.insert(60'000, 1);
     EXPECT_EQ(v.size(), 60'000u);
@@ -1944,7 +1944,7 @@ TEST(hive, TrimDoesntMove)
         explicit S(int i) : i(i) {}
         S(S&&) { throw 42; }
     };
-    plf::hive<S> h({10, 10});
+    plf::hive<S> h(plf::hive_limits{10, 10});
     for (int i=0; i < 100; ++i) {
         h.emplace(i);
     }
@@ -1958,8 +1958,63 @@ TEST(hive, TrimDoesntMove)
     size_t oldcap = h.capacity();
     h.reserve(oldcap + 100);
     EXPECT_GE(h.capacity(), oldcap + 100);
-    h.trim();
+    h.trim_capacity();
     EXPECT_LE(h.capacity(), oldcap);
+}
+
+TEST(hive, TrimImmobileType)
+{
+    std::mt19937 g;
+
+    struct S {
+        int i_;
+        explicit S(int i) : i_(i) {}
+        S(S&&) = delete;
+        S& operator=(S&&) = delete;
+        bool operator==(const S& rhs) const { return i_ == rhs.i_; }
+    };
+    plf::hive<S> h(plf::hive_limits{4, 4});
+    for (int t = 0; t < 100; ++t) {
+        for (int i = 0; i < 100; ++i) {
+            h.emplace(g());
+        }
+        for (auto it = h.begin(); it != h.end(); ) {
+            if (g() % 2) {
+                it = h.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        size_t oldcap = h.capacity();
+        std::vector<int> expected;
+        for (const S& s : h) {
+            expected.push_back(s.i_);
+        }
+        h.trim_capacity();
+        EXPECT_LE(h.capacity(), oldcap);
+        EXPECT_INVARIANTS(h);
+        // trim_capacity does not reorder elements
+        EXPECT_TRUE(std::equal(
+            h.begin(), h.end(), expected.begin(), expected.end(),
+            [](const S& s, int i) { return s.i_ == i; }
+        ));
+    }
+}
+
+TYPED_TEST(hivet, TrimWhileEmpty)
+{
+    using Hive = TypeParam;
+
+    for (size_t cap : {0, 1, 10, 100, 1000, 10'000, 100'000}) {
+        Hive h;
+        h.reserve(cap);
+        EXPECT_GE(h.capacity(), cap);
+        EXPECT_EQ(h.size(), 0u);
+        EXPECT_INVARIANTS(h);
+        h.trim_capacity();
+        EXPECT_EQ(h.capacity(), 0u);
+        EXPECT_INVARIANTS(h);
+    }
 }
 
 TEST(hive, StdErase)
