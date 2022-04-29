@@ -43,13 +43,13 @@ template<class A, class P> struct hivet_setup<plf::hive<int, A, P>> {
     static bool int_eq_t(int i, int v) { return v == i; }
 };
 template<class A, class P> struct hivet_setup<plf::hive<std::string, A, P>> {
-    static std::string value(int i) { return std::to_string(i); }
-    static bool int_eq_t(int i, const std::string& v) { return v == std::to_string(i); }
+    static std::string value(int i) { return std::string("ensure that a memory allocation happens here") + std::to_string(i); }
+    static bool int_eq_t(int i, const std::string& v) { return v == value(i); }
 };
 #if __cpp_lib_memory_resource >= 201603
 template<class A, class P> struct hivet_setup<plf::hive<std::pmr::string, A, P>> {
-    static std::pmr::string value(int i) { return std::to_string(i).c_str(); }
-    static bool int_eq_t(int i, std::string_view v) { return v == std::to_string(i); }
+    static std::pmr::string value(int i) { return hivet_setup<plf::hive<std::string, A, P>>::value(i).c_str(); }
+    static bool int_eq_t(int i, std::string_view v) { return v == hivet_setup<plf::hive<std::string, A, P>>::value(i); }
 };
 #endif
 
@@ -1202,7 +1202,7 @@ TEST(hive, RangeEraseThirdErasedRandomized)
     EXPECT_INVARIANTS(v);
 }    
 
-TYPED_TEST(hivet, DISABLED_EraseRandomlyUntilEmpty)
+TYPED_TEST(hivet, EraseRandomlyUntilEmpty)
 {
     using Hive = TypeParam;
 
@@ -1210,9 +1210,7 @@ TYPED_TEST(hivet, DISABLED_EraseRandomlyUntilEmpty)
     Hive h;
     for (int t = 0; t < 10; ++t) {
         h.clear();
-        for (int i = 0; i < 1000; ++i) {
-            h.insert(hivet_setup<Hive>::value(i));
-        }
+        h.assign(1000, hivet_setup<Hive>::value(42));
         for (int i = 0; i < 50 && !h.empty(); ++i) {
             auto it1 = h.begin();
             auto it2 = h.begin();
@@ -1237,7 +1235,7 @@ TYPED_TEST(hivet, DISABLED_EraseRandomlyUntilEmpty)
     }
 }
 
-TYPED_TEST(hivet, DISABLED_EraseInsertRandomly)
+TYPED_TEST(hivet, EraseInsertRandomly)
 {
     using Hive = TypeParam;
 
@@ -1286,7 +1284,7 @@ TYPED_TEST(hivet, EraseEmptyRange)
     EXPECT_INVARIANTS(h);
 }
 
-TEST(hive, DISABLED_RegressionTestIssue8)
+TEST(hive, RegressionTestIssue8)
 {
     plf::hive<int> h = {1,2,3,4,5};
     h.erase(h.begin());

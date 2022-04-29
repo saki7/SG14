@@ -233,15 +233,18 @@ private:
                     printf(" %d", int(skipfield[i]));
                 }
             }
-            printf("\n");
+            if (skipfield[capacity] == 0) {
+                printf(" [_]\n");
+            } else {
+                printf(" [%d]\n", int(skipfield[capacity]));
+            }
         }
 #endif // PLF_HIVE_DEBUGGING
 
         explicit group(aligned_struct_allocator_type aa, skipfield_type cap, GroupPtr prevg):
             last_endpoint(bitcast_pointer<AlignedEltPtr>(
                 std::allocator_traits<aligned_struct_allocator_type>::allocate(aa, get_aligned_block_capacity(cap), (prevg == nullptr) ? 0 : prevg->elements))),
-                // Because this variable occurs first in the struct, we allocate here initially, then increment its value in the element initialisation below.
-            elements(last_endpoint++), // we increment here because in 99% of cases, a group allocation occurs because of an insertion, so this saves a ++ call later
+            elements(last_endpoint++),
             skipfield(bitcast_pointer<SkipfieldPtr>(elements + cap)),
             previous_group(prevg),
             capacity(cap),
@@ -250,6 +253,10 @@ private:
         {
             set_group_number(prevg == nullptr ? 0 : prevg->group_number() + 1);
             std::memset(bitcast_pointer<void *>(skipfield), 0, sizeof(skipfield_type) * (cap + 1));
+        }
+
+        bool is_packed() const {
+            return free_list_head == std::numeric_limits<skipfield_type>::max();
         }
 
         void reset(skipfield_type increment, GroupPtr next, GroupPtr prev, size_type groupno) {
@@ -601,49 +608,56 @@ private:
             }
         }
 
-        difference_type distance_forward(hive_iterator last) const {
-            difference_type distance = 0;
-            auto first = *this;
-
-            if (first.group_ != last.group_) {
-                if (first.group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
-                    // If no prior erasures have occured in this group we can do simple addition
-                    distance += static_cast<difference_type>(first.group_->last_endpoint - first.elt_);
-                } else if (first.elt_ == first.group_->elements + first.group_->skipfield[0]) {
-                    // ie. element is at start of group - rare case
-                    distance += static_cast<difference_type>(first.group_->size);
-                } else {
-                    // Manually iterate to find distance to end of group:
-                    const SkipfieldPtr endpoint = first.skipf_ + (first.group_->last_endpoint - first.elt_);
-
-                    while (first.skipf_ != endpoint) {
-                        ++first.skipf_;
-                        first.skipf_ += first.skipf_[0];
-                        ++distance;
-                    }
-                }
-
-                first.group_ = first.group_->next_group;
-                while (first.group_ != last.group_) {
-                    distance += static_cast<difference_type>(first.group_->size);
-                    first.group_ = first.group_->next_group;
-                }
-                first.skipf_ = first.group_->skipfield;
-            }
-            if (first.elt_ == last.elt_) {
-                // do nothing
-            } else if (last.group_->free_list_head == std::numeric_limits<skipfield_type>::max()) {
-                distance += last.skipf_ - first.skipf_;
-            } else if (last.elt_ == last.group_->last_endpoint) {
-                distance += static_cast<difference_type>(last.group_->size);
+        difference_type distance_from_start_of_group() const {
+            assert(group_ != nullptr);
+            if (group_->is_packed() || skipf_ == group_->skipfield) {
+                return skipf_ - group_->skipfield;
             } else {
-                while (first.skipf_ != last.skipf_) {
-                    ++first.skipf_;
-                    first.skipf_ += first.skipf_[0];
-                    ++distance;
+                difference_type count = 0;
+                SkipfieldPtr endpoint = &group_->skipfield[group_->last_endpoint - group_->elements];
+                for (SkipfieldPtr sp = skipf_; sp != endpoint; ++count) {
+                    ++sp;
+                    sp += sp[0];
                 }
+                return group_->size - count;
             }
-            return distance;
+        }
+
+        difference_type distance_from_end_of_group() const {
+            assert(group_ != nullptr);
+            if (group_->is_packed() || skipf_ == group_->skipfield) {
+                return group_->size - (skipf_ - group_->skipfield);
+            } else {
+                difference_type count = 0;
+                SkipfieldPtr endpoint = &group_->skipfield[group_->last_endpoint - group_->elements];
+                for (SkipfieldPtr sp = skipf_; sp != endpoint; ++count) {
+                    ++sp;
+                    sp += sp[0];
+                }
+                return count;
+            }
+        }
+
+        difference_type distance_forward(hive_iterator last) const {
+            if (last.group_ != group_) {
+                difference_type count = last.distance_from_start_of_group();
+                for (GroupPtr g = last.group_->previous_group; g != group_; g = g->previous_group) {
+                    count += g->size;
+                }
+                return count + this->distance_from_end_of_group();
+            } else if (skipf_ == last.skipf_) {
+                return 0;
+            } else if (group_->is_packed()) {
+                return last.skipf_ - skipf_;
+            } else {
+                difference_type count = 0;
+                while (last.skipf_ != skipf_) {
+                    --last.skipf_;
+                    last.skipf_ -= last.skipf_[0];
+                    ++count;
+                }
+                return count;
+            }
         }
 
     public:
@@ -668,10 +682,6 @@ private:
         }
 
         difference_type distance(hive_iterator last) const {
-            if (*this == last) {
-                return 0;
-            }
-
 #if PLF_HIVE_RELATIONAL_OPERATORS
             if (last < *this) {
                 return -last.distance_forward(*this);
@@ -1044,13 +1054,13 @@ public:
 private:
     GroupPtr allocate_group(skipfield_type elements_per_group, GroupPtr prevg) {
         auto ga = group_allocator_type(get_allocator());
-        auto new_group = std::allocator_traits<group_allocator_type>::allocate(ga, 1, 0);
+        GroupPtr g = std::allocator_traits<group_allocator_type>::allocate(ga, 1);
         hive_try_rollback([&]() {
-            std::allocator_traits<group_allocator_type>::construct(ga, new_group, get_allocator(), elements_per_group, prevg);
+            g = ::new ((void*)g) group(aligned_struct_allocator_type(get_allocator()), elements_per_group, prevg);
         }, [&]() {
-            std::allocator_traits<group_allocator_type>::deallocate(ga, new_group, 1);
+            std::allocator_traits<group_allocator_type>::deallocate(ga, g, 1);
         });
-        return new_group;
+        return g;
     }
 
     inline void deallocate_group(GroupPtr g) {
