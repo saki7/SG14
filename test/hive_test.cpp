@@ -26,7 +26,7 @@
 template<class T> struct hivet : testing::Test {};
 
 using hivet_types = testing::Types<
-    plf::hive<int>
+    plf::hive<unsigned char>
     , plf::hive<int, std::allocator<int>, plf::hive_priority::performance>
     , plf::hive<int, std::allocator<int>, plf::hive_priority::memory_use>
     , plf::hive<std::string>            // non-trivial construction/destruction
@@ -38,6 +38,10 @@ using hivet_types = testing::Types<
 TYPED_TEST_SUITE(hivet, hivet_types);
 
 template<class> struct hivet_setup;
+template<class A, class P> struct hivet_setup<plf::hive<unsigned char, A, P>> {
+    static unsigned char value(int i) { return i; }
+    static bool int_eq_t(int i, char v) { return v == (unsigned char)(i); }
+};
 template<class A, class P> struct hivet_setup<plf::hive<int, A, P>> {
     static int value(int i) { return i; }
     static bool int_eq_t(int i, int v) { return v == i; }
@@ -81,6 +85,17 @@ TYPED_TEST(hivet, BasicInsertClear)
     h.clear();
     EXPECT_TRUE(h.empty());
     EXPECT_INVARIANTS(h);
+}
+
+TYPED_TEST(hivet, RegressionTestFreeListPunning)
+{
+    using Hive = TypeParam;
+
+    Hive h = { hivet_setup<Hive>::value(42), hivet_setup<Hive>::value(123) };
+    EXPECT_INVARIANTS(h);
+    h.erase(h.begin());
+    EXPECT_INVARIANTS(h);
+    EXPECT_TRUE(hivet_setup<Hive>::int_eq_t(123, *h.begin()));
 }
 
 TYPED_TEST(hivet, CustomAdvanceForward)
@@ -1058,13 +1073,6 @@ TEST(hive, InsertAndErase2)
         std::advance(temp, 500);
         EXPECT_EQ(std::distance(h.begin(), temp), 500);
         ASSERT_NE(temp, h.end());
-
-        auto temp2 = h.get_iterator(&*temp);
-        auto temp3 = const_cast<const plf::hive<int>&>(h).get_iterator(&*temp);
-        static_assert(std::is_same<decltype(temp2), plf::hive<int>::iterator>::value, "");
-        static_assert(std::is_same<decltype(temp3), plf::hive<int>::const_iterator>::value, "");
-        EXPECT_EQ(temp, temp2);
-        EXPECT_EQ(temp, temp3);
     }
 
     for (auto it = h.begin(); it != h.end(); ) {
