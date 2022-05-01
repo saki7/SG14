@@ -1934,7 +1934,7 @@ private:
 
     // For catch blocks in range_fill_skipblock and fill_skipblock
     void recover_from_partial_skipblock_fill(AlignedEltPtr location, AlignedEltPtr p, SkipfieldPtr skipf, skipfield_type prev_free_list_node) {
-        const skipfield_type elements_constructed_before_exception = static_cast<skipfield_type>((p - 1) - location);
+        const skipfield_type elements_constructed_before_exception = static_cast<skipfield_type>(p - location);
         groups_with_erasures_list_head->size = static_cast<skipfield_type>(groups_with_erasures_list_head->size + elements_constructed_before_exception);
         size_ += elements_constructed_before_exception;
         std::fill_n(skipf, elements_constructed_before_exception, skipfield_type());

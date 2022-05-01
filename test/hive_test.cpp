@@ -98,6 +98,81 @@ TYPED_TEST(hivet, RegressionTestFreeListPunning)
     EXPECT_TRUE(hivet_setup<Hive>::int_eq_t(123, *h.begin()));
 }
 
+TEST(hive, RegressionTestIssue20)
+{
+    int should_throw = 0;
+
+    struct S {
+        int *should_throw_ = nullptr;
+        int payload_ = 0;
+        S(int *should_throw, int x) : should_throw_(should_throw), payload_(x) {}
+        S(const S& s) : should_throw_(s.should_throw_), payload_(s.payload_) { if (--*should_throw_ == 0) throw 42; }
+        S& operator=(const S& s) { payload_ = s.payload_; if (--*should_throw_ == 0) throw 42; return *this; }
+        ~S() = default;
+    };
+
+    for (int t = 1; t < 20; ++t) {
+        plf::hive<S> h;
+        h.reshape({8, 8});
+        h.insert(10, S(&should_throw, 42));
+        auto it = h.begin();
+        std::advance(it, 3);
+        auto jt = it;
+        std::advance(jt, 3);
+        h.erase(it, jt);
+        ASSERT_EQ(h.size(), 7u);
+        EXPECT_INVARIANTS(h);
+        should_throw = t;
+        try {
+            h.insert(2, S(&should_throw, 42));
+            EXPECT_INVARIANTS(h);
+            h.insert(3, S(&should_throw, 42));
+            EXPECT_INVARIANTS(h);
+            h.assign(5, S(&should_throw, 42));
+            EXPECT_INVARIANTS(h);
+            break;
+        } catch (int fortytwo) {
+            EXPECT_EQ(fortytwo, 42);
+            EXPECT_INVARIANTS(h);
+        }
+    }
+
+    should_throw = 0;
+    S a[] = {
+        S(&should_throw, 1),
+        S(&should_throw, 2),
+        S(&should_throw, 3),
+        S(&should_throw, 4),
+        S(&should_throw, 5),
+    };
+    for (int t = 1; t < 20; ++t) {
+        plf::hive<S> h;
+        h.reshape({8, 8});
+        int should_throw = 0;
+        h.insert(10, S(&should_throw, 42));
+        auto it = h.begin();
+        std::advance(it, 3);
+        auto jt = it;
+        std::advance(jt, 3);
+        h.erase(it, jt);
+        ASSERT_EQ(h.size(), 7u);
+        EXPECT_INVARIANTS(h);
+        should_throw = t;
+        try {
+            h.insert(a, a+2);
+            EXPECT_INVARIANTS(h);
+            h.insert(a, a+3);
+            EXPECT_INVARIANTS(h);
+            h.assign(a, a+5);
+            EXPECT_INVARIANTS(h);
+            break;
+        } catch (int fortytwo) {
+            EXPECT_EQ(fortytwo, 42);
+            EXPECT_INVARIANTS(h);
+        }
+    }
+}
+
 TYPED_TEST(hivet, CustomAdvanceForward)
 {
     using Hive = TypeParam;
@@ -1573,14 +1648,6 @@ TYPED_TEST(hivet, InsertOverloadsForRanges)
         hivet_setup<Hive>::value(0),
     };
 
-    // iterator-sentinel pair
-    std::vector<Value> v = {
-        hivet_setup<Hive>::value(1),
-        hivet_setup<Hive>::value(2),
-        hivet_setup<Hive>::value(3),
-    };
-    h.insert(v.begin(), v.cend());
-
     // insert_range
     std::vector<Value> v = {
         hivet_setup<Hive>::value(4),
@@ -1593,9 +1660,6 @@ TYPED_TEST(hivet, InsertOverloadsForRanges)
 
     std::vector<Value> expected = {
         hivet_setup<Hive>::value(0),
-        hivet_setup<Hive>::value(1),
-        hivet_setup<Hive>::value(2),
-        hivet_setup<Hive>::value(3),
         hivet_setup<Hive>::value(4),
         hivet_setup<Hive>::value(5),
         hivet_setup<Hive>::value(6),
@@ -1678,16 +1742,46 @@ TEST(hive, AssignFuzz)
     }
 }
 
-TEST(hive, RangeAssign)
+TEST(hive, AssignOverloads)
 {
-    std::vector<int> v = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    int a[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
     plf::hive<int> h;
-    h.assign(v.begin(), v.end());
-    EXPECT_TRUE(std::equal(h.begin(), h.end(), v.begin(), v.end()));
+    h.assign(a, a + 10);
+    EXPECT_TRUE(std::equal(h.begin(), h.end(), a, a + 10));
+    EXPECT_INVARIANTS(h);
+
+    h.assign({1, 2, 3, 4});
+    EXPECT_TRUE(std::equal(h.begin(), h.end(), a, a + 4));
     EXPECT_INVARIANTS(h);
 }
 
-TEST(hive, RangeAssignFuzz)
+#if __cpp_lib_ranges >= 201911
+TYPED_TEST(hivet, AssignOverloadsForRanges)
+{
+    using Hive = TypeParam;
+    using Value = typename Hive::value_type;
+
+    Hive h = {
+        hivet_setup<Hive>::value(0),
+    };
+
+    std::vector<Value> v = {
+        hivet_setup<Hive>::value(4),
+        hivet_setup<Hive>::value(5),
+        hivet_setup<Hive>::value(6),
+        hivet_setup<Hive>::value(7),
+    };
+    h.assign_range(v);
+    EXPECT_TRUE(std::equal(h.begin(), h.end(), v.begin(), v.end()));
+    EXPECT_INVARIANTS(h);
+
+    h.assign_range(v | std::views::take(2));
+    EXPECT_TRUE(std::equal(h.begin(), h.end(), v.begin(), v.begin() + 2));
+    EXPECT_INVARIANTS(h);
+}
+#endif
+
+TEST(hive, AssignIteratorPairFuzz)
 {
     std::mt19937 g;
     plf::hive<int> h;
@@ -1700,16 +1794,6 @@ TEST(hive, RangeAssignFuzz)
         EXPECT_INVARIANTS(h);
         EXPECT_TRUE(std::equal(h.begin(), h.end(), v.begin(), v.end()));
     }
-}
-
-TEST(hive, AssignInitializerList)
-{
-    plf::hive<int> h;
-    h.assign({1, 2, 3, 4, 5, 6, 7, 8, 9, 10});
-    plf::hive<int> h2 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    EXPECT_INVARIANTS(h);
-    EXPECT_INVARIANTS(h2);
-    EXPECT_TRUE(std::equal(h.begin(), h.end(), h2.begin(), h2.end()));
 }
 
 TEST(hive, PerfectForwarding)
@@ -2123,6 +2207,22 @@ TEST(hive, PmrCorrectness)
     Hive he(h1, &mr);
     Hive hf(Hive(&mr), &mr);
 
+    EXPECT_EQ(h1.size(), 0u);
+    EXPECT_EQ(h2.size(), 2u);
+    EXPECT_EQ(h3.size(), 0u);
+    EXPECT_EQ(h4.size(), 100u);
+    EXPECT_EQ(h5.size(), 100u);
+    EXPECT_EQ(h6.size(), 100u);
+    EXPECT_EQ(h7.size(), 100u);
+    EXPECT_EQ(h8.size(), 100u);
+    EXPECT_EQ(h9.size(), 100u);
+    EXPECT_EQ(ha.size(), 4u);
+    EXPECT_EQ(hb.size(), 4u);
+    EXPECT_EQ(hc.size(), 4u);
+    EXPECT_EQ(hd.size(), 4u);
+    EXPECT_EQ(he.size(), 0u);
+    EXPECT_EQ(hf.size(), 0u);
+
     h1.insert(100, 42);
     h2.insert(100, 42);
     h3.insert(100, 42);
@@ -2139,20 +2239,15 @@ TEST(hive, PmrCorrectness)
     he.insert(100, 42);
     hf.insert(100, 42);
 
-#if __cpp_lib_ranges >= 201911
-    Hive hg(std::counted_iterator(a, 2), std::default_sentinel, &mr);
-    Hive hh(std::counted_iterator(a, 2), std::default_sentinel, {10, 10}, &mr);
-    Hive hi(std::counted_iterator(a, 2), std::default_sentinel, plf::hive_limits(10, 10), &mr);
+#if __cpp_lib_ranges >= 201911 && __cpp_lib_ranges_to_container >= 202202
+    Hive hg(std::from_range, a, &mr);
+    Hive hh(std::from_range, a | std::views::take(2), &mr);
+
+    EXPECT_EQ(hg.size(), 4u);
+    EXPECT_EQ(hh.size(), 2u);
+
     hg.insert(100, 42);
     hh.insert(100, 42);
-    hi.insert(100, 42);
-#endif
-
-#if __cpp_lib_ranges >= 201911 && __cpp_lib_ranges_to_container >= 202202
-    Hive hj(std::from_range, a, &mr);
-    Hive hk(std::from_range, a | std::views::take(2), &mr);
-    hj.insert(100, 42);
-    hk.insert(100, 42);
 #endif
 }
 #endif // __cpp_lib_memory_resource >= 201603
