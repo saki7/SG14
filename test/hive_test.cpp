@@ -1648,7 +1648,6 @@ TYPED_TEST(hivet, InsertOverloadsForRanges)
         hivet_setup<Hive>::value(0),
     };
 
-    // insert_range
     std::vector<Value> v = {
         hivet_setup<Hive>::value(4),
         hivet_setup<Hive>::value(5),
@@ -1670,6 +1669,71 @@ TYPED_TEST(hivet, InsertOverloadsForRanges)
     EXPECT_TRUE(std::is_permutation(h.begin(), h.end(), expected.begin(), expected.end()));
 }
 #endif // __cpp_lib_ranges >= 201911
+
+TYPED_TEST(hivet, MoveOnlyInputIterator)
+{
+    using Hive = TypeParam;
+    using Value = typename Hive::value_type;
+
+    struct MoveOnlyInputIterator {
+        using value_type = Value;
+        using difference_type = signed char;
+        using pointer = Value*;
+        using reference = Value&;
+        using iterator_category = std::input_iterator_tag;
+        Value *p_;
+        explicit MoveOnlyInputIterator(Value *p) : p_(p) {}
+        MoveOnlyInputIterator(MoveOnlyInputIterator&&) = default;
+        MoveOnlyInputIterator& operator=(MoveOnlyInputIterator&&) = default;
+        Value& operator*() const { return *p_; }
+        auto& operator++() { ++p_; return *this; }
+        void operator++(int) { ++p_; }
+        bool operator==(const MoveOnlyInputIterator& rhs) const { return p_ == rhs.p_; }
+        bool operator!=(const MoveOnlyInputIterator& rhs) const { return p_ != rhs.p_; }
+#if __cpp_lib_ranges >= 201911
+        bool operator==(Value *p) const { return p_ == p; }
+        bool operator!=(Value *p) const { return p_ != p; }
+#endif
+    };
+    static_assert(std::is_move_constructible<MoveOnlyInputIterator>::value);
+    static_assert(!std::is_copy_constructible<MoveOnlyInputIterator>::value);
+#if __cpp_lib_concepts >= 202002
+    static_assert(std::input_or_output_iterator<MoveOnlyInputIterator>);
+    static_assert(!std::forward_iterator<MoveOnlyInputIterator>);
+#endif
+
+    Value a[] = {
+        hivet_setup<Hive>::value(1),
+        hivet_setup<Hive>::value(2),
+        hivet_setup<Hive>::value(3),
+    };
+
+    Hive h(MoveOnlyInputIterator{a}, MoveOnlyInputIterator{a+3});
+    EXPECT_EQ(h.size(), 3u);
+    EXPECT_INVARIANTS(h);
+    EXPECT_TRUE(std::is_permutation(h.begin(), h.end(), a, a+3));
+
+    h.insert(MoveOnlyInputIterator{a}, MoveOnlyInputIterator{a+2});
+    EXPECT_EQ(h.size(), 5u);
+    EXPECT_INVARIANTS(h);
+
+    h.assign(MoveOnlyInputIterator{a}, MoveOnlyInputIterator{a+3});
+    EXPECT_EQ(h.size(), 3u);
+    EXPECT_INVARIANTS(h);
+    EXPECT_TRUE(std::is_permutation(h.begin(), h.end(), a, a+3));
+
+#if __cpp_lib_ranges >= 201911
+    // ranges::subrange's second argument requires a copyable sentinel
+    h.insert_range(std::ranges::subrange(MoveOnlyInputIterator{a}, a+2));
+    EXPECT_EQ(h.size(), 5u);
+    EXPECT_INVARIANTS(h);
+
+    h.assign_range(std::ranges::subrange(MoveOnlyInputIterator{a}, a+3));
+    EXPECT_EQ(h.size(), 3u);
+    EXPECT_INVARIANTS(h);
+    EXPECT_TRUE(std::is_permutation(h.begin(), h.end(), a, a+3));
+#endif
+}
 
 TEST(hive, ReserveAndFill)
 {

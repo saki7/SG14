@@ -69,6 +69,15 @@ namespace plf {
 template<class T> struct hive_identity { using type = T; };
 template<class T> using hive_identity_t = typename hive_identity<T>::type;
 
+// Polyfill std::forward_iterator
+#if __cpp_lib_ranges >= 201911
+template<class It>
+using hive_fwd_iterator = std::bool_constant<std::forward_iterator<It>>;
+#else
+template<class It>
+using hive_fwd_iterator = std::is_base_of<std::forward_iterator_tag, typename std::iterator_traits<It>::iterator_category>;
+#endif
+
 template<class R>
 struct hive_txn {
     R& rollback_;
@@ -1300,7 +1309,7 @@ public:
         if constexpr (std::ranges::sized_range<R&>) {
             reserve(size() + std::ranges::size(rg));
         }
-        insert(std::ranges::begin(rg), std::ranges::end(rg));
+        range_insert_impl(std::ranges::begin(rg), std::ranges::end(rg));
     }
 #endif
 
@@ -1902,6 +1911,26 @@ public:
     inline void splice(hive&& source) { this->splice(source); }
 
 private:
+    template<class It, class Sent>
+    inline void range_assign_impl(It first, Sent last) {
+        if constexpr (!hive_fwd_iterator<It>::value) {
+            clear();
+            for ( ; first != last; ++first) {
+                emplace(*first);
+            }
+        } else if (first == last) {
+            clear();
+        } else {
+#if __cpp_lib_ranges >= 201911
+            size_type n = std::ranges::distance(first, last);
+#else
+            size_type n = std::distance(first, last);
+#endif
+            prepare_groups_for_assign(n);
+            range_fill_unused_groups(n, std::move(first), 0, nullptr, begin_.group_);
+        }
+    }
+
     void recover_from_partial_fill() {
         end_.group_->last_endpoint = end_.elt_;
         auto n = static_cast<skipfield_type>(end_.elt_ - end_.group_->elements);
@@ -2041,16 +2070,12 @@ private:
 
     template<class It, class Sent>
     void range_insert_impl(It first, Sent last) {
-        if (first == last) {
-            return;
-        } else if (size_ == 0) {
-            assign(std::move(first), std::move(last));
-#if __cpp_lib_ranges >= 201911
-        } else if constexpr (!std::forward_iterator<It>) {
+        if constexpr (!hive_fwd_iterator<It>::value) {
             for ( ; first != last; ++first) {
-                insert(*first);
+                emplace(*first);
             }
-#endif
+        } else if (first == last) {
+            return;
         } else {
 #if __cpp_lib_ranges >= 201911
             size_type n = std::ranges::distance(first, last);
@@ -2211,22 +2236,6 @@ private:
         begin_.skipf_ = begin_.group_->skipfield;
         groups_with_erasures_list_head = nullptr;
         size_ = 0;
-    }
-
-private:
-    template<class It, class Sent>
-    inline void range_assign_impl(It first, Sent last) {
-        if (first == last) {
-            clear();
-        } else {
-#if __cpp_lib_ranges >= 201911
-            size_type n = std::ranges::distance(first, last);
-#else
-            size_type n = std::distance(first, last);
-#endif
-            prepare_groups_for_assign(n);
-            range_fill_unused_groups(n, std::move(first), 0, nullptr, begin_.group_);
-        }
     }
 
 public:
