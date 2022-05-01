@@ -535,7 +535,7 @@ private:
                 skipf_ = group_->skipfield + group_->skipfield[0];
                 do {
                     ++skipf_;
-                    skipf_ += *skipf_;
+                    skipf_ += skipf_[0];
                 } while (--n != 0);
                 elt_ = group_->elements + (skipf_ - group_->skipfield);
             }
@@ -1220,22 +1220,20 @@ public:
 
         reserve(size_ + n);
 
-        // Use up erased locations if available:
         while (groups_with_erasures_list_head != nullptr) {
-            // skipblock loop: breaks when hive is exhausted of reusable skipblocks, or returns if n == 0
-            AlignedEltPtr const elt_ = groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head;
-            SkipfieldPtr const skipf_ = groups_with_erasures_list_head->skipfield + groups_with_erasures_list_head->free_list_head;
-            const skipfield_type skipblock_size = *skipf_;
+            AlignedEltPtr elt = groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head;
+            SkipfieldPtr skipf = groups_with_erasures_list_head->skipfield + groups_with_erasures_list_head->free_list_head;
+            skipfield_type skipblock_length = skipf[0];
 
-            if (groups_with_erasures_list_head == begin_.group_ && elt_ < begin_.elt_) {
-                begin_.elt_ = elt_;
-                begin_.skipf_ = skipf_;
+            if (groups_with_erasures_list_head == begin_.group_ && elt < begin_.elt_) {
+                begin_.elt_ = elt;
+                begin_.skipf_ = skipf;
             }
 
-            if (skipblock_size <= n) {
-                groups_with_erasures_list_head->free_list_head = elt_[0].links_[0];
-                fill_skipblock(value, elt_, skipf_, skipblock_size);
-                n -= skipblock_size;
+            if (skipblock_length <= n) {
+                groups_with_erasures_list_head->free_list_head = elt[0].links_[0];
+                fill_skipblock(value, elt, skipf, skipblock_length);
+                n -= skipblock_length;
 
                 if (groups_with_erasures_list_head->is_packed()) {
                     groups_with_erasures_list_head = groups_with_erasures_list_head->erasures_list_next_group;
@@ -1250,17 +1248,17 @@ public:
                 }
             } else {
                 // skipblock is larger than remaining number of elements
-                const skipfield_type prev_index = elt_[0].links_[0];
+                const skipfield_type prev_index = elt[0].links_[0];
                     // save before element location is overwritten
-                fill_skipblock(value, elt_, skipf_, static_cast<skipfield_type>(n));
-                const skipfield_type new_skipblock_size = static_cast<skipfield_type>(skipblock_size - n);
+                fill_skipblock(value, elt, skipf, static_cast<skipfield_type>(n));
+                const skipfield_type new_skipblock_length = static_cast<skipfield_type>(skipblock_length - n);
 
-                skipf_[n] = new_skipblock_size;
-                skipf_[skipblock_size - 1] = new_skipblock_size;
+                skipf[n] = new_skipblock_length;
+                skipf[skipblock_length - 1] = new_skipblock_length;
                 groups_with_erasures_list_head->free_list_head = static_cast<skipfield_type>(groups_with_erasures_list_head->free_list_head + n);
 
-                elt_[n].links_[0] = prev_index;
-                elt_[n].links_[1] = std::numeric_limits<skipfield_type>::max();
+                elt[n].links_[0] = prev_index;
+                elt[n].links_[1] = std::numeric_limits<skipfield_type>::max();
                 if (prev_index != std::numeric_limits<skipfield_type>::max()) {
                     groups_with_erasures_list_head->elements[prev_index].links_[1] = groups_with_erasures_list_head->free_list_head;
                 }
@@ -1276,7 +1274,7 @@ public:
                 static_cast<skipfield_type>(bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield) - end_.elt_);
 
         if (group_remainder != 0) {
-            fill_impl(value, group_remainder);
+            value_fill_impl(group_remainder, value);
             end_.group_->last_endpoint = end_.elt_;
             end_.group_->size = static_cast<skipfield_type>(end_.group_->size + group_remainder);
             if (n == group_remainder) {
@@ -1288,7 +1286,7 @@ public:
 
         // Use unused groups:
         end_.group_->next_group = unused_groups_head_;
-        fill_unused_groups(n, value, end_.group_->group_number() + 1, end_.group_, unused_groups_head_);
+        value_fill_unused_groups(n, value, end_.group_->group_number() + 1, end_.group_, unused_groups_head_);
     }
 
     template<class It, std::enable_if_t<!std::is_integral<It>::value>* = nullptr>
@@ -1906,15 +1904,15 @@ public:
 private:
     void recover_from_partial_fill() {
         end_.group_->last_endpoint = end_.elt_;
-        auto elements_constructed_before_exception = static_cast<skipfield_type>(end_.elt_ - end_.group_->elements);
-        end_.group_->size = elements_constructed_before_exception;
-        end_.skipf_ = end_.group_->skipfield + elements_constructed_before_exception;
-        size_ += elements_constructed_before_exception;
+        auto n = static_cast<skipfield_type>(end_.elt_ - end_.group_->elements);
+        end_.group_->size = n;
+        end_.skipf_ = end_.group_->skipfield + n;
+        size_ += n;
         unused_groups_head_ = end_.group_->next_group;
         end_.group_->next_group = nullptr;
     }
 
-    void fill_impl(const T& value, skipfield_type n) {
+    void value_fill_impl(skipfield_type n, const T& value) {
         allocator_type ea = get_allocator();
         if constexpr (std::is_trivially_copyable<T>::value && sizeof(T) == sizeof(overaligned_elt)) {
             std::fill_n(bitcast_pointer<PtrOf<T>>(end_.elt_), n, value);
@@ -1927,21 +1925,22 @@ private:
                 }, [&]() {
                     recover_from_partial_fill();
                 });
-            } while (++end_.elt_ != fill_end);
+                ++end_.elt_;
+            } while (end_.elt_ != fill_end);
         }
         size_ += n;
     }
 
     // For catch blocks in range_fill_skipblock and fill_skipblock
     void recover_from_partial_skipblock_fill(AlignedEltPtr location, AlignedEltPtr p, SkipfieldPtr skipf, skipfield_type prev_free_list_node) {
-        const skipfield_type elements_constructed_before_exception = static_cast<skipfield_type>(p - location);
-        groups_with_erasures_list_head->size = static_cast<skipfield_type>(groups_with_erasures_list_head->size + elements_constructed_before_exception);
-        size_ += elements_constructed_before_exception;
-        std::fill_n(skipf, elements_constructed_before_exception, skipfield_type());
-        location[elements_constructed_before_exception].links_[0] = prev_free_list_node;
-        location[elements_constructed_before_exception].links_[1] = std::numeric_limits<skipfield_type>::max();
+        const skipfield_type n = static_cast<skipfield_type>(p - location);
+        groups_with_erasures_list_head->size = static_cast<skipfield_type>(groups_with_erasures_list_head->size + n);
+        size_ += n;
+        std::fill_n(skipf, n, skipfield_type());
+        location[n].links_[0] = prev_free_list_node;
+        location[n].links_[1] = std::numeric_limits<skipfield_type>::max();
 
-        const skipfield_type new_skipblock_head_index = static_cast<skipfield_type>((location - groups_with_erasures_list_head->elements) + elements_constructed_before_exception);
+        const skipfield_type new_skipblock_head_index = static_cast<skipfield_type>((location - groups_with_erasures_list_head->elements) + n);
         groups_with_erasures_list_head->free_list_head = new_skipblock_head_index;
 
         if (prev_free_list_node != std::numeric_limits<skipfield_type>::max()) {
@@ -1969,28 +1968,25 @@ private:
         size_ += n;
     }
 
-    void fill_unused_groups(size_type size, const T& element, size_type groupno, GroupPtr previous_group, GroupPtr current_group) {
+    void value_fill_unused_groups(size_type n, const T& value, size_type groupno, GroupPtr previous_group, GroupPtr current_group) {
         end_.group_ = current_group;
-        for (; end_.group_->capacity < size; end_.group_ = end_.group_->next_group) {
-            const skipfield_type capacity = end_.group_->capacity;
-            end_.group_->reset(capacity, end_.group_->next_group, previous_group, groupno++);
+        for (; end_.group_->capacity < n; end_.group_ = end_.group_->next_group) {
+            skipfield_type cap = end_.group_->capacity;
+            end_.group_->reset(cap, end_.group_->next_group, previous_group, groupno++);
             previous_group = end_.group_;
-            size -= static_cast<size_type>(capacity);
+            n -= static_cast<size_type>(cap);
             end_.elt_ = end_.group_->elements;
-            fill_impl(element, capacity);
+            value_fill_impl(cap, value);
         }
 
         // Deal with final group (partial fill)
         unused_groups_head_ = end_.group_->next_group;
-        end_.group_->reset(static_cast<skipfield_type>(size), nullptr, previous_group, groupno);
+        end_.group_->reset(static_cast<skipfield_type>(n), nullptr, previous_group, groupno);
         end_.elt_ = end_.group_->elements;
-        end_.skipf_ = end_.group_->skipfield + size;
-        fill_impl(element, static_cast<skipfield_type>(size));
+        end_.skipf_ = end_.group_->skipfield + n;
+        value_fill_impl(static_cast<skipfield_type>(n), value);
     }
 
-public:
-
-private:
     template<class It>
     It range_fill_impl(It it, skipfield_type n) {
         allocator_type ea = get_allocator();
@@ -2065,17 +2061,17 @@ private:
             while (groups_with_erasures_list_head != nullptr) {
                 AlignedEltPtr elt_ = groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head;
                 SkipfieldPtr skipf_ = groups_with_erasures_list_head->skipfield + groups_with_erasures_list_head->free_list_head;
-                skipfield_type skipblock_size = *skipf_;
+                skipfield_type skipblock_length = skipf_[0];
 
                 if (groups_with_erasures_list_head == begin_.group_ && elt_ < begin_.elt_) {
                     begin_.elt_ = elt_;
                     begin_.skipf_ = skipf_;
                 }
 
-                if (skipblock_size <= n) {
+                if (skipblock_length <= n) {
                     groups_with_erasures_list_head->free_list_head = elt_[0].links_[0];
-                    first = range_fill_skipblock(std::move(first), elt_, skipf_, skipblock_size);
-                    n -= skipblock_size;
+                    first = range_fill_skipblock(std::move(first), elt_, skipf_, skipblock_length);
+                    n -= skipblock_length;
                     if (groups_with_erasures_list_head->is_packed()) {
                         groups_with_erasures_list_head = groups_with_erasures_list_head->erasures_list_next_group;
                     } else {
@@ -2087,9 +2083,9 @@ private:
                 } else {
                     const skipfield_type prev_index = elt_[0].links_[0];
                     first = range_fill_skipblock(std::move(first), elt_, skipf_, static_cast<skipfield_type>(n));
-                    const skipfield_type new_skipblock_size = static_cast<skipfield_type>(skipblock_size - n);
-                    skipf_[n] = new_skipblock_size;
-                    skipf_[skipblock_size - 1] = new_skipblock_size;
+                    const skipfield_type new_skipblock_length = static_cast<skipfield_type>(skipblock_length - n);
+                    skipf_[n] = new_skipblock_length;
+                    skipf_[skipblock_length - 1] = new_skipblock_length;
                     groups_with_erasures_list_head->free_list_head = static_cast<skipfield_type>(groups_with_erasures_list_head->free_list_head + n);
                     elt_[n].links_[0] = prev_index;
                     elt_[n].links_[1] = std::numeric_limits<skipfield_type>::max();
@@ -2251,7 +2247,7 @@ public:
             clear();
         } else {
             prepare_groups_for_assign(n);
-            fill_unused_groups(n, value, 0, nullptr, begin_.group_);
+            value_fill_unused_groups(n, value, 0, nullptr, begin_.group_);
         }
     }
 
