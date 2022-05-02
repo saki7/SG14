@@ -224,7 +224,7 @@ private:
         skipfield_type size;
             // The total number of active elements in group - changes with insert and erase commands - used to check for empty group in erase function,
             // as an indication to remove the group. Also used in combination with capacity to check if group is full.
-        GroupPtr erasures_list_next_group;
+        GroupPtr next_erasure_;
             // The next group in the singly-linked list of groups with erasures ie. with active erased-element free lists. nullptr if no next group.
 #if PLF_HIVE_RELATIONAL_OPERATORS
         size_type groupno_ = 0;
@@ -249,7 +249,7 @@ private:
             printf(
                 "  group #%zu [%zu/%zu used] (last_endpoint=%p, elts=%p, skipfield=%p, freelist=%zu, erasenext=%p)",
                 group_number(), size_t(size), size_t(capacity),
-                (void*)last_endpoint, (void*)elements, (void*)skipfield, size_t(free_list_head), (void*)erasures_list_next_group
+                (void*)last_endpoint, (void*)elements, (void*)skipfield, size_t(free_list_head), (void*)next_erasure_
             );
             if (next_group) {
                 printf(" next: #%zu", next_group->group_number());
@@ -284,7 +284,7 @@ private:
             previous_group(prevg),
             capacity(cap),
             size(1),
-            erasures_list_next_group(nullptr)
+            next_erasure_(nullptr)
         {
             set_group_number(prevg == nullptr ? 0 : prevg->group_number() + 1);
             std::fill_n(skipfield, cap + 1, skipfield_type());
@@ -300,7 +300,7 @@ private:
             free_list_head = std::numeric_limits<skipfield_type>::max();
             previous_group = prev;
             size = increment;
-            erasures_list_next_group = nullptr;
+            next_erasure_ = nullptr;
             set_group_number(groupno);
             std::fill_n(skipfield, capacity, skipfield_type());
         }
@@ -826,7 +826,7 @@ public:
         printf(
             "hive [%zu/%zu used] (erase=%p, unused=%p, mincap=%zu, maxcap=%zu)\n",
             size_, capacity_,
-            groups_with_erasures_list_head, unused_groups_head_, size_t(min_group_capacity_), size_t(max_group_capacity_)
+            groups_with_erasures_, unused_groups_head_, size_t(min_group_capacity_), size_t(max_group_capacity_)
         );
         printf("  begin="); begin_.debug_dump();
         size_t total = 0;
@@ -849,7 +849,7 @@ public:
             assert(g != end_.group_);
         }
         printf("GROUPS WITH ERASURES:");
-        for (auto *g = groups_with_erasures_list_head; g != nullptr; g = g->erasures_list_next_group) {
+        for (auto *g = groups_with_erasures_; g != nullptr; g = g->next_erasure_) {
             printf(" %zu", g->group_number());
         }
         printf("\n");
@@ -859,7 +859,7 @@ public:
 private:
     iterator end_;
     iterator begin_;
-    GroupPtr groups_with_erasures_list_head = GroupPtr();
+    GroupPtr groups_with_erasures_ = GroupPtr();
         // Head of the singly-linked list of groups which have erased-element memory locations available for re-use
     GroupPtr unused_groups_head_ = GroupPtr();
        // Head of singly-linked list of groups retained by erase()/clear() or created by reserve()
@@ -929,7 +929,7 @@ private:
         begin_.group_ = nullptr;
         begin_.elt_ = nullptr;
         begin_.skipf_ = nullptr;
-        groups_with_erasures_list_head = nullptr;
+        groups_with_erasures_ = nullptr;
         unused_groups_head_ = nullptr;
         size_ = 0;
         capacity_ = 0;
@@ -939,7 +939,7 @@ public:
     hive(hive&& source) noexcept :
         end_(std::move(source.end_)),
         begin_(std::move(source.begin_)),
-        groups_with_erasures_list_head(std::move(source.groups_with_erasures_list_head)),
+        groups_with_erasures_(std::move(source.groups_with_erasures_)),
         unused_groups_head_(std::move(source.unused_groups_head_)),
         size_(source.size_),
         capacity_(source.capacity_),
@@ -954,7 +954,7 @@ public:
     hive(hive&& source, const hive_identity_t<allocator_type>& alloc):
         end_(std::move(source.end_)),
         begin_(std::move(source.begin_)),
-        groups_with_erasures_list_head(std::move(source.groups_with_erasures_list_head)),
+        groups_with_erasures_(std::move(source.groups_with_erasures_)),
         unused_groups_head_(std::move(source.unused_groups_head_)),
         size_(source.size_),
         capacity_(source.capacity_),
@@ -1139,21 +1139,21 @@ private:
             new_location.skipf_[new_value] = new_location.skipf_[1] = new_value;
 
             // transfer free list node to new start node:
-            ++(groups_with_erasures_list_head->free_list_head);
+            ++(groups_with_erasures_->free_list_head);
 
             if (prev_free_list_index != std::numeric_limits<skipfield_type>::max()) {
-                new_location.group_->elements[prev_free_list_index].links_[1] = groups_with_erasures_list_head->free_list_head;
+                new_location.group_->elements[prev_free_list_index].links_[1] = groups_with_erasures_->free_list_head;
             }
             new_location.elt_[1].links_[0] = prev_free_list_index;
             new_location.elt_[1].links_[1] = std::numeric_limits<skipfield_type>::max();
         } else {
-            groups_with_erasures_list_head->free_list_head = prev_free_list_index;
+            groups_with_erasures_->free_list_head = prev_free_list_index;
             if (prev_free_list_index != std::numeric_limits<skipfield_type>::max()) {
                 // ie. not the last free list node
                 new_location.group_->elements[prev_free_list_index].links_[1] = std::numeric_limits<skipfield_type>::max();
             } else {
                 // remove this group from the list of groups with erasures
-                groups_with_erasures_list_head = groups_with_erasures_list_head->erasures_list_next_group;
+                groups_with_erasures_ = groups_with_erasures_->next_erasure_;
             }
         }
 
@@ -1173,16 +1173,16 @@ public:
     iterator emplace(Args&&... args) {
         allocator_type ea = get_allocator();
         if (end_.elt_ != nullptr) {
-            if (groups_with_erasures_list_head == nullptr) {
+            if (groups_with_erasures_ == nullptr) {
                 if (end_.elt_ != bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield)) {
-                    const iterator return_iterator = end_;
+                    const iterator result = end_;
                     std::allocator_traits<allocator_type>::construct(ea, end_.elt_[0].t(), static_cast<Args&&>(args)...);
                     ++end_.elt_;
                     end_.group_->last_endpoint = end_.elt_;
                     ++(end_.group_->size);
                     ++end_.skipf_;
                     ++size_;
-                    return return_iterator;
+                    return result;
                 }
                 GroupPtr next_group;
                 if (unused_groups_head_ == nullptr) {
@@ -1209,7 +1209,7 @@ public:
 
                 return iterator(next_group, 0);
             } else {
-                auto new_location = iterator(groups_with_erasures_list_head, groups_with_erasures_list_head->free_list_head);
+                auto new_location = iterator(groups_with_erasures_, groups_with_erasures_->free_list_head);
 
                 skipfield_type prev_free_list_index = new_location.elt_[0].links_[0];
                 std::allocator_traits<allocator_type>::construct(ea, new_location.elt_[0].t(), static_cast<Args&&>(args)...);
@@ -1237,13 +1237,11 @@ public:
 
     void insert(size_type n, const T& value) {
         if (n == 0) {
-            return;
+            // do nothing
         } else if (n == 1) {
             insert(value);
-            return;
         } else if (size_ == 0) {
             assign(n, value);
-            return;
         } else {
             callback_insert_impl(n, make_value_callback(n, value));
         }
@@ -1292,7 +1290,7 @@ public:
                 const skipfield_type index = static_cast<skipfield_type>(it.index_in_group());
 
                 if (it.group_->is_packed()) {
-                    it.group_->erasures_list_next_group = std::exchange(groups_with_erasures_list_head, it.group_);
+                    it.group_->next_erasure_ = std::exchange(groups_with_erasures_, it.group_);
                 } else {
                     // ie. if this group already has some erased elements
                     it.group_->elements[it.group_->free_list_head].links_[1] = index;
@@ -1350,18 +1348,18 @@ public:
                 update_value = following_value;
             }
 
-            auto return_iterator = it.unconst();
-            return_iterator.elt_ += update_value;
-            return_iterator.skipf_ += update_value;
+            auto result = it.unconst();
+            result.elt_ += update_value;
+            result.skipf_ += update_value;
 
-            if (return_iterator.elt_ == it.group_->last_endpoint && it.group_->next_group != nullptr) {
-                return_iterator = iterator(it.group_->next_group, it.group_->next_group->skipfield[0]);
+            if (result.elt_ == it.group_->last_endpoint && it.group_->next_group != nullptr) {
+                result = iterator(it.group_->next_group, it.group_->next_group->skipfield[0]);
             }
 
             if (it.elt_ == begin_.elt_) {
-                begin_ = return_iterator;
+                begin_ = result;
             }
-            return return_iterator;
+            return result;
         }
 
         // else: group is empty, consolidate groups
@@ -1396,9 +1394,9 @@ public:
         } else if (!(in_back_block | in_front_block)) {
             // this is a non-first group but not final group in chain: delete the group, then link previous group to the next group in the chain:
             it.group_->next_group->previous_group = it.group_->previous_group;
-            const GroupPtr return_group = it.group_->previous_group->next_group = it.group_->next_group; // close the chain, removing this group from it
+            const GroupPtr g = it.group_->previous_group->next_group = it.group_->next_group; // close the chain, removing this group from it
 
-            update_subsequent_group_numbers(return_group);
+            update_subsequent_group_numbers(g);
 
             if (!it.group_->is_packed()) {
                 remove_from_groups_with_erasures_list(it.group_);
@@ -1412,7 +1410,7 @@ public:
             }
 
             // Return next group's first non-erased element:
-            return iterator(return_group, return_group->skipfield[0]);
+            return iterator(g, g->skipfield[0]);
         } else {
             // this is a non-first group and the final group in the chain
             if (!it.group_->is_packed()) {
@@ -1495,7 +1493,7 @@ public:
                     const skipfield_type index = static_cast<skipfield_type>(first.elt_ - first.group_->elements);
 
                     if (first.group_->is_packed()) {
-                        first.group_->erasures_list_next_group = std::exchange(groups_with_erasures_list_head, first.group_);
+                        first.group_->next_erasure_ = std::exchange(groups_with_erasures_, first.group_);
                     } else {
                         first.group_->elements[first.group_->free_list_head].links_[1] = index;
                     }
@@ -1622,7 +1620,7 @@ public:
                 last.skipf_[-1] = distance_to_last;
 
                 if (last.group_->is_packed()) {
-                    last.group_->erasures_list_next_group = std::exchange(groups_with_erasures_list_head, last.group_);
+                    last.group_->next_erasure_ = std::exchange(groups_with_erasures_, last.group_);
                 } else {
                     last.group_->elements[last.group_->free_list_head].links_[1] = index;
                 }
@@ -1709,7 +1707,7 @@ public:
         } else {
             const iterator swap_end = end_;
             const iterator swap_begin = begin_;
-            const GroupPtr swap_groups_with_erasures_list_head = groups_with_erasures_list_head;
+            const GroupPtr swap_groups_with_erasures = groups_with_erasures_;
             const GroupPtr swap_unused_groups_head = unused_groups_head_;
             const size_type swap_size = size_;
             const size_type swap_capacity = capacity_;
@@ -1718,7 +1716,7 @@ public:
 
             end_ = source.end_;
             begin_ = source.begin_;
-            groups_with_erasures_list_head = source.groups_with_erasures_list_head;
+            groups_with_erasures_ = source.groups_with_erasures_;
             unused_groups_head_ = source.unused_groups_head_;
             size_ = source.size_;
             capacity_ = source.capacity_;
@@ -1727,7 +1725,7 @@ public:
 
             source.end_ = swap_end;
             source.begin_ = swap_begin;
-            source.groups_with_erasures_list_head = swap_groups_with_erasures_list_head;
+            source.groups_with_erasures_ = swap_groups_with_erasures;
             source.unused_groups_head_ = swap_unused_groups_head;
             source.size_ = swap_size;
             source.capacity_ = swap_capacity;
@@ -1758,7 +1756,7 @@ public:
                 end_.group_ = begin_.group_; // other parts of iterator reset in the function below
             }
             reset_only_group_left(begin_.group_);
-            groups_with_erasures_list_head = nullptr;
+            groups_with_erasures_ = nullptr;
             size_ = 0;
         }
     }
@@ -1795,15 +1793,15 @@ public:
         }
 
         // Add source list of groups-with-erasures to destination list of groups-with-erasures:
-        if (source.groups_with_erasures_list_head != nullptr) {
-            if (groups_with_erasures_list_head != nullptr) {
-                GroupPtr tail_group = groups_with_erasures_list_head;
-                while (tail_group->erasures_list_next_group != nullptr) {
-                    tail_group = tail_group->erasures_list_next_group;
+        if (source.groups_with_erasures_ != nullptr) {
+            if (groups_with_erasures_ != nullptr) {
+                GroupPtr tail_group = groups_with_erasures_;
+                while (tail_group->next_erasure_ != nullptr) {
+                    tail_group = tail_group->next_erasure_;
                 }
-                tail_group->erasures_list_next_group = source.groups_with_erasures_list_head;
+                tail_group->next_erasure_ = source.groups_with_erasures_;
             } else {
-                groups_with_erasures_list_head = source.groups_with_erasures_list_head;
+                groups_with_erasures_ = source.groups_with_erasures_;
             }
         }
 
@@ -1822,8 +1820,8 @@ public:
                 const skipfield_type index = static_cast<skipfield_type>(end_.elt_ - end_.group_->elements);
 
                 if (end_.group_->is_packed()) {
-                    end_.group_->erasures_list_next_group = groups_with_erasures_list_head; // add it to the groups-with-erasures free list
-                    groups_with_erasures_list_head = end_.group_;
+                    end_.group_->next_erasure_ = groups_with_erasures_; // add it to the groups-with-erasures free list
+                    groups_with_erasures_ = end_.group_;
                 } else {
                     // ie. if this group already has some erased elements
                     bitcast_pointer<SkipfieldPtr>(end_.group_->elements + end_.group_->free_list_head)[1] = index;
@@ -1894,17 +1892,17 @@ private:
 
     void recover_from_partial_skipblock_fill(AlignedEltPtr d_first, AlignedEltPtr p, SkipfieldPtr skipf, skipfield_type prev_free_list_node) {
         skipfield_type n = static_cast<skipfield_type>(p - d_first);
-        groups_with_erasures_list_head->size = static_cast<skipfield_type>(groups_with_erasures_list_head->size + n);
+        groups_with_erasures_->size = static_cast<skipfield_type>(groups_with_erasures_->size + n);
         size_ += n;
         std::fill_n(skipf, n, skipfield_type());
         d_first[n].links_[0] = prev_free_list_node;
         d_first[n].links_[1] = std::numeric_limits<skipfield_type>::max();
 
-        skipfield_type new_skipblock_head_index = static_cast<skipfield_type>((d_first - groups_with_erasures_list_head->elements) + n);
-        groups_with_erasures_list_head->free_list_head = new_skipblock_head_index;
+        skipfield_type new_skipblock_head_index = static_cast<skipfield_type>((d_first - groups_with_erasures_->elements) + n);
+        groups_with_erasures_->free_list_head = new_skipblock_head_index;
 
         if (prev_free_list_node != std::numeric_limits<skipfield_type>::max()) {
-            groups_with_erasures_list_head->elements[prev_free_list_node].links_[1] = new_skipblock_head_index;
+            groups_with_erasures_->elements[prev_free_list_node].links_[1] = new_skipblock_head_index;
         }
     }
 
@@ -1922,7 +1920,7 @@ private:
             });
         }
         std::fill_n(skipf, n, skipfield_type());
-        groups_with_erasures_list_head->size = static_cast<skipfield_type>(groups_with_erasures_list_head->size + n);
+        groups_with_erasures_->size = static_cast<skipfield_type>(groups_with_erasures_->size + n);
         size_ += n;
     }
 
@@ -1965,24 +1963,24 @@ private:
     template<class CB>
     void callback_insert_impl(size_type n, CB cb) {
         reserve(size_ + n);
-        while (groups_with_erasures_list_head != nullptr) {
-            AlignedEltPtr elt = groups_with_erasures_list_head->elements + groups_with_erasures_list_head->free_list_head;
-            SkipfieldPtr skipf = groups_with_erasures_list_head->skipfield + groups_with_erasures_list_head->free_list_head;
+        while (groups_with_erasures_ != nullptr) {
+            AlignedEltPtr elt = groups_with_erasures_->elements + groups_with_erasures_->free_list_head;
+            SkipfieldPtr skipf = groups_with_erasures_->skipfield + groups_with_erasures_->free_list_head;
             skipfield_type skipblock_length = skipf[0];
 
-            if (groups_with_erasures_list_head == begin_.group_ && elt < begin_.elt_) {
+            if (groups_with_erasures_ == begin_.group_ && elt < begin_.elt_) {
                 begin_.elt_ = elt;
                 begin_.skipf_ = skipf;
             }
 
             if (skipblock_length <= n) {
-                groups_with_erasures_list_head->free_list_head = elt[0].links_[0];
+                groups_with_erasures_->free_list_head = elt[0].links_[0];
                 callback_fill_skipblock(skipblock_length, cb, elt, skipf);
                 n -= skipblock_length;
-                if (groups_with_erasures_list_head->is_packed()) {
-                    groups_with_erasures_list_head = groups_with_erasures_list_head->erasures_list_next_group;
+                if (groups_with_erasures_->is_packed()) {
+                    groups_with_erasures_ = groups_with_erasures_->next_erasure_;
                 } else {
-                    groups_with_erasures_list_head->elements[groups_with_erasures_list_head->free_list_head].links_[1] = std::numeric_limits<skipfield_type>::max();
+                    groups_with_erasures_->elements[groups_with_erasures_->free_list_head].links_[1] = std::numeric_limits<skipfield_type>::max();
                 }
                 if (n == 0) {
                     return;
@@ -1993,11 +1991,11 @@ private:
                 skipfield_type new_skipblock_length = static_cast<skipfield_type>(skipblock_length - n);
                 skipf[n] = new_skipblock_length;
                 skipf[skipblock_length - 1] = new_skipblock_length;
-                groups_with_erasures_list_head->free_list_head = static_cast<skipfield_type>(groups_with_erasures_list_head->free_list_head + n);
+                groups_with_erasures_->free_list_head = static_cast<skipfield_type>(groups_with_erasures_->free_list_head + n);
                 elt[n].links_[0] = prev_index;
                 elt[n].links_[1] = std::numeric_limits<skipfield_type>::max();
                 if (prev_index != std::numeric_limits<skipfield_type>::max()) {
-                    groups_with_erasures_list_head->elements[prev_index].links_[1] = groups_with_erasures_list_head->free_list_head;
+                    groups_with_erasures_->elements[prev_index].links_[1] = groups_with_erasures_->free_list_head;
                 }
                 return;
             }
@@ -2051,22 +2049,22 @@ private:
 #endif
 
     void remove_from_groups_with_erasures_list(GroupPtr g) {
-        assert(groups_with_erasures_list_head != nullptr);
-        if (g == groups_with_erasures_list_head) {
-            groups_with_erasures_list_head = groups_with_erasures_list_head->erasures_list_next_group;
+        assert(groups_with_erasures_ != nullptr);
+        if (g == groups_with_erasures_) {
+            groups_with_erasures_ = groups_with_erasures_->next_erasure_;
         } else {
-            GroupPtr prev = groups_with_erasures_list_head;
-            GroupPtr curr = groups_with_erasures_list_head->erasures_list_next_group;
+            GroupPtr prev = groups_with_erasures_;
+            GroupPtr curr = groups_with_erasures_->next_erasure_;
             while (g != curr) {
                 prev = curr;
-                curr = curr->erasures_list_next_group;
+                curr = curr->next_erasure_;
             }
-            prev->erasures_list_next_group = curr->erasures_list_next_group;
+            prev->next_erasure_ = curr->next_erasure_;
         }
     }
 
     inline void reset_only_group_left(GroupPtr const group_) {
-        groups_with_erasures_list_head = nullptr;
+        groups_with_erasures_ = nullptr;
         group_->reset(0, nullptr, nullptr, 0);
 
         // Reset begin and end iterators:
@@ -2126,7 +2124,7 @@ private:
 
         begin_.elt_ = begin_.group_->elements;
         begin_.skipf_ = begin_.group_->skipfield;
-        groups_with_erasures_list_head = nullptr;
+        groups_with_erasures_ = nullptr;
         size_ = 0;
     }
 
@@ -2246,7 +2244,7 @@ public:
             } else {
                 end_ = std::move(source.end_);
                 begin_ = std::move(source.begin_);
-                groups_with_erasures_list_head = std::move(source.groups_with_erasures_list_head);
+                groups_with_erasures_ = std::move(source.groups_with_erasures_);
                 unused_groups_head_ = std::move(source.unused_groups_head_);
                 size_ = source.size_;
                 capacity_ = source.capacity_;
