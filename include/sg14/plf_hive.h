@@ -821,12 +821,87 @@ private:
     }; // hive_reverse_iterator
 
 public:
+    void assert_invariants() const {
+#if PLF_HIVE_DEBUGGING
+        assert(size_ <= capacity_);
+        assert(min_group_capacity_ <= max_group_capacity_);
+        if (size_ == 0) {
+            if (capacity_ == 0) {  // TODO FIXME BUG HACK: this should be `if (true)`
+                assert(begin_.group_ == nullptr);
+                assert(begin_.elt_ == nullptr);
+                assert(begin_.skipf_ == nullptr);
+                assert(end_.group_ == nullptr);
+                assert(end_.elt_ == nullptr);
+                assert(end_.skipf_ == nullptr);
+            }
+            assert(groups_with_erasures_ == nullptr);
+            if (capacity_ == 0) {
+                assert(unused_groups_ == nullptr);
+            } else {
+                if (begin_.group_ == nullptr) {
+                    assert(unused_groups_ != nullptr);  // the capacity must be somewhere
+                }
+            }
+        } else {
+            assert(begin_.group_ != nullptr);
+            assert(begin_.elt_ != nullptr);
+            assert(begin_.skipf_ != nullptr);
+            assert(begin_.group_->previous_group == nullptr);
+            assert(end_.group_ != nullptr);
+            assert(end_.elt_ != nullptr);
+            assert(end_.elt_ == end_.group_->last_endpoint);
+            assert(end_.skipf_ != nullptr);
+            assert(end_.group_->next_group == nullptr);
+            if (capacity_ == size_) {
+                assert(unused_groups_ == nullptr);
+            }
+        }
+        size_type total_size = 0;
+        size_type total_cap = 0;
+        for (GroupPtr g = begin_.group_; g != nullptr; g = g->next_group) {
+            assert(min_group_capacity_ <= g->capacity);
+            assert(g->capacity <= max_group_capacity_);
+            // assert(g->size >= 1); TODO FIXME BUG HACK
+            assert(g->size <= g->capacity);
+            total_size += g->size;
+            total_cap += g->capacity;
+            if (g->is_packed()) {
+                assert(g->last_endpoint == g->elements + g->size);
+            } else {
+                assert(g->size < g->capacity);
+                assert(g->last_endpoint > g->elements + g->size);
+                assert(g->skipfield[g->free_list_head] != 0);
+            }
+#if PLF_HIVE_RELATIONAL_OPERATORS
+            if (g->next_group != nullptr) {
+                assert(g->group_number() < g->next_group->group_number());
+            }
+#endif
+        }
+        assert(total_size == size_);
+        for (GroupPtr g = unused_groups_; g != nullptr; g = g->next_group) {
+            assert(min_group_capacity_ <= g->capacity);
+            assert(g->capacity <= max_group_capacity_);
+            total_cap += g->capacity;
+        }
+        assert(total_cap == capacity_);
+        if (size_ == capacity_) {
+            assert(groups_with_erasures_ == nullptr);
+        } else {
+            // assert(groups_with_erasures_ != nullptr); TODO FIXME BUG HACK
+        }
+        for (GroupPtr g = groups_with_erasures_; g != nullptr; g = g->next_erasure_) {
+            assert(g->size < g->capacity);
+        }
+#endif
+    }
+
     void debug_dump() const {
 #if PLF_HIVE_DEBUGGING
         printf(
             "hive [%zu/%zu used] (erase=%p, unused=%p, mincap=%zu, maxcap=%zu)\n",
             size_, capacity_,
-            groups_with_erasures_, unused_groups_head_, size_t(min_group_capacity_), size_t(max_group_capacity_)
+            groups_with_erasures_, unused_groups_, size_t(min_group_capacity_), size_t(max_group_capacity_)
         );
         printf("  begin="); begin_.debug_dump();
         size_t total = 0;
@@ -843,7 +918,7 @@ public:
             assert(end_.group_->next_group == nullptr);
         }
         printf("UNUSED GROUPS:\n");
-        for (auto *g = unused_groups_head_; g != nullptr; g = g->next_group) {
+        for (auto *g = unused_groups_; g != nullptr; g = g->next_group) {
             g->debug_dump();
             assert(g != begin_.group_);
             assert(g != end_.group_);
@@ -861,7 +936,7 @@ private:
     iterator begin_;
     GroupPtr groups_with_erasures_ = GroupPtr();
         // Head of the singly-linked list of groups which have erased-element memory locations available for re-use
-    GroupPtr unused_groups_head_ = GroupPtr();
+    GroupPtr unused_groups_ = GroupPtr();
        // Head of singly-linked list of groups retained by erase()/clear() or created by reserve()
     size_type size_ = 0;
     size_type capacity_ = 0;
@@ -930,7 +1005,7 @@ private:
         begin_.elt_ = nullptr;
         begin_.skipf_ = nullptr;
         groups_with_erasures_ = nullptr;
-        unused_groups_head_ = nullptr;
+        unused_groups_ = nullptr;
         size_ = 0;
         capacity_ = 0;
     }
@@ -940,7 +1015,7 @@ public:
         end_(std::move(source.end_)),
         begin_(std::move(source.begin_)),
         groups_with_erasures_(std::move(source.groups_with_erasures_)),
-        unused_groups_head_(std::move(source.unused_groups_head_)),
+        unused_groups_(std::move(source.unused_groups_)),
         size_(source.size_),
         capacity_(source.capacity_),
         allocator_(source.get_allocator()),
@@ -955,7 +1030,7 @@ public:
         end_(std::move(source.end_)),
         begin_(std::move(source.begin_)),
         groups_with_erasures_(std::move(source.groups_with_erasures_)),
-        unused_groups_head_(std::move(source.unused_groups_head_)),
+        unused_groups_(std::move(source.unused_groups_)),
         size_(source.size_),
         capacity_(source.capacity_),
         allocator_(alloc),
@@ -1089,7 +1164,7 @@ private:
 
     void destroy_all_data() {
         if (GroupPtr g = begin_.group_) {
-            end_.group_->next_group = unused_groups_head_;
+            end_.group_->next_group = unused_groups_;
 
             if constexpr (!std::is_trivially_destructible<T>::value) {
                 if (size_ != 0) {
@@ -1107,7 +1182,7 @@ private:
                         deallocate_group(g);
                         g = next_group;
 
-                        if (next_group == unused_groups_head_) {
+                        if (next_group == unused_groups_) {
                             break;
                         }
                         begin_.elt_ = next_group->elements + next_group->skipfield[0];
@@ -1182,10 +1257,11 @@ public:
                     ++(end_.group_->size);
                     ++end_.skipf_;
                     ++size_;
+                    assert_invariants();
                     return result;
                 }
                 GroupPtr next_group;
-                if (unused_groups_head_ == nullptr) {
+                if (unused_groups_ == nullptr) {
                     const skipfield_type newcap = (size_ < static_cast<size_type>(max_group_capacity_)) ? static_cast<skipfield_type>(size_) : max_group_capacity_;
                     next_group = allocate_group(newcap, end_.group_);
                     hive_try_rollback([&]() {
@@ -1195,9 +1271,9 @@ public:
                     });
                     capacity_ += newcap;
                 } else {
-                    next_group = unused_groups_head_;
+                    next_group = unused_groups_;
                     std::allocator_traits<allocator_type>::construct(ea, next_group->elements[0].t(), static_cast<Args&&>(args)...);
-                    unused_groups_head_ = next_group->next_group;
+                    unused_groups_ = next_group->next_group;
                     next_group->reset(1, nullptr, end_.group_, end_.group_->group_number() + 1);
                 }
 
@@ -1207,6 +1283,7 @@ public:
                 end_.skipf_ = next_group->skipfield + 1;
                 ++size_;
 
+                assert_invariants();
                 return iterator(next_group, 0);
             } else {
                 auto new_location = iterator(groups_with_erasures_, groups_with_erasures_->free_list_head);
@@ -1215,6 +1292,7 @@ public:
                 std::allocator_traits<allocator_type>::construct(ea, new_location.elt_[0].t(), static_cast<Args&&>(args)...);
                 update_skipblock(new_location, prev_free_list_index);
 
+                assert_invariants();
                 return new_location;
             }
         } else {
@@ -1228,6 +1306,7 @@ public:
             ++end_.elt_;
             ++end_.skipf_;
             size_ = 1;
+            assert_invariants();
             return begin_;
         }
     }
@@ -1359,6 +1438,7 @@ public:
             if (it.elt_ == begin_.elt_) {
                 begin_ = result;
             }
+            assert_invariants();
             return result;
         }
 
@@ -1370,6 +1450,7 @@ public:
             // ie. only group in hive
             // Reset skipfield and free list rather than clearing - leads to fewer allocations/deallocations:
             reset_only_group_left(it.group_);
+            assert_invariants();
             return end_;
         } else if ((!in_back_block) & in_front_block) {
             // ie. Remove first group, change first group to next group
@@ -1390,6 +1471,7 @@ public:
             begin_.elt_ = begin_.group_->elements + begin_.group_->skipfield[0]; // If the beginning index has been erased (ie. skipfield != 0), skip to next non-erased element
             begin_.skipf_ = begin_.group_->skipfield + begin_.group_->skipfield[0];
 
+            assert_invariants();
             return begin_;
         } else if (!(in_back_block | in_front_block)) {
             // this is a non-first group but not final group in chain: delete the group, then link previous group to the next group in the chain:
@@ -1410,6 +1492,7 @@ public:
             }
 
             // Return next group's first non-erased element:
+            assert_invariants();
             return iterator(g, g->skipfield[0]);
         } else {
             // this is a non-first group and the final group in the chain
@@ -1421,6 +1504,7 @@ public:
             end_.elt_ = bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield);
             end_.skipf_ = end_.group_->skipfield + end_.group_->capacity;
             add_group_to_unused_groups_list(it.group_);
+            assert_invariants();
             return end_;
         }
     }
@@ -1552,6 +1636,7 @@ public:
 
         if (current.elt_ == last.elt_) {
             // in case last was at beginning of its group - also covers empty range case (first == last)
+            assert_invariants();
             return last.unconst();
         }
 
@@ -1708,7 +1793,7 @@ public:
             const iterator swap_end = end_;
             const iterator swap_begin = begin_;
             const GroupPtr swap_groups_with_erasures = groups_with_erasures_;
-            const GroupPtr swap_unused_groups_head = unused_groups_head_;
+            const GroupPtr swap_unused_groups = unused_groups_;
             const size_type swap_size = size_;
             const size_type swap_capacity = capacity_;
             const skipfield_type swap_min_group_capacity = min_group_capacity_;
@@ -1717,7 +1802,7 @@ public:
             end_ = source.end_;
             begin_ = source.begin_;
             groups_with_erasures_ = source.groups_with_erasures_;
-            unused_groups_head_ = source.unused_groups_head_;
+            unused_groups_ = source.unused_groups_;
             size_ = source.size_;
             capacity_ = source.capacity_;
             min_group_capacity_ = source.min_group_capacity_;
@@ -1726,7 +1811,7 @@ public:
             source.end_ = swap_end;
             source.begin_ = swap_begin;
             source.groups_with_erasures_ = swap_groups_with_erasures;
-            source.unused_groups_head_ = swap_unused_groups_head;
+            source.unused_groups_ = swap_unused_groups;
             source.size_ = swap_size;
             source.capacity_ = swap_capacity;
             source.min_group_capacity_ = swap_min_group_capacity;
@@ -1751,8 +1836,8 @@ public:
             }
             if (begin_.group_ != end_.group_) {
                 // Move all other groups onto the unused_groups list
-                end_.group_->next_group = unused_groups_head_;
-                unused_groups_head_ = begin_.group_->next_group;
+                end_.group_->next_group = unused_groups_;
+                unused_groups_ = begin_.group_->next_group;
                 end_.group_ = begin_.group_; // other parts of iterator reset in the function below
             }
             reset_only_group_left(begin_.group_);
@@ -1768,6 +1853,8 @@ public:
         // If the source has more unused memory spaces in the back group than the destination,
         // swap them before processing to reduce the number of locations added to a free list and also subsequent jumps during iteration.
 
+        assert_invariants();
+        source.assert_invariants();
         assert(&source != this);
 
         if (source.size_ == 0) {
@@ -1792,25 +1879,36 @@ public:
             }
         }
 
-        // Add source list of groups-with-erasures to destination list of groups-with-erasures:
         if (source.groups_with_erasures_ != nullptr) {
-            if (groups_with_erasures_ != nullptr) {
-                GroupPtr tail_group = groups_with_erasures_;
-                while (tail_group->next_erasure_ != nullptr) {
-                    tail_group = tail_group->next_erasure_;
-                }
-                tail_group->next_erasure_ = source.groups_with_erasures_;
-            } else {
+            if (groups_with_erasures_ == nullptr) {
                 groups_with_erasures_ = source.groups_with_erasures_;
+            } else {
+                GroupPtr tail = groups_with_erasures_;
+                while (tail->next_erasure_ != nullptr) {
+                    tail = tail->next_erasure_;
+                }
+                tail->next_erasure_ = source.groups_with_erasures_;
             }
         }
 
-        const skipfield_type distance_to_end = static_cast<skipfield_type>(bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield) - end_.elt_);
+        if (source.unused_groups_ != nullptr) {
+            if (unused_groups_ == nullptr) {
+                unused_groups_ = source.unused_groups_;
+            } else {
+                GroupPtr tail = unused_groups_;
+                while (tail->next_group != nullptr) {
+                    tail = tail->next_group;
+                }
+                tail->next_group = source.unused_groups_;
+            }
+        }
+
+        skipfield_type distance_to_end = static_cast<skipfield_type>(bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield) - end_.elt_);
 
         if (distance_to_end != 0) {
             // Mark unused element memory locations from back group as skipped/erased:
             // Update skipfield:
-            const skipfield_type previous_node_value = *(end_.skipf_ - 1);
+            skipfield_type previous_node_value = end_.skipf_[-1];
             end_.group_->last_endpoint = bitcast_pointer<AlignedEltPtr>(end_.group_->skipfield);
 
             if (previous_node_value == 0) {
@@ -1836,25 +1934,22 @@ public:
             }
         }
 
-        // Update subsequent group numbers:
-        GroupPtr current_group = source.begin_.group_;
+#if PLF_HIVE_RELATIONAL_OPERATORS
         size_type groupno = end_.group_->group_number();
-
-        do {
-            current_group->set_group_number(++groupno);
-            current_group = current_group->next_group;
-        } while (current_group != nullptr);
+        for (GroupPtr g = source.begin_.group_; g != nullptr; g = g->next_group) {
+            g->set_group_number(++groupno);
+        }
+#endif
 
         // Join the destination and source group chains:
         end_.group_->next_group = source.begin_.group_;
         source.begin_.group_->previous_group = end_.group_;
-        end_ = source.end_;
+        end_ = std::move(source.end_);
         size_ += source.size_;
         capacity_ += source.capacity_;
 
-        // Remove source unused groups:
-        source.trim_capacity();
         source.blank();
+        assert_invariants();
     }
 
     inline void splice(hive&& source) { this->splice(source); }
@@ -1886,7 +1981,7 @@ private:
         end_.group_->size = n;
         end_.skipf_ = end_.group_->skipfield + n;
         size_ += n;
-        unused_groups_head_ = end_.group_->next_group;
+        unused_groups_ = end_.group_->next_group;
         end_.group_->next_group = nullptr;
     }
 
@@ -1953,7 +2048,7 @@ private:
         }
 
         // Deal with final group (partial fill)
-        unused_groups_head_ = end_.group_->next_group;
+        unused_groups_ = end_.group_->next_group;
         end_.group_->reset(static_cast<skipfield_type>(n), nullptr, previous_group, groupno);
         end_.elt_ = end_.group_->elements;
         end_.skipf_ = end_.group_->skipfield + n;
@@ -2015,8 +2110,8 @@ private:
             }
             n -= group_remainder;
         }
-        end_.group_->next_group = unused_groups_head_;
-        callback_fill_unused_groups(n, cb, end_.group_->group_number() + 1, end_.group_, unused_groups_head_);
+        end_.group_->next_group = unused_groups_;
+        callback_fill_unused_groups(n, cb, end_.group_->group_number() + 1, end_.group_, unused_groups_);
     }
 
     template<class It, class Sent>
@@ -2073,7 +2168,7 @@ private:
     }
 
     inline void add_group_to_unused_groups_list(GroupPtr group_) {
-        group_->next_group = std::exchange(unused_groups_head_, group_);
+        group_->next_group = std::exchange(unused_groups_, group_);
     }
 
     void prepare_groups_for_assign(size_type size) {
@@ -2086,7 +2181,7 @@ private:
 
         if (size < capacity_ && (capacity_ - size) >= min_group_capacity_) {
             size_type difference = capacity_ - size;
-            end_.group_->next_group = unused_groups_head_;
+            end_.group_->next_group = unused_groups_;
 
             // Remove surplus groups which're under the difference limit:
             GroupPtr current_group = begin_.group_;
@@ -2119,7 +2214,7 @@ private:
             }
 
             // Join all unused_groups to main chain:
-            end_.group_->next_group = unused_groups_head_;
+            end_.group_->next_group = unused_groups_;
         }
 
         begin_.elt_ = begin_.group_->elements;
@@ -2187,13 +2282,15 @@ public:
     void reshape(plf::hive_limits limits) {
         static_assert(std::is_move_constructible<T>::value, "");
         check_limits(limits);
+
+        assert_invariants();
+
         min_group_capacity_ = static_cast<skipfield_type>(limits.min);
         max_group_capacity_ = static_cast<skipfield_type>(limits.max);
-
-        // Need to check all group sizes here, because splice might append smaller blocks to the end of a larger block:
-        for (GroupPtr current = begin_.group_; current != end_.group_; current = current->next_group) {
-            if (current->capacity < min_group_capacity_ || current->capacity > max_group_capacity_) {
+        for (GroupPtr g = begin_.group_; g != nullptr; g = g->next_group) {
+            if (g->capacity < min_group_capacity_ || g->capacity > max_group_capacity_) {
                 consolidate();
+                assert_invariants();
                 return;
             }
         }
@@ -2245,7 +2342,7 @@ public:
                 end_ = std::move(source.end_);
                 begin_ = std::move(source.begin_);
                 groups_with_erasures_ = std::move(source.groups_with_erasures_);
-                unused_groups_head_ = std::move(source.unused_groups_head_);
+                unused_groups_ = std::move(source.unused_groups_);
                 size_ = source.size_;
                 capacity_ = source.capacity_;
                 min_group_capacity_ = source.min_group_capacity_;
@@ -2262,11 +2359,13 @@ public:
         }
 
         source.blank();
+        assert_invariants();
         return *this;
     }
 
     inline hive& operator=(std::initializer_list<T> il) {
         range_assign_impl(il.begin(), il.end());
+        assert_invariants();
         return *this;
     }
 
@@ -2278,6 +2377,7 @@ public:
         } else if (size_ != capacity_) {
             consolidate();
         }
+        assert_invariants();
     }
 
     void trim_capacity() noexcept {
@@ -2285,13 +2385,14 @@ public:
             destroy_all_data();
             blank();
         } else {
-            while (unused_groups_head_ != nullptr) {
-                capacity_ -= unused_groups_head_->capacity;
-                const GroupPtr next_group = unused_groups_head_->next_group;
-                deallocate_group(unused_groups_head_);
-                unused_groups_head_ = next_group;
+            while (unused_groups_ != nullptr) {
+                capacity_ -= unused_groups_->capacity;
+                const GroupPtr next_group = unused_groups_->next_group;
+                deallocate_group(unused_groups_);
+                unused_groups_ = next_group;
             }
         }
+        assert_invariants();
     }
 
     void reserve(size_type new_capacity) {
@@ -2340,15 +2441,16 @@ public:
                 current_group->next_group = allocate_group(max_group_capacity_, current_group);
             }, [&]() {
                 deallocate_group(current_group->next_group);
-                current_group->next_group = unused_groups_head_;
-                unused_groups_head_ = first_unused_group;
+                current_group->next_group = unused_groups_;
+                unused_groups_ = first_unused_group;
             });
             current_group = current_group->next_group;
             capacity_ += max_group_capacity_;
             --number_of_max_groups;
         }
-        current_group->next_group = unused_groups_head_;
-        unused_groups_head_ = first_unused_group;
+        current_group->next_group = unused_groups_;
+        unused_groups_ = first_unused_group;
+        assert_invariants();
     }
 
 private:
@@ -2406,6 +2508,7 @@ public:
             }
         }
         std::allocator_traits<tuple_allocator_type>::deallocate(tuple_allocator, sort_array, size_);
+        assert_invariants();
     }
 
     inline void sort() { sort(std::less<T>()); }
@@ -2433,6 +2536,7 @@ public:
                 end = cend();
             }
         }
+        assert_invariants();
         return count;
     }
 
