@@ -1776,7 +1776,7 @@ public:
 
             if constexpr (std::allocator_traits<allocator_type>::propagate_on_container_swap::value && !std::allocator_traits<allocator_type>::is_always_equal::value) {
                 using std::swap;
-                swap(static_cast<allocator_type &>(*this), static_cast<allocator_type &>(source));
+                swap(allocator_, source.allocator_);
             }
         }
     }
@@ -2316,7 +2316,7 @@ public:
                 destroy_all_data();
                 blank();
             }
-            static_cast<allocator_type &>(*this) = source.get_allocator();
+            allocator_ = source.get_allocator();
         }
         range_assign_impl(source.begin(), source.end());
         return *this;
@@ -2353,7 +2353,7 @@ public:
                 max_group_capacity_ = source.max_group_capacity_;
 
                 if constexpr (std::allocator_traits<allocator_type>::propagate_on_container_move_assignment::value) {
-                    static_cast<allocator_type &>(*this) = std::move(static_cast<allocator_type &>(source));
+                    allocator_ = std::move(source.allocator_);
                 }
             }
         } else {
