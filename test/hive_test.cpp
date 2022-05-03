@@ -98,6 +98,17 @@ TYPED_TEST(hivet, RegressionTestFreeListPunning)
     EXPECT_TRUE(hivet_setup<Hive>::int_eq_t(123, *h.begin()));
 }
 
+TEST(hive, FirstInsertThrows)
+{
+    struct S {
+        S() { throw 42; }
+    };
+    plf::hive<S> h;
+    EXPECT_THROW(h.emplace(), int);
+    EXPECT_EQ(h.size(), 0u);
+    EXPECT_INVARIANTS(h);
+}
+
 TEST(hive, RegressionTestIssue20)
 {
     int should_throw = 0;
@@ -1683,8 +1694,8 @@ TYPED_TEST(hivet, MoveOnlyInputIterator)
         using iterator_category = std::input_iterator_tag;
         Value *p_;
         explicit MoveOnlyInputIterator(Value *p) : p_(p) {}
-        MoveOnlyInputIterator(MoveOnlyInputIterator&&) = default;
-        MoveOnlyInputIterator& operator=(MoveOnlyInputIterator&&) = default;
+        MoveOnlyInputIterator(MoveOnlyInputIterator&& rhs) : p_(std::exchange(rhs.p_, nullptr)) { }
+        MoveOnlyInputIterator& operator=(MoveOnlyInputIterator&& rhs) { p_ = std::exchange(rhs.p_, nullptr); return *this; }
         Value& operator*() const { return *p_; }
         auto& operator++() { ++p_; return *this; }
         void operator++(int) { ++p_; }
