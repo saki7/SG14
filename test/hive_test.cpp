@@ -2298,6 +2298,15 @@ TEST(hive, StdEraseIf)
     EXPECT_TRUE(std::all_of(h.begin(), h.end(), [](int i){ return i < 500; }));
 }
 
+#if __cplusplus >= 202002
+TEST(hive, ConstexprCtor)
+{
+    struct S { S() {} };
+    static constinit plf::hive<S> h;
+    EXPECT_TRUE(h.empty());
+}
+#endif
+
 #if __cpp_lib_memory_resource >= 201603
 struct PmrGuard {
     std::pmr::memory_resource *m_;
@@ -2310,6 +2319,43 @@ TEST(hive, DefaultCtorDoesntAllocate)
     using Hive = plf::hive<int, std::pmr::polymorphic_allocator<int>>;
     PmrGuard guard;
     Hive h;  // should not allocate
+}
+
+TEST(hive, TrimAndSpliceDontAllocate)
+{
+    using Hive = plf::hive<int, std::pmr::polymorphic_allocator<int>>;
+    Hive h1 = {1,2,3,4,5};
+    h1.reserve(100);
+    Hive h2 = {1,2,3,4};
+    h2.reserve(100);
+    PmrGuard guard;
+    h1.trim_capacity();
+    h1.splice(h2);
+    EXPECT_EQ(h1.size(), 9u);
+    EXPECT_GE(h1.capacity(), 105u);
+    EXPECT_TRUE(h2.empty());
+    EXPECT_INVARIANTS(h1);
+    EXPECT_INVARIANTS(h2);
+}
+
+TEST(hive, SortDoesntUseAllocator)
+{
+    PmrGuard guard;
+    char buffer[1000];
+    std::pmr::monotonic_buffer_resource mr(buffer, sizeof buffer);
+    using Hive = plf::hive<int, std::pmr::polymorphic_allocator<int>>;
+    Hive h(&mr);
+    h = {3,1,4,1,5};
+
+    // Exhaust the memory resource so we can't get memory from it, either.
+    try {
+        while (true) (void)mr.allocate(1);
+    } catch (...) { }
+    ASSERT_THROW(mr.allocate(1), std::bad_alloc);
+    h.sort();
+    int expected[] = {1,1,3,4,5};
+    EXPECT_TRUE(std::equal(h.begin(), h.end(), expected, expected + 5));
+    EXPECT_INVARIANTS(h);
 }
 
 TEST(hive, PmrCorrectness)
@@ -2378,6 +2424,15 @@ TEST(hive, PmrCorrectness)
     hg.insert(100, 42);
     hh.insert(100, 42);
 #endif
+}
+
+TEST(hive, PmrCorrectReshape)
+{
+    plf::hive<int, std::pmr::polymorphic_allocator<int>> h(10);
+    PmrGuard guard;
+    h.reshape({4, 4});
+    EXPECT_EQ(h.size(), 10u);
+    EXPECT_INVARIANTS(h);
 }
 #endif // __cpp_lib_memory_resource >= 201603
 

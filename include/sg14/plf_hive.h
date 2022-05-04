@@ -2215,7 +2215,7 @@ public:
 private:
     // get all elements contiguous in memory and shrink to fit, remove erasures and erasure free lists. Invalidates all iterators and pointers to elements.
     void consolidate() {
-        hive temp(plf::hive_limits(min_group_capacity_, max_group_capacity_));
+        hive temp(plf::hive_limits(min_group_capacity_, max_group_capacity_), get_allocator());
         temp.range_assign_impl(std::make_move_iterator(begin()), std::make_move_iterator(end()));
         this->swap(temp);
         temp.min_group_capacity_ = block_capacity_hard_limits().min;  // for the benefit of assert_invariants in the dtor
@@ -2391,47 +2391,38 @@ private:
 public:
     template <class Comp>
     void sort(Comp less) {
-        using tuple_allocator_type = AllocOf<item_index_tuple>;
-        using tuple_pointer_type = PtrOf<item_index_tuple>;
-
         if (size_ <= 1) {
             return;
         }
 
-        auto tuple_allocator = tuple_allocator_type(get_allocator());
-        tuple_pointer_type sort_array = std::allocator_traits<tuple_allocator_type>::allocate(tuple_allocator, size_, nullptr);
-        tuple_pointer_type tuple_pointer = sort_array;
+        struct ItemT {
+            T *ptr_;
+            size_type idx_;
+        };
 
-        // Construct pointers to all elements in the sequence:
-        size_type index = 0;
-
-        for (auto it = begin_; it != end_; ++it, ++tuple_pointer, ++index) {
-            std::allocator_traits<tuple_allocator_type>::construct(tuple_allocator, tuple_pointer, std::addressof(*it), index);
+        std::unique_ptr<ItemT[]> a = std::make_unique<ItemT[]>(size_);
+        auto it = begin_;
+        for (size_type i = 0; i < size_; ++i) {
+            a[i] = ItemT{std::addressof(*it), i};
+            ++it;
         }
+        assert(it == end_);
+        std::sort(a.get(), a.get() + size_, [&](const ItemT& a, const ItemT& b) { return less(*a.ptr_, *b.ptr_); });
 
-        // Now, sort the pointers by the values they point to:
-        std::sort(sort_array, tuple_pointer, [&](const auto& a, const auto& b) { return less(*a.original_location, *b.original_location); });
-
-        // Sort the actual elements via the tuple array:
-        index = 0;
-
-        for (tuple_pointer_type current_tuple = sort_array; current_tuple != tuple_pointer; ++current_tuple, ++index) {
-            if (current_tuple->original_index != index) {
-                T end_value = std::move(*current_tuple->original_location);
-                size_type destination_index = index;
-                size_type source_index = current_tuple->original_index;
-
+        for (size_type i = 0; i < size_; ++i) {
+            size_type src = a[i].idx_;
+            size_type dest = i;
+            if (src != dest) {
+                T temp = std::move(*a[i].ptr_);
                 do {
-                    *sort_array[destination_index].original_location = std::move(*sort_array[source_index].original_location);
-                    destination_index = source_index;
-                    source_index = sort_array[destination_index].original_index;
-                    sort_array[destination_index].original_index = destination_index;
-                } while (source_index != index);
-
-                *sort_array[destination_index].original_location = std::move(end_value);
+                    *a[dest].ptr_ = std::move(*a[src].ptr_);
+                    dest = src;
+                    src = a[dest].idx_;
+                    a[dest].idx_ = dest;
+                } while (src != i);
+                *a[dest].ptr_ = std::move(temp);
             }
         }
-        std::allocator_traits<tuple_allocator_type>::deallocate(tuple_allocator, sort_array, size_);
         assert_invariants();
     }
 
