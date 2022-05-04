@@ -286,18 +286,6 @@ private:
         }
 #endif // PLF_HIVE_DEBUGGING
 
-        explicit group(PtrOf<lcm_aligned> p, skipfield_type cap, GroupPtr prevg) :
-            last_endpoint(bitcast_pointer<AlignedEltPtr>(p)),
-            elements(last_endpoint++),
-            skipfield(bitcast_pointer<SkipfieldPtr>(elements + lcm_aligned::end_of_elements(cap))),
-            previous_group(prevg),
-            capacity(cap),
-            size(1)
-        {
-            set_group_number(prevg == nullptr ? 0 : prevg->group_number() + 1);
-            std::fill_n(skipfield, cap + 1, skipfield_type());
-        }
-
         explicit group(PtrOf<lcm_aligned> p, skipfield_type cap) :
             last_endpoint(bitcast_pointer<AlignedEltPtr>(p)),
             elements(last_endpoint),
@@ -910,6 +898,12 @@ public:
                 assert(skipblock_length != 0);
                 assert(g->skipfield[sb + skipblock_length - 1] == skipblock_length);
                 total_skipped += skipblock_length;
+                if (sb == g->free_list_head) {
+                    assert(g->elements[sb].prevlink_ == std::numeric_limits<skipfield_type>::max());
+                }
+                if (g->elements[sb].nextlink_ != std::numeric_limits<skipfield_type>::max()) {
+                    assert(g->elements[g->elements[sb].nextlink_].prevlink_ == sb);
+                }
             }
             if (g == end_.group_) {
                 assert(g->capacity == g->size + total_skipped + (g->end_of_elements() - g->last_endpoint));
@@ -1209,19 +1203,6 @@ private:
         capacity_ += cap;
     }
 
-    GroupPtr allocate_group(skipfield_type cap, GroupPtr prevg) {
-        auto ga = group_allocator_type(get_allocator());
-        auto aa = aligned_allocator_type(get_allocator());
-        GroupPtr g = std::allocator_traits<group_allocator_type>::allocate(ga, 1);
-        PtrOf<lcm_aligned> p;
-        hive_try_rollback([&]() {
-            p = std::allocator_traits<aligned_allocator_type>::allocate(aa, lcm_aligned::group_allocation_size(cap));
-        }, [&]() {
-            std::allocator_traits<group_allocator_type>::deallocate(ga, g, 1);
-        });
-        return ::new (bitcast_pointer<void*>(g)) group(p, cap, prevg);
-    }
-
     inline void deallocate_group(GroupPtr g) {
         auto p = PtrOf<lcm_aligned>(g->elements);
         auto ga = group_allocator_type(get_allocator());
@@ -1267,111 +1248,84 @@ private:
         }
     }
 
-    void update_skipblock(const iterator& new_location, skipfield_type prev_free_list_index) {
-        const skipfield_type new_value = static_cast<skipfield_type>(new_location.skipf_[0] - 1);
-
-        if (new_value != 0) {
-            // ie. skipfield was not 1, ie. a single-node skipblock, with no additional nodes to update
-            // set (new) start and (original) end of skipblock to new value:
-            new_location.skipf_[new_value] = new_location.skipf_[1] = new_value;
-
-            // transfer free list node to new start node:
-            ++(groups_with_erasures_->free_list_head);
-
-            if (prev_free_list_index != std::numeric_limits<skipfield_type>::max()) {
-                new_location.group_->elements[prev_free_list_index].prevlink_ = groups_with_erasures_->free_list_head;
-            }
-            new_location.elt_[1].nextlink_ = prev_free_list_index;
-            new_location.elt_[1].prevlink_ = std::numeric_limits<skipfield_type>::max();
-        } else {
-            groups_with_erasures_->free_list_head = prev_free_list_index;
-            if (prev_free_list_index != std::numeric_limits<skipfield_type>::max()) {
-                // ie. not the last free list node
-                new_location.group_->elements[prev_free_list_index].prevlink_ = std::numeric_limits<skipfield_type>::max();
-            } else {
-                // remove this group from the list of groups with erasures
-                groups_with_erasures_ = groups_with_erasures_->next_erasure_;
-            }
-        }
-
-        new_location.skipf_[0] = 0;
-        ++(new_location.group_->size);
-
-        if (new_location.group_ == begin_.group_ && new_location.elt_ < begin_.elt_) {
-            // ie. begin_ was moved forwards as the result of an erasure at some point, this erased element is before the current begin,
-            // hence, set current begin iterator to this element
-            begin_ = new_location;
-        }
-        ++size_;
-    }
-
 public:
     template<class... Args>
     iterator emplace(Args&&... args) {
         allocator_type ea = get_allocator();
-        if (end_.elt_ != nullptr) {
-            if (groups_with_erasures_ == nullptr) {
-                if (end_.elt_ != end_.group_->end_of_elements()) {
-                    iterator result = end_;
-                    std::allocator_traits<allocator_type>::construct(ea, end_.elt_[0].t(), static_cast<Args&&>(args)...);
-                    ++end_.elt_;
-                    end_.group_->last_endpoint = end_.elt_;
-                    ++(end_.group_->size);
-                    ++end_.skipf_;
-                    ++size_;
-                    assert_invariants();
-                    return result;
-                }
-                GroupPtr next_group;
-                if (unused_groups_ == nullptr) {
-                    const skipfield_type newcap = (size_ < static_cast<size_type>(max_group_capacity_)) ? static_cast<skipfield_type>(size_) : max_group_capacity_;
-                    next_group = allocate_group(newcap, end_.group_);
-                    hive_try_rollback([&]() {
-                        std::allocator_traits<allocator_type>::construct(ea, next_group->elements[0].t(), static_cast<Args&&>(args)...);
-                    }, [&]() {
-                        deallocate_group(next_group);
-                    });
-                    capacity_ += newcap;
-                } else {
-                    next_group = unused_groups_;
-                    std::allocator_traits<allocator_type>::construct(ea, next_group->elements[0].t(), static_cast<Args&&>(args)...);
-                    (void)unused_groups_pop_front();
-                    next_group->reset(1, nullptr, end_.group_, end_.group_->group_number() + 1);
-                }
-
-                end_.group_->next_group = next_group;
-                end_.group_ = next_group;
-                end_.elt_ = next_group->last_endpoint;
-                end_.skipf_ = next_group->skipfield + 1;
-                ++size_;
-
-                assert_invariants();
-                return iterator(next_group, 0);
-            } else {
-                auto new_location = iterator(groups_with_erasures_, groups_with_erasures_->free_list_head);
-
-                skipfield_type prev_free_list_index = new_location.elt_[0].nextlink_;
-                std::allocator_traits<allocator_type>::construct(ea, new_location.elt_[0].t(), static_cast<Args&&>(args)...);
-                update_skipblock(new_location, prev_free_list_index);
-
-                assert_invariants();
-                return new_location;
-            }
-        } else {
-            allocate_unused_group(min_group_capacity_);
-            GroupPtr g = unused_groups_pop_front();
-            begin_ = iterator(g, 0);
-            end_ = begin_;
-            g->size = 0;
-            g->last_endpoint = g->elements;
-            g->free_list_head = std::numeric_limits<skipfield_type>::max();
-            std::allocator_traits<allocator_type>::construct(ea, end_.elt_[0].t(), static_cast<Args&&>(args)...);
-            g->size = 1;
-            ++(g->last_endpoint);
-            end_ = iterator(g, 1);
-            size_ = 1;
+        if (trailing_capacity() != 0) {
+            iterator result = end_;
+            GroupPtr g = result.group_;
+            std::allocator_traits<allocator_type>::construct(ea, result.operator->(), static_cast<Args&&>(args)...);
+            assert(end_.skipf_[0] == 0);
+            ++end_.elt_;
+            ++end_.skipf_;
+            g->last_endpoint = end_.elt_;
+            g->size += 1;
+            ++size_;
             assert_invariants();
-            return begin_;
+            return result;
+        } else if (groups_with_erasures_ != nullptr) {
+            GroupPtr g = groups_with_erasures_;
+            skipfield_type sb = g->free_list_head;
+            assert(sb < g->capacity);
+            auto result = iterator(g, sb);
+            skipfield_type nextsb = g->elements[sb].nextlink_;
+            assert(g->elements[sb].prevlink_ == std::numeric_limits<skipfield_type>::max());
+            hive_try_rollback([&]() {
+                std::allocator_traits<allocator_type>::construct(ea, result.operator->(), static_cast<Args&&>(args)...);
+            }, [&]() {
+                g->elements[sb].prevlink_ = std::numeric_limits<skipfield_type>::max();
+                g->elements[sb].nextlink_ = nextsb;
+            });
+            g->size += 1;
+            size_ += 1;
+            if (g == begin_.group_ && sb == 0) {
+                begin_ = result;
+            }
+            skipfield_type old_skipblock_length = std::exchange(g->skipfield[sb], 0);
+            assert(1 <= old_skipblock_length && old_skipblock_length <= g->capacity);
+            skipfield_type new_skipblock_length = (old_skipblock_length - 1);
+            if (new_skipblock_length == 0) {
+                g->free_list_head = nextsb;
+                if (nextsb == std::numeric_limits<skipfield_type>::max()) {
+                    groups_with_erasures_ = g->next_erasure_;
+                } else {
+                    g->elements[nextsb].prevlink_ = std::numeric_limits<skipfield_type>::max();
+                }
+            } else {
+                g->skipfield[sb + 1] = new_skipblock_length;
+                g->skipfield[sb + old_skipblock_length - 1] = new_skipblock_length;
+                g->free_list_head = sb + 1;
+                g->elements[sb + 1].prevlink_ = std::numeric_limits<skipfield_type>::max();
+                g->elements[sb + 1].nextlink_ = nextsb;
+                if (nextsb != std::numeric_limits<skipfield_type>::max()) {
+                    g->elements[nextsb].prevlink_ = sb + 1;
+                }
+            }
+            assert_invariants();
+            return result;
+        } else {
+            if (unused_groups_ == nullptr) {
+                allocate_unused_group(recommend_block_size());
+            }
+            GroupPtr g = unused_groups_;
+            std::allocator_traits<allocator_type>::construct(ea, g->elements[0].t(), static_cast<Args&&>(args)...);
+            (void)unused_groups_pop_front();
+            std::fill_n(g->skipfield, g->capacity, skipfield_type());
+            g->size = 1;
+            g->last_endpoint = g->elements + 1;
+            g->free_list_head = std::numeric_limits<skipfield_type>::max();
+            g->next_group = nullptr;
+            g->previous_group = end_.group_;
+            auto result = iterator(g, 0);
+            if (end_.group_ != nullptr) {
+                end_.group_->next_group = g;
+            } else {
+                begin_ = result;
+            }
+            end_ = iterator(g, 1);
+            ++size_;
+            return result;
         }
     }
 
@@ -2266,6 +2220,14 @@ private:
         this->swap(temp);
         temp.min_group_capacity_ = block_capacity_hard_limits().min;  // for the benefit of assert_invariants in the dtor
         temp.max_group_capacity_ = block_capacity_hard_limits().max;
+    }
+
+    inline size_type recommend_block_size() const {
+        size_type r = size_;
+        if (r < 8) r = 8;
+        if (r < min_group_capacity_) r = min_group_capacity_;
+        if (r > max_group_capacity_) r = max_group_capacity_;
+        return r;
     }
 
 public:

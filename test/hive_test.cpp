@@ -1034,9 +1034,12 @@ TEST(hive, InsertAndErase)
         }
     }
     EXPECT_INVARIANTS(h);
+}
 
-    h.clear();
-    h.trim_capacity();
+TEST(hive, InsertAndErase2)
+{
+    std::mt19937 g;
+    plf::hive<int> h;
     h.reshape(plf::hive_limits(10000, h.block_capacity_limits().max));
     h.insert(30'000, 1);
     EXPECT_EQ(h.size(), 30'000u);
@@ -1060,17 +1063,23 @@ TEST(hive, InsertAndErase)
     EXPECT_EQ(h.size(), 30'000u);
     EXPECT_INVARIANTS(h);
 
-    size_t sum = 0;
-    for (auto it = h.begin(); it != h.end(); ) {
-        if (++sum == 3) {
-            sum = 0;
+    auto it = h.begin();
+    for (int i = 0; i < 30'000; ++i) {
+        if (i % 3 == 0) {
+            auto jt = it;
+            ++jt;
             it = h.erase(it);
+            if (it == h.end()) {
+                it = h.begin();
+            } else {
+                EXPECT_EQ(it, jt);
+            }
         } else {
-            h.insert(1);  // TODO: why doesn't this invalidate `it`?
-            ++it;
+            it = h.insert(1);
+            EXPECT_EQ(*it, 1);
         }
     }
-    EXPECT_EQ(h.size(), 45'001u); 
+    EXPECT_EQ(h.size(), 40'000u);
     EXPECT_INVARIANTS(h);
 
     while (!h.empty()) {
@@ -1125,7 +1134,7 @@ TEST(hive, InsertAndErase)
     EXPECT_EQ(std::accumulate(h.begin(), h.end(), 0), 5'000'000);
 }
 
-TEST(hive, InsertAndErase2)
+TEST(hive, InsertAndErase3)
 {
     plf::hive<int> h(500'000, 10);
     auto first = h.begin();
