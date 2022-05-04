@@ -1996,40 +1996,122 @@ TEST(hive, Reshape)
     EXPECT_INVARIANTS(h);
 }
 
-TEST(hive, Splice)
+TEST(hive, SpliceLvalue)
 {
-    std::vector<int> v1 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    std::vector<int> v2 = {11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+    std::vector<int> v1 = {1, 2, 3};
+    std::vector<int> v2 = {11, 12};
     plf::hive<int> h1(v1.begin(), v1.end());
     plf::hive<int> h2(v2.begin(), v2.end());
 
-    h1.splice(h2);
+    h1.splice(h2); // lvalue
     v1.insert(v1.end(), v2.begin(), v2.end());
-    EXPECT_TRUE(std::equal(h1.begin(), h1.end(), v1.begin(), v1.end()));
+    EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), v1.begin(), v1.end()));
     EXPECT_TRUE(h2.empty());
     EXPECT_INVARIANTS(h1);
     EXPECT_INVARIANTS(h2);
+
+    // Test the throwing case
+    h1.reshape({5, 5});
+    h2.reshape({10, 10});
+    v2 = {15, 16, 17};
+    h2 = {15, 16, 17};
+    EXPECT_THROW(h1.splice(h2), std::length_error);
+    EXPECT_INVARIANTS(h1);
+    EXPECT_INVARIANTS(h2);
+    EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), v1.begin(), v1.end()));
+    EXPECT_TRUE(std::is_permutation(h2.begin(), h2.end(), v2.begin(), v2.end()));
 }
 
 TEST(hive, SpliceRvalue)
 {
-    std::vector<int> v1 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    std::vector<int> v2 = {11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+    std::vector<int> v1 = {1, 2, 3};
+    std::vector<int> v2 = {11, 12};
     plf::hive<int> h1(v1.begin(), v1.end());
     plf::hive<int> h2(v2.begin(), v2.end());
 
-    h1.splice(std::move(h2));
+    h1.splice(std::move(h2)); // rvalue
     v1.insert(v1.end(), v2.begin(), v2.end());
-    EXPECT_TRUE(std::equal(h1.begin(), h1.end(), v1.begin(), v1.end()));
+    EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), v1.begin(), v1.end()));
     EXPECT_TRUE(h2.empty());
     EXPECT_INVARIANTS(h1);
     EXPECT_INVARIANTS(h2);
+
+    // Test the throwing case
+    h1.reshape({5, 5});
+    h2.reshape({10, 10});
+    v2 = {15, 16, 17};
+    h2 = {15, 16, 17};
+    EXPECT_THROW(h1.splice(std::move(h2)), std::length_error);
+    EXPECT_INVARIANTS(h1);
+    EXPECT_INVARIANTS(h2);
+    EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), v1.begin(), v1.end()));
+    EXPECT_TRUE(std::is_permutation(h2.begin(), h2.end(), v2.begin(), v2.end()));
+}
+
+TEST(hive, SpliceProperties)
+{
+    // Can splice an immobile type
+    struct S {
+        int i_;
+        explicit S(int i) : i_(i) {}
+        S(S&&) = delete;
+        S& operator=(S&&) = delete;
+        bool operator==(const S& rhs) const { return i_ == rhs.i_; }
+    };
+
+    if (true) {
+        plf::hive<S> h;
+
+        static_assert(std::is_same<decltype(h.splice(h)), void>::value, "");
+        static_assert(std::is_same<decltype(h.splice(std::move(h))), void>::value, "");
+        static_assert(!noexcept(h.splice(h)), "can throw if max_size() would be exceeded");
+        static_assert(!noexcept(h.splice(std::move(h))), "can throw if max_size() would be exceeded");
+
+        // Splice from an empty hive
+        h.emplace(1);
+        h.splice(plf::hive<S>());
+        EXPECT_EQ(h.size(), 1u);
+        EXPECT_INVARIANTS(h);
+    }
+    if (true) {
+        // Splice to an empty hive
+        plf::hive<S> h1;
+        plf::hive<S> h2;
+        h2.emplace(2);
+        while (h2.size() != h2.capacity()) {
+            h2.emplace(3);
+        }
+        size_t expected_size = h2.size();
+        size_t expected_capacity = h1.capacity() + h2.capacity();
+        h1.splice(h2);
+        EXPECT_EQ(h1.size(), expected_size);
+        EXPECT_EQ(h1.capacity(), expected_capacity);
+        EXPECT_EQ(h2.capacity(), 0u);
+        EXPECT_INVARIANTS(h1);
+        EXPECT_INVARIANTS(h2);
+
+        // Splice to an empty (but capacious) hive
+        h1.clear();
+        EXPECT_EQ(h1.capacity(), expected_capacity);
+        h2.emplace(2);
+        while (h2.size() != h2.capacity()) {
+            h2.emplace(3);
+        }
+        expected_size = h2.size();
+        expected_capacity = h1.capacity() + h2.capacity();
+        h1.splice(h2);
+        EXPECT_EQ(h1.size(), expected_size);
+        EXPECT_EQ(h1.capacity(), expected_capacity);
+        EXPECT_EQ(h2.capacity(), 0u);
+        EXPECT_INVARIANTS(h1);
+        EXPECT_INVARIANTS(h2);
+    }
 }
 
 TEST(hive, SpliceLargeRandom)
 {
     std::mt19937 g;
-    plf::hive<int> h1(100'000, 1);
+    plf::hive<int> h1(1000, 1);
 
     for (int t = 0; t < 10; ++t) {
         for (auto it = h1.begin(); it != h1.end(); ++it) {
@@ -2040,7 +2122,7 @@ TEST(hive, SpliceLargeRandom)
         }
         EXPECT_INVARIANTS(h1);
 
-        plf::hive<int> h2(10'000, t);
+        plf::hive<int> h2(1000, t);
         for (auto it = h2.begin(); it != h2.end(); ++it) {
             if (g() & 1) {
                 it = h2.erase(it);
@@ -2051,55 +2133,15 @@ TEST(hive, SpliceLargeRandom)
 
         auto expected = std::vector<int>(h1.begin(), h1.end());
         expected.insert(expected.end(), h2.begin(), h2.end());
+        size_t expected_capacity = h1.capacity() + h2.capacity();
 
         h1.splice(h2);
         EXPECT_TRUE(h2.empty());
-        EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), expected.begin(), expected.end()));
+        EXPECT_EQ(h1.capacity(), expected_capacity);
         EXPECT_INVARIANTS(h1);
         EXPECT_INVARIANTS(h2);
+        EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), expected.begin(), expected.end()));
     }
-}
-
-TEST(hive, SpliceUnequalSize1)
-{
-    auto h1 = plf::hive<int>(plf::hive_limits(200, 200));
-    auto h2 = plf::hive<int>(plf::hive_limits(200, 200));
-    std::vector<int> expected;
-
-    for (int i = 0; i < 150; ++i) {
-        h1.insert(i);
-        expected.push_back(i);
-    }
-    for (int i = 150; i < 250; ++i) {
-        h2.insert(i);
-        expected.push_back(i);
-    }
-    h1.splice(h2);
-    EXPECT_TRUE(h2.empty());
-    EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), expected.begin(), expected.end()));
-    EXPECT_INVARIANTS(h1);
-    EXPECT_INVARIANTS(h2);
-}
-
-TEST(hive, SpliceUnequalSize2)
-{
-    auto h1 = plf::hive<int>(plf::hive_limits(200, 200));
-    auto h2 = plf::hive<int>(plf::hive_limits(200, 200));
-    std::vector<int> expected;
-
-    for (int i = 0; i < 150; ++i) {
-        h2.insert(i);
-        expected.push_back(i);
-    }
-    for (int i = 150; i < 250; ++i) {
-        h1.insert(i);
-        expected.push_back(i);
-    }
-    h1.splice(h2);
-    EXPECT_TRUE(h2.empty());
-    EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), expected.begin(), expected.end()));
-    EXPECT_INVARIANTS(h1);
-    EXPECT_INVARIANTS(h2);
 }
 
 TEST(hive, TrimDoesntMove)

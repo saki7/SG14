@@ -893,6 +893,10 @@ public:
                 assert(g->last_endpoint > g->elements + g->size);
                 assert(g->skipfield[g->free_list_head] != 0);
             }
+            if (g->last_endpoint != g->end_of_elements()) {
+                assert(g == end_.group_);
+                assert(g->next_group == nullptr);
+            }
 #if PLF_HIVE_RELATIONAL_OPERATORS
             if (g->next_group != nullptr) {
                 assert(g->group_number() < g->next_group->group_number());
@@ -984,6 +988,14 @@ private:
         }
     }
 
+    size_type trailing_capacity() const {
+        if (end_.group_ == nullptr) {
+            return 0;
+        } else {
+            return (end_.group_->capacity - end_.index_in_group());
+        }
+    }
+
 public:
     hive() = default;
 
@@ -1031,12 +1043,8 @@ public:
 
 private:
     inline void blank() {
-        end_.group_ = nullptr;
-        end_.elt_ = nullptr;
-        end_.skipf_ = nullptr;
-        begin_.group_ = nullptr;
-        begin_.elt_ = nullptr;
-        begin_.skipf_ = nullptr;
+        end_ = iterator();
+        begin_ = iterator();
         groups_with_erasures_ = nullptr;
         unused_groups_ = nullptr;
         size_ = 0;
@@ -1892,108 +1900,95 @@ public:
     }
 
     void splice(hive& source) {
-        // Process: if there are unused memory spaces at the end of the current back group of the chain, convert them
-        // to skipped elements and add the locations to the group's free list.
-        // Then link the destination's groups to the source's groups and nullify the source.
-        // If the source has more unused memory spaces in the back group than the destination,
-        // swap them before processing to reduce the number of locations added to a free list and also subsequent jumps during iteration.
-
         assert_invariants();
         source.assert_invariants();
         assert(&source != this);
 
-        if (source.size_ == 0) {
-            return;
-        } else if (size_ == 0) {
-            *this = std::move(source);
-            return;
-        }
-
-        // If there's more unused element locations in back memory block of destination than in back memory block of source,
-        // swap with source to reduce number of skipped elements during iteration, and reduce size of free-list:
-        if ((end_.group_->end_of_elements() - end_.elt_) > (source.end_.group_->end_of_elements() - source.end_.elt_)) {
-            swap(source);
+        if (capacity_ + source.capacity_ > max_size()) {
+            throw std::length_error("Result of splice would exceed max_size()");
         }
 
         if (source.min_group_capacity_ < min_group_capacity_ || source.max_group_capacity_ > max_group_capacity_) {
-            for (GroupPtr current_group = source.begin_.group_; current_group != nullptr; current_group = current_group->next_group) {
-                if (current_group->capacity < min_group_capacity_ || current_group->capacity > max_group_capacity_) {
-                    throw std::length_error("A source memory block capacity is outside of the destination's minimum or maximum memory block capacity limits - please change either the source or the destination's min/max block capacity limits using reshape() before calling splice() in this case");
+            for (GroupPtr it = source.begin_.group_; it != nullptr; it = it->next_group) {
+                if (it->capacity < min_group_capacity_ || it->capacity > max_group_capacity_) {
+                    throw std::length_error("Cannot splice: source hive contains blocks that do not match the block limits of the destination hive");
                 }
             }
         }
 
-        if (source.groups_with_erasures_ != nullptr) {
-            if (groups_with_erasures_ == nullptr) {
-                groups_with_erasures_ = source.groups_with_erasures_;
-            } else {
-                GroupPtr tail = groups_with_erasures_;
-                while (tail->next_erasure_ != nullptr) {
-                    tail = tail->next_erasure_;
-                }
-                tail->next_erasure_ = source.groups_with_erasures_;
-            }
-        }
-
-        if (source.unused_groups_ != nullptr) {
-            if (unused_groups_ == nullptr) {
-                unused_groups_ = source.unused_groups_;
-            } else {
-                GroupPtr tail = unused_groups_;
-                while (tail->next_group != nullptr) {
-                    tail = tail->next_group;
-                }
-                tail->next_group = source.unused_groups_;
-            }
-        }
-
-        skipfield_type distance_to_end = end_.group_->end_of_elements() - end_.elt_;
-
-        if (distance_to_end != 0) {
-            // Mark unused element memory locations from back group as skipped/erased:
-            // Update skipfield:
-            skipfield_type previous_node_value = end_.skipf_[-1];
-            end_.group_->last_endpoint = end_.group_->end_of_elements();
-
-            if (previous_node_value == 0) {
-                end_.skipf_[0] = distance_to_end;
-                end_.skipf_[distance_to_end - 1] = distance_to_end;
-
-                skipfield_type index = end_.index_in_group();
-
-                if (end_.group_->is_packed()) {
-                    end_.group_->next_erasure_ = groups_with_erasures_; // add it to the groups-with-erasures free list
-                    groups_with_erasures_ = end_.group_;
+        size_type trailing = trailing_capacity();
+        if (trailing > source.trailing_capacity()) {
+            source.splice(*this);
+            swap(source);
+        } else {
+            if (source.groups_with_erasures_ != nullptr) {
+                if (groups_with_erasures_ == nullptr) {
+                    groups_with_erasures_ = source.groups_with_erasures_;
                 } else {
-                    // ie. if this group already has some erased elements
-                    end_.group_->elements[end_.group_->free_list_head].prevlink_ = index;
+                    GroupPtr tail = groups_with_erasures_;
+                    while (tail->next_erasure_ != nullptr) {
+                        tail = tail->next_erasure_;
+                    }
+                    tail->next_erasure_ = source.groups_with_erasures_;
                 }
-
-                end_.elt_[0].nextlink_ = end_.group_->free_list_head;
-                end_.elt_[0].prevlink_ = std::numeric_limits<skipfield_type>::max();
-                end_.group_->free_list_head = index;
-            } else {
-                // update previous skipblock, no need to update free list:
-                end_.skipf_[-previous_node_value] = end_.skipf_[distance_to_end - 1] = static_cast<skipfield_type>(previous_node_value + distance_to_end);
             }
-        }
+            if (source.unused_groups_ != nullptr) {
+                if (unused_groups_ == nullptr) {
+                    unused_groups_ = source.unused_groups_;
+                } else {
+                    GroupPtr tail = unused_groups_;
+                    while (tail->next_group != nullptr) {
+                        tail = tail->next_group;
+                    }
+                    tail->next_group = source.unused_groups_;
+                }
+            }
+            if (trailing != 0 && source.begin_.group_ != nullptr) {
+                GroupPtr g = end_.group_;
+                size_type n = g->capacity - trailing;
+                if (n > 0) {
+                    assert(g->skipfield[n - 1] == 0);
+                }
+                g->skipfield[n] = trailing;
+                g->skipfield[g->capacity - 1] = trailing;
+                if (g->free_list_head == std::numeric_limits<skipfield_type>::max()) {
+                    g->next_erasure_ = std::exchange(groups_with_erasures_, g);
+                }
+                g->elements[n].nextlink_ = std::exchange(g->free_list_head, n);
+                g->elements[n].prevlink_ = std::numeric_limits<skipfield_type>::max();
+                g->last_endpoint = g->end_of_elements();
+            }
 
 #if PLF_HIVE_RELATIONAL_OPERATORS
-        size_type groupno = end_.group_->group_number();
-        for (GroupPtr g = source.begin_.group_; g != nullptr; g = g->next_group) {
-            g->set_group_number(++groupno);
-        }
+            size_type groupno = end_.group_->group_number();
+            for (GroupPtr g = source.begin_.group_; g != nullptr; g = g->next_group) {
+                g->set_group_number(++groupno);
+            }
 #endif
 
-        // Join the destination and source group chains:
-        end_.group_->next_group = source.begin_.group_;
-        source.begin_.group_->previous_group = end_.group_;
-        end_ = std::move(source.end_);
-        size_ += source.size_;
-        capacity_ += source.capacity_;
+            if (source.begin_.group_ != nullptr) {
+                source.begin_.group_->previous_group = end_.group_;
+                if (end_.group_ != nullptr) {
+                    end_.group_->next_group = source.begin_.group_;
+                } else {
+                    assert(begin_.group_ == nullptr);
+                    begin_ = std::move(source.begin_);
+                }
+            }
+            end_ = std::move(source.end_);
+            size_ += std::exchange(source.size_, 0);
+            capacity_ += std::exchange(source.capacity_, 0);
 
-        source.blank();
+            source.begin_ = iterator();
+            source.end_ = iterator();
+            source.unused_groups_ = nullptr;
+            source.groups_with_erasures_ = nullptr;
+        }
+
         assert_invariants();
+        source.assert_invariants();
+        assert(source.size() == 0u);
+        assert(source.capacity() == 0u);
     }
 
     inline void splice(hive&& source) { this->splice(source); }
