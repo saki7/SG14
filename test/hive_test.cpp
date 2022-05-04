@@ -461,9 +461,11 @@ TYPED_TEST(hivet, CustomDistanceFunctionRev)
     EXPECT_EQ(h.rbegin().distance(plus20), 20);
     EXPECT_EQ(h.rbegin().distance(plus200), 200);
     EXPECT_EQ(plus20.distance(plus200), 180);
+#if PLF_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(plus20.distance(h.rbegin()), -20);
     EXPECT_EQ(plus200.distance(h.rbegin()), -200);
     EXPECT_EQ(plus200.distance(plus20), -180);
+#endif
     EXPECT_EQ(plus200.distance(plus200), 0);
 
     // Test const iterators also
@@ -472,9 +474,11 @@ TYPED_TEST(hivet, CustomDistanceFunctionRev)
     EXPECT_EQ(h.crbegin().distance(c20), 20);
     EXPECT_EQ(h.crbegin().distance(c200), 200);
     EXPECT_EQ(c20.distance(c200), 180);
+#if PLF_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(c20.distance(h.crbegin()), -20);
     EXPECT_EQ(c200.distance(h.crbegin()), -200);
     EXPECT_EQ(c200.distance(c20), -180);
+#endif
     EXPECT_EQ(c200.distance(c200), 0);
 }
 
@@ -548,7 +552,6 @@ TEST(hive, ShrinkToFit)
 {
     plf::hive<int> h = {1, 2, 3, 4, 5};
     size_t oldcap = h.capacity();
-
     h.shrink_to_fit();
     EXPECT_EQ(h.size(), 5u);
     EXPECT_LE(h.capacity(), oldcap);
