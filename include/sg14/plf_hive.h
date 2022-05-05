@@ -175,23 +175,6 @@ private:
         };
         PtrOf<T> t() { return bitcast_pointer<PtrOf<T>>(std::addressof(t_)); }
     };
-    struct lcm_aligned {
-        static constexpr size_t alignment = alignof(overaligned_elt);
-        alignas(alignment) char a[alignment];
-
-        static constexpr size_t roundup(size_t x) { return (x + alignment - 1) & ~(alignment - 1); }
-
-        static constexpr size_t group_allocation_size(size_t cap) {
-            size_t bytes_for_elements = roundup(cap * sizeof(overaligned_elt));
-            size_t bytes_for_skipfields = roundup((cap + 1) * sizeof(skipfield_type));
-            return (bytes_for_elements + bytes_for_skipfields) / alignment;
-        }
-
-        static constexpr size_t end_of_elements(size_t cap) {
-            size_t bytes_for_elements = roundup(cap * sizeof(overaligned_elt));
-            return bytes_for_elements / sizeof(overaligned_elt);
-        }
-    };
 
     template <class D, class S>
     static constexpr D bitcast_pointer(S source_pointer) {
@@ -205,9 +188,6 @@ private:
     }
 
     struct group;
-    using group_allocator_type = AllocOf<group>;
-    using aligned_allocator_type = AllocOf<lcm_aligned>;
-
     using AlignedEltPtr = PtrOf<overaligned_elt>;
     using GroupPtr = PtrOf<group>;
     using SkipfieldPtr = PtrOf<skipfield_type>;
@@ -286,11 +266,8 @@ private:
         }
 #endif // PLF_HIVE_DEBUGGING
 
-        explicit group(PtrOf<lcm_aligned> p, skipfield_type cap) :
-            last_endpoint(bitcast_pointer<AlignedEltPtr>(p)),
-            elements(last_endpoint),
-            skipfield(bitcast_pointer<SkipfieldPtr>(elements + lcm_aligned::end_of_elements(cap))),
-            capacity(cap)
+        explicit group(AlignedEltPtr elt, SkipfieldPtr sk, skipfield_type cap) :
+            last_endpoint(elt), elements(elt), skipfield(sk), capacity(cap)
         {
             std::fill_n(skipfield, cap + 1, skipfield_type());
         }
@@ -1188,27 +1165,46 @@ public:
     }
 
 private:
+    struct GroupAllocHelper {
+        union U {
+            group g_;
+            overaligned_elt elt_;
+        };
+        struct type {
+            alignas(U) char dummy;
+        };
+        static GroupPtr allocate_group(allocator_type a, size_t cap) {
+            auto ta = AllocOf<type>(a);
+            size_t bytes_for_group = sizeof(U);
+            size_t bytes_for_elts = sizeof(overaligned_elt) * cap;
+            size_t bytes_for_skipfield = sizeof(skipfield_type) * (cap + 1);
+            size_t n = (bytes_for_group + bytes_for_elts + bytes_for_skipfield + sizeof(type) - 1) / sizeof(type);
+            PtrOf<type> p = std::allocator_traits<AllocOf<type>>::allocate(ta, n);
+            GroupPtr g = PtrOf<group>(p);
+            auto elements = AlignedEltPtr(p + (bytes_for_group / sizeof(type)));
+            auto skipfield = SkipfieldPtr(elements + cap);
+            ::new (bitcast_pointer<void*>(g)) group(elements, skipfield, cap);
+            return g;
+        }
+        static void deallocate_group(allocator_type a, GroupPtr g) {
+            size_t cap = g->capacity;
+            auto ta = AllocOf<type>(a);
+            size_t bytes_for_group = sizeof(U);
+            size_t bytes_for_elts = sizeof(overaligned_elt) * cap;
+            size_t bytes_for_skipfield = sizeof(skipfield_type) * (cap + 1);
+            size_t n = (bytes_for_group + bytes_for_elts + bytes_for_skipfield + sizeof(type) - 1) / sizeof(type);
+            std::allocator_traits<AllocOf<type>>::deallocate(ta, PtrOf<type>(g), n);
+        }
+    };
+
     void allocate_unused_group(size_type cap) {
-        auto ga = group_allocator_type(get_allocator());
-        auto aa = aligned_allocator_type(get_allocator());
-        GroupPtr g = std::allocator_traits<group_allocator_type>::allocate(ga, 1);
-        PtrOf<lcm_aligned> p;
-        hive_try_rollback([&]() {
-            p = std::allocator_traits<aligned_allocator_type>::allocate(aa, lcm_aligned::group_allocation_size(cap));
-        }, [&]() {
-            std::allocator_traits<group_allocator_type>::deallocate(ga, g, 1);
-        });
-        ::new (bitcast_pointer<void*>(g)) group(p, cap);
+        GroupPtr g = GroupAllocHelper::allocate_group(get_allocator(), cap);
         unused_groups_push_front(g);
         capacity_ += cap;
     }
 
     inline void deallocate_group(GroupPtr g) {
-        auto p = PtrOf<lcm_aligned>(g->elements);
-        auto ga = group_allocator_type(get_allocator());
-        auto aa = aligned_allocator_type(get_allocator());
-        std::allocator_traits<aligned_allocator_type>::deallocate(aa, p, lcm_aligned::group_allocation_size(g->capacity));
-        std::allocator_traits<group_allocator_type>::deallocate(ga, g, 1);
+        GroupAllocHelper::deallocate_group(get_allocator(), g);
     }
 
     void destroy_all_data() {
