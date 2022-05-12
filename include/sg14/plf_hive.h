@@ -200,20 +200,12 @@ private:
             // in general hive usage (being heavily used in operator ++, --), so is first in struct. If all cells in the group have
             // been inserted into at some point, it will be == reinterpret_cast<AlignedEltPtr>(skipfield).
         GroupPtr next_group = nullptr;
-        const SkipfieldPtr skipfield;
-            // Skipfield storage. The element and skipfield arrays are allocated contiguously, in a single allocation,
-            // hence the skipfield pointer also functions as a 'one-past-end' pointer for the elements array.
-            // There will always be one additional skipfield node allocated compared to the number of elements.
-            // This is to ensure a faster ++ iterator operation (fewer checks are required when this is present).
-            // The extra node is unused and always zero, but checked, and not having it will result in out-of-bounds memory errors.
         GroupPtr prev_group = nullptr;
         skipfield_type free_list_head = std::numeric_limits<skipfield_type>::max();
             // The index of the last erased element in the group. The last erased element will, in turn, contain
             // the number of the index of the next erased element, and so on. If this is == maximum skipfield_type value
             // then free_list is empty ie. no erasures have occurred in the group.
-        const skipfield_type capacity;
-            // The element capacity of this particular group - can also be calculated from reinterpret_cast<AlignedEltPtr>(group->skipfield) - group->elements,
-            // however this space is effectively free due to struct padding and the sizeof(skipfield_type), and calculating it once is faster in benchmarking.
+        skipfield_type capacity;
         skipfield_type size = 0;
             // The total number of active elements in group - changes with insert and erase commands - used to check for empty group in erase function,
             // as an indication to remove the group. Also used in combination with capacity to check if group is full.
@@ -237,7 +229,7 @@ private:
             printf(
                 "  group #%zu [%zu/%zu used] (last_endpoint=%p, elts=%p, skipfield=%p, freelist=%zu, erasenext=%p)",
                 group_number(), size_t(size), size_t(capacity),
-                (void*)last_endpoint, (void*)addr_of_element(0), (void*)skipfield, size_t(free_list_head), (void*)next_erasure_
+                (void*)last_endpoint, (void*)addr_of_element(0), (void*)addr_of_skipfield(0), size_t(free_list_head), (void*)next_erasure_
             );
             if (next_group) {
                 printf(" next: #%zu", next_group->group_number());
@@ -251,24 +243,24 @@ private:
             }
             printf("  skipfield[] =");
             for (int i = 0; i < capacity; ++i) {
-                if (skipfield[i] == 0) {
+                if (skipfield(i) == 0) {
                     printf(" _");
                 } else {
-                    printf(" %d", int(skipfield[i]));
+                    printf(" %d", int(skipfield(i)));
                 }
             }
-            if (skipfield[capacity] == 0) {
+            if (skipfield(capacity) == 0) {
                 printf(" [_]\n");
             } else {
-                printf(" [%d]\n", int(skipfield[capacity]));
+                printf(" [%d]\n", int(skipfield(capacity)));
             }
         }
 #endif // PLF_HIVE_DEBUGGING
 
-        explicit group(AlignedEltPtr elt, SkipfieldPtr sk, skipfield_type cap) :
-            last_endpoint(elt), skipfield(sk), capacity(cap)
+        explicit group(skipfield_type cap) :
+            last_endpoint(addr_of_element(0)), capacity(cap)
         {
-            std::fill_n(skipfield, cap + 1, skipfield_type());
+            std::fill_n(addr_of_skipfield(0), cap + 1, skipfield_type());
         }
 
         bool is_packed() const {
@@ -276,8 +268,11 @@ private:
         }
 
         AlignedEltPtr addr_of_element(size_type n) { return GroupAllocHelper::elements(this) + n; }
-        inline overaligned_elt& element(size_type n) { return GroupAllocHelper::elements(this)[n]; }
+        overaligned_elt& element(size_type n) { return GroupAllocHelper::elements(this)[n]; }
         AlignedEltPtr end_of_elements() { return GroupAllocHelper::elements(this) + capacity; }
+
+        SkipfieldPtr addr_of_skipfield(size_type n) { return GroupAllocHelper::skipfield(this) + n; }
+        skipfield_type& skipfield(size_type n) { return GroupAllocHelper::skipfield(this)[n]; }
 
         void reset(skipfield_type increment, GroupPtr next, GroupPtr prev, size_type groupno) {
             last_endpoint = addr_of_element(increment);
@@ -287,7 +282,7 @@ private:
             size = increment;
             next_erasure_ = nullptr;
             set_group_number(groupno);
-            std::fill_n(skipfield, capacity, skipfield_type());
+            std::fill_n(addr_of_skipfield(0), capacity, skipfield_type());
         }
     };
 
@@ -405,8 +400,8 @@ private:
             elt_ += static_cast<size_type>(skip) + 1u;
             if (elt_ == group_->last_endpoint && group_->next_group != nullptr) {
                 group_ = group_->next_group;
-                elt_ = group_->addr_of_element(group_->skipfield[0]);
-                skipf_ = group_->skipfield + group_->skipfield[0];
+                elt_ = group_->addr_of_element(group_->skipfield(0));
+                skipf_ = group_->addr_of_skipfield(group_->skipfield(0));
             } else {
                 skipf_ += skip;
             }
@@ -424,9 +419,9 @@ private:
                 }
             }
             group_ = group_->prev_group;
-            skipfield_type skip = group_->skipfield[group_->capacity - 1];
-            elt_ = group_->end_of_elements() - skip - 1;
-            skipf_ = group_->skipfield + group_->capacity - skip - 1;
+            skipfield_type skip = group_->skipfield(group_->capacity - 1);
+            elt_ = group_->addr_of_element(group_->capacity - skip - 1);
+            skipf_ = group_->addr_of_skipfield(group_->capacity - skip - 1);
             return *this;
         }
 
@@ -444,7 +439,7 @@ private:
         }
 
         explicit hive_iterator(GroupPtr g, size_t skip) :
-            group_(g), elt_(g->addr_of_element(skip)), skipf_(g->skipfield + skip) {}
+            group_(g), elt_(g->addr_of_element(skip)), skipf_(g->addr_of_skipfield(skip)) {}
 
         void advance_forward(difference_type n) {
             // Code explanation:
@@ -470,7 +465,7 @@ private:
             assert(!(elt_ == group_->last_endpoint && group_->next_group == nullptr));
 
             // Special case for initial element pointer and initial group (we don't know how far into the group the element pointer is)
-            if (elt_ != group_->addr_of_element(group_->skipfield[0])) {
+            if (elt_ != group_->addr_of_element(group_->skipfield(0))) {
                 // ie. != first non-erased element in group
                 const difference_type distance_from_end = static_cast<difference_type>(group_->last_endpoint - elt_);
 
@@ -498,7 +493,7 @@ private:
                         if (skipf_ == endpoint) {
                             break;
                         } else if (n == 0) {
-                            elt_ = group_->addr_of_element(skipf_ - group_->skipfield);
+                            elt_ = group_->addr_of_element(skipf_ - group_->addr_of_skipfield(0));
                             return;
                         }
                     }
@@ -513,8 +508,8 @@ private:
                 group_ = group_->next_group;
 
                 if (n == 0) {
-                    elt_ = group_->addr_of_element(group_->skipfield[0]);
-                    skipf_ = group_->skipfield + group_->skipfield[0];
+                    elt_ = group_->addr_of_element(group_->skipfield(0));
+                    skipf_ = group_->addr_of_skipfield(group_->skipfield(0));
                     return;
                 }
             }
@@ -523,14 +518,14 @@ private:
             while (static_cast<difference_type>(group_->size) <= n) {
                 if (group_->next_group == nullptr) {
                     elt_ = group_->last_endpoint;
-                    skipf_ = group_->skipfield + (group_->last_endpoint - group_->addr_of_element(0));
+                    skipf_ = group_->addr_of_skipfield(group_->last_endpoint - group_->addr_of_element(0));
                     return;
                 } else {
                     n -= group_->size;
                     group_ = group_->next_group;
                     if (n == 0) {
-                        elt_ = group_->addr_of_element(group_->skipfield[0]);
-                        skipf_ = group_->skipfield + group_->skipfield[0];
+                        elt_ = group_->addr_of_element(group_->skipfield(0));
+                        skipf_ = group_->addr_of_skipfield(group_->skipfield(0));
                         return;
                     }
                 }
@@ -540,21 +535,21 @@ private:
             if (group_->is_packed()) {
                 // No erasures in this group, use straight pointer addition
                 elt_ = group_->addr_of_element(n);
-                skipf_ = group_->skipfield + n;
+                skipf_ = group_->addr_of_skipfield(n);
             } else {
                 // ie. size > n - safe to ignore endpoint check condition while incrementing:
-                skipf_ = group_->skipfield + group_->skipfield[0];
+                skipf_ = group_->addr_of_skipfield(group_->skipfield(0));
                 do {
                     ++skipf_;
                     skipf_ += skipf_[0];
                 } while (--n != 0);
-                elt_ = group_->addr_of_element(skipf_ - group_->skipfield);
+                elt_ = group_->addr_of_element(skipf_ - group_->addr_of_skipfield(0));
             }
         }
 
         void advance_backward(difference_type n) {
             assert(n < 0);
-            assert(!((elt_ == group_->addr_of_element(group_->skipfield[0])) && group_->prev_group == nullptr)); // check that we're not already at begin()
+            assert(!((elt_ == group_->addr_of_element(group_->skipfield(0))) && group_->prev_group == nullptr)); // check that we're not already at begin()
 
             // Special case for initial element pointer and initial group (we don't know how far into the group the element pointer is)
             if (elt_ != group_->last_endpoint) {
@@ -568,25 +563,25 @@ private:
                     } else if (group_->prev_group == nullptr) {
                         // ie. we've gone before begin(), so bound to begin()
                         elt_ = group_->addr_of_element(0);
-                        skipf_ = group_->skipfield;
+                        skipf_ = group_->addr_of_skipfield(0);
                         return;
                     } else {
                         n -= distance_from_beginning;
                     }
                 } else {
-                    const SkipfieldPtr beginning_point = group_->skipfield + group_->skipfield[0];
+                    SkipfieldPtr beginning_point = group_->addr_of_skipfield(group_->skipfield(0));
                     while (skipf_ != beginning_point) {
                         --skipf_;
                         skipf_ -= skipf_[0];
                         if (++n == 0) {
-                            elt_ = group_->addr_of_element(skipf_ - group_->skipfield);
+                            elt_ = group_->addr_of_element(skipf_ - group_->addr_of_skipfield(0));
                             return;
                         }
                     }
 
                     if (group_->prev_group == nullptr) {
-                        elt_ = group_->addr_of_element(group_->skipfield[0]);
-                        skipf_ = group_->skipfield + group_->skipfield[0];
+                        elt_ = group_->addr_of_element(group_->skipfield(0));
+                        skipf_ = group_->addr_of_skipfield(group_->skipfield(0));
                         return;
                     }
                 }
@@ -598,8 +593,8 @@ private:
             while (n < -static_cast<difference_type>(group_->size)) {
                 if (group_->prev_group == nullptr) {
                     // we've gone beyond begin(), so bound to it
-                    elt_ = group_->addr_of_element(group_->skipfield[0]);
-                    skipf_ = group_->skipfield + group_->skipfield[0];
+                    elt_ = group_->addr_of_element(group_->skipfield(0));
+                    skipf_ = group_->addr_of_skipfield(group_->skipfield(0));
                     return;
                 }
                 n += group_->size;
@@ -608,30 +603,30 @@ private:
 
             // Final group (if not already reached):
             if (n == -static_cast<difference_type>(group_->size)) {
-                elt_ = group_->addr_of_element(group_->skipfield[0]);
-                skipf_ = group_->skipfield + group_->skipfield[0];
+                elt_ = group_->addr_of_element(group_->skipfield(0));
+                skipf_ = group_->addr_of_skipfield(group_->skipfield(0));
             } else if (group_->is_packed()) {
                 elt_ = group_->addr_of_element(group_->size + n);
-                skipf_ = group_->skipfield + group_->size + n;
+                skipf_ = group_->addr_of_skipfield(group_->size + n);
             } else {
-                skipf_ = group_->skipfield + group_->capacity;
+                skipf_ = group_->addr_of_skipfield(group_->capacity);
                 do {
                     --skipf_;
                     skipf_ -= skipf_[0];
                 } while (++n != 0);
-                elt_ = group_->addr_of_element(skipf_ - group_->skipfield);
+                elt_ = group_->addr_of_element(skipf_ - group_->addr_of_skipfield(0));
             }
         }
 
-        inline difference_type index_in_group() const { return skipf_ - group_->skipfield; }
+        inline difference_type index_in_group() const { return skipf_ - group_->addr_of_skipfield(0); }
 
         difference_type distance_from_start_of_group() const {
             assert(group_ != nullptr);
-            if (group_->is_packed() || skipf_ == group_->skipfield) {
-                return skipf_ - group_->skipfield;
+            if (group_->is_packed() || skipf_ == group_->addr_of_skipfield(0)) {
+                return skipf_ - group_->addr_of_skipfield(0);
             } else {
                 difference_type count = 0;
-                SkipfieldPtr endpoint = &group_->skipfield[group_->last_endpoint - group_->addr_of_element(0)];
+                SkipfieldPtr endpoint = group_->addr_of_skipfield(group_->last_endpoint - group_->addr_of_element(0));
                 for (SkipfieldPtr sp = skipf_; sp != endpoint; ++count) {
                     ++sp;
                     sp += sp[0];
@@ -642,11 +637,11 @@ private:
 
         difference_type distance_from_end_of_group() const {
             assert(group_ != nullptr);
-            if (group_->is_packed() || skipf_ == group_->skipfield) {
-                return group_->size - (skipf_ - group_->skipfield);
+            if (group_->is_packed() || skipf_ == group_->addr_of_skipfield(0)) {
+                return group_->size - (skipf_ - group_->addr_of_skipfield(0));
             } else {
                 difference_type count = 0;
-                SkipfieldPtr endpoint = &group_->skipfield[group_->last_endpoint - group_->addr_of_element(0)];
+                SkipfieldPtr endpoint = group_->addr_of_skipfield(group_->last_endpoint - group_->addr_of_element(0));
                 for (SkipfieldPtr sp = skipf_; sp != endpoint; ++count) {
                     ++sp;
                     sp += sp[0];
@@ -857,13 +852,13 @@ public:
             } else {
                 assert(g->size < g->capacity);
                 assert(g->last_endpoint > g->addr_of_element(g->size));
-                assert(g->skipfield[g->free_list_head] != 0);
+                assert(g->skipfield(g->free_list_head) != 0);
             }
             if (g->last_endpoint != g->end_of_elements()) {
                 assert(g == end_.group_);
                 assert(g->next_group == nullptr);
             }
-            assert(g->skipfield[g->last_endpoint - g->addr_of_element(0)] == 0);
+            assert(g->skipfield(g->last_endpoint - g->addr_of_element(0)) == 0);
             if (g->size != g->capacity && g->next_group != nullptr) {
                 assert(!g->is_packed());
             }
@@ -874,9 +869,9 @@ public:
 #endif
             skipfield_type total_skipped = 0;
             for (skipfield_type sb = g->free_list_head; sb != std::numeric_limits<skipfield_type>::max(); sb = g->element(sb).nextlink_) {
-                skipfield_type skipblock_length = g->skipfield[sb];
+                skipfield_type skipblock_length = g->skipfield(sb);
                 assert(skipblock_length != 0);
-                assert(g->skipfield[sb + skipblock_length - 1] == skipblock_length);
+                assert(g->skipfield(sb + skipblock_length - 1) == skipblock_length);
                 total_skipped += skipblock_length;
                 if (sb == g->free_list_head) {
                     assert(g->element(sb).prevlink_ == std::numeric_limits<skipfield_type>::max());
@@ -1195,9 +1190,7 @@ private:
             size_t n = (bytes_for_group + bytes_for_elts + bytes_for_skipfield + sizeof(type) - 1) / sizeof(type);
             PtrOf<type> p = std::allocator_traits<AllocOf<type>>::allocate(ta, n);
             GroupPtr g = PtrOf<group>(p);
-            auto elements = AlignedEltPtr(p + (bytes_for_group / sizeof(type)));
-            auto skipfield = SkipfieldPtr(elements + cap);
-            ::new (bitcast_pointer<void*>(g)) group(elements, skipfield, cap);
+            ::new (bitcast_pointer<void*>(g)) group(cap);
             return g;
         }
         static void deallocate_group(allocator_type a, GroupPtr g) {
@@ -1244,8 +1237,8 @@ private:
                         if (next == unused_groups_) {
                             break;
                         }
-                        begin_.elt_ = next->addr_of_element(next->skipfield[0]);
-                        begin_.skipf_ = next->skipfield + next->skipfield[0];
+                        begin_.elt_ = next->addr_of_element(next->skipfield(0));
+                        begin_.skipf_ = next->addr_of_skipfield(next->skipfield(0));
                     }
                 }
             }
@@ -1292,7 +1285,7 @@ public:
             if (g == begin_.group_ && sb == 0) {
                 begin_ = result;
             }
-            skipfield_type old_skipblock_length = std::exchange(g->skipfield[sb], 0);
+            skipfield_type old_skipblock_length = std::exchange(g->skipfield(sb), 0);
             assert(1 <= old_skipblock_length && old_skipblock_length <= g->capacity);
             skipfield_type new_skipblock_length = (old_skipblock_length - 1);
             if (new_skipblock_length == 0) {
@@ -1303,8 +1296,8 @@ public:
                     g->element(nextsb).prevlink_ = std::numeric_limits<skipfield_type>::max();
                 }
             } else {
-                g->skipfield[sb + 1] = new_skipblock_length;
-                g->skipfield[sb + old_skipblock_length - 1] = new_skipblock_length;
+                g->skipfield(sb + 1) = new_skipblock_length;
+                g->skipfield(sb + old_skipblock_length - 1) = new_skipblock_length;
                 g->free_list_head = sb + 1;
                 g->element(sb + 1).prevlink_ = std::numeric_limits<skipfield_type>::max();
                 g->element(sb + 1).nextlink_ = nextsb;
@@ -1321,7 +1314,7 @@ public:
             GroupPtr g = unused_groups_;
             std::allocator_traits<allocator_type>::construct(ea, g->element(0).t(), static_cast<Args&&>(args)...);
             (void)unused_groups_pop_front();
-            std::fill_n(g->skipfield, g->capacity, skipfield_type());
+            std::fill_n(g->addr_of_skipfield(0), g->capacity, skipfield_type());
             g->size = 1;
             g->last_endpoint = g->addr_of_element(1);
             g->free_list_head = std::numeric_limits<skipfield_type>::max();
@@ -1389,7 +1382,7 @@ public:
         --(it.group_->size);
 
         if (it.group_->size != 0) {
-            const char prev_skipfield = (it.skipf_[-(it.skipf_ != it.group_->skipfield)] != 0);
+            const char prev_skipfield = (it.skipf_[-(it.skipf_ != it.group_->addr_of_skipfield(0))] != 0);
             const char after_skipfield = (it.skipf_[1] != 0);
             skipfield_type update_value = 1;
 
@@ -1462,7 +1455,7 @@ public:
             result.skipf_ += update_value;
 
             if (result.elt_ == it.group_->last_endpoint && it.group_->next_group != nullptr) {
-                result = iterator(it.group_->next_group, it.group_->next_group->skipfield[0]);
+                result = iterator(it.group_->next_group, it.group_->next_group->skipfield(0));
             }
 
             if (it.elt_ == begin_.elt_) {
@@ -1498,8 +1491,8 @@ public:
             deallocate_group(it.group_);
 
             // note: end iterator only needs to be changed if the deleted group was the final group in the chain ie. not in this case
-            begin_.elt_ = begin_.group_->addr_of_element(begin_.group_->skipfield[0]); // If the beginning index has been erased (ie. skipfield != 0), skip to next non-erased element
-            begin_.skipf_ = begin_.group_->skipfield + begin_.group_->skipfield[0];
+            begin_.elt_ = begin_.group_->addr_of_element(begin_.group_->skipfield(0)); // If the beginning index has been erased (ie. skipfield != 0), skip to next non-erased element
+            begin_.skipf_ = begin_.group_->addr_of_skipfield(begin_.group_->skipfield(0));
 
             assert_invariants();
             return begin_;
@@ -1523,7 +1516,7 @@ public:
 
             // Return next group's first non-erased element:
             assert_invariants();
-            return iterator(g, g->skipfield[0]);
+            return iterator(g, g->skipfield(0));
         } else {
             // this is a non-first group and the final group in the chain
             if (!it.group_->is_packed()) {
@@ -1532,7 +1525,7 @@ public:
             it.group_->prev_group->next_group = nullptr;
             end_.group_ = it.group_->prev_group; // end iterator needs to be changed as element supplied was the back element of the hive
             end_.elt_ = end_.group_->end_of_elements();
-            end_.skipf_ = end_.group_->skipfield + end_.group_->capacity;
+            end_.skipf_ = end_.group_->addr_of_skipfield(end_.group_->capacity);
             unused_groups_push_front(it.group_);
             assert_invariants();
             return end_;
@@ -1543,7 +1536,7 @@ public:
         allocator_type ea = get_allocator();
         const_iterator current = first;
         if (current.group_ != last.group_) {
-            if (current.elt_ != current.group_->addr_of_element(current.group_->skipfield[0])) {
+            if (current.elt_ != current.group_->addr_of_element(current.group_->skipfield(0))) {
                 // if first is not the first non-erased element in its group - most common case
                 size_type number_of_group_erasures = 0;
 
@@ -1629,8 +1622,8 @@ public:
             const GroupPtr prev = current.group_->prev_group;
             while (current.group_ != last.group_) {
                 if constexpr (!std::is_trivially_destructible<T>::value) {
-                    current.elt_ = current.group_->addr_of_element(current.group_->skipfield[0]);
-                    current.skipf_ = current.group_->skipfield + current.group_->skipfield[0];
+                    current.elt_ = current.group_->addr_of_element(current.group_->skipfield(0));
+                    current.skipf_ = current.group_->addr_of_skipfield(current.group_->skipfield(0));
                     const AlignedEltPtr end = current.group_->last_endpoint;
                     do {
                         std::allocator_traits<allocator_type>::destroy(ea, current.operator->());
@@ -1653,8 +1646,8 @@ public:
                 }
             }
 
-            current.elt_ = current.group_->addr_of_element(current.group_->skipfield[0]);
-            current.skipf_ = current.group_->skipfield + current.group_->skipfield[0];
+            current.elt_ = current.group_->addr_of_element(current.group_->skipfield(0));
+            current.skipf_ = current.group_->addr_of_skipfield(current.group_->skipfield(0));
             current.group_->prev_group = prev;
 
             if (prev != nullptr) {
@@ -1676,7 +1669,7 @@ public:
         // If not erasing entire final group, 1. Destruct elements (if non-trivial destructor) and add locations to group free list. 2. process skipfield.
         // If erasing entire group, 1. Destruct elements (if non-trivial destructor), 2. if no elements left in hive, reset the group 3. otherwise reset end_ and remove group from groups-with-erasures list (if free list of erasures present)
 
-        if (last.elt_ != end_.elt_ || current.elt_ != current.group_->addr_of_element(current.group_->skipfield[0])) {
+        if (last.elt_ != end_.elt_ || current.elt_ != current.group_->addr_of_element(current.group_->skipfield(0))) {
             // ie. not erasing entire group
             size_type number_of_group_erasures = 0;
             // Schema: first erased all non-erased elements until end of group & remove all skipblocks post-last from the free_list.
@@ -1777,16 +1770,13 @@ public:
                 current.group_->prev_group->next_group = current.group_->next_group;
 
                 if (current.group_ == end_.group_) {
-                    end_.group_ = current.group_->prev_group;
-                    end_.elt_ = end_.group_->last_endpoint;
-                    end_.skipf_ = end_.group_->skipfield + end_.group_->capacity;
+                    GroupPtr g = current.group_->prev_group;
+                    end_ = iterator(g, g->last_endpoint - g->addr_of_element(0));
                     unused_groups_push_front(current.group_);
                     return end_;
                 } else if (current.group_ == begin_.group_) {
-                    begin_.group_ = current.group_->next_group;
-                    const skipfield_type skip = begin_.group_->skipfield[0];
-                    begin_.elt_ = begin_.group_->addr_of_element(skip);
-                    begin_.skipf_ = begin_.group_->skipfield + skip;
+                    GroupPtr g = current.group_->next_group;
+                    begin_ = iterator(g, g->skipfield(0));
                 }
 
                 if (current.group_->next_group != end_.group_) {
@@ -1894,10 +1884,10 @@ public:
                 GroupPtr g = end_.group_;
                 size_type n = g->capacity - trailing;
                 if (n > 0) {
-                    assert(g->skipfield[n - 1] == 0);
+                    assert(g->skipfield(n - 1) == 0);
                 }
-                g->skipfield[n] = trailing;
-                g->skipfield[g->capacity - 1] = trailing;
+                g->skipfield(n) = trailing;
+                g->skipfield(g->capacity - 1) = trailing;
                 if (g->free_list_head == std::numeric_limits<skipfield_type>::max()) {
                     g->next_erasure_ = std::exchange(groups_with_erasures_, g);
                 }
@@ -1947,9 +1937,9 @@ private:
         AlignedEltPtr d_first = g->addr_of_element(sb);
         AlignedEltPtr d_last = d_first + n;
         skipfield_type nextsb = d_first[0].nextlink_;
-        skipfield_type old_skipblock_length = g->skipfield[sb];
+        skipfield_type old_skipblock_length = g->skipfield(sb);
         assert(1 <= n && n <= old_skipblock_length);
-        assert(g->skipfield[sb + old_skipblock_length - 1] == old_skipblock_length);
+        assert(g->skipfield(sb + old_skipblock_length - 1) == old_skipblock_length);
         AlignedEltPtr p = d_first;
         hive_try_finally([&]() {
             while (p != d_last) {
@@ -1962,7 +1952,7 @@ private:
             if (nadded != 0 && d_first == begin_.group_->addr_of_element(0)) {
                 begin_ = iterator(g, 0);
             }
-            std::fill_n(g->skipfield + sb, nadded, skipfield_type());
+            std::fill_n(g->addr_of_skipfield(sb), nadded, skipfield_type());
             skipfield_type new_skipblock_length = (old_skipblock_length - nadded);
             if (MightFillIt && new_skipblock_length == 0) {
                 g->free_list_head = nextsb;
@@ -1970,8 +1960,8 @@ private:
                     groups_with_erasures_ = g->next_erasure_;
                 }
             } else {
-                g->skipfield[sb + nadded] = new_skipblock_length;
-                g->skipfield[sb + old_skipblock_length - 1] = new_skipblock_length;
+                g->skipfield(sb + nadded) = new_skipblock_length;
+                g->skipfield(sb + old_skipblock_length - 1) = new_skipblock_length;
                 g->free_list_head = sb + nadded;
                 g->element(sb + nadded).prevlink_ = std::numeric_limits<skipfield_type>::max();
                 g->element(sb + nadded).nextlink_ = nextsb;
@@ -2021,7 +2011,7 @@ private:
             skipfield_type nadded = p - d_first;
             if (nadded != 0) {
                 (void)unused_groups_pop_front();
-                std::fill_n(g->skipfield, g->capacity, skipfield_type());
+                std::fill_n(g->addr_of_skipfield(0), g->capacity, skipfield_type());
                 g->free_list_head = std::numeric_limits<skipfield_type>::max();
                 g->last_endpoint = p;
                 g->size = nadded;
@@ -2053,7 +2043,7 @@ private:
         while (groups_with_erasures_ != nullptr) {
             GroupPtr g = groups_with_erasures_;
             assert(g->free_list_head != std::numeric_limits<skipfield_type>::max());
-            skipfield_type skipblock_length = g->skipfield[g->free_list_head];
+            skipfield_type skipblock_length = g->skipfield(g->free_list_head);
             if (skipblock_length >= n) {
                 callback_fill_skipblock<false>(n, cb, g);
                 assert_invariants();
