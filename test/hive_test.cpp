@@ -999,6 +999,73 @@ TYPED_TEST(hivet, MixedReverseIteratorComparison)
 #endif
 }
 
+TEST(hive, EraseOne)
+{
+    plf::hive<int> h = {1, 2, 3, 4, 5, 6, 7, 8};
+    auto erase_one = [&](int i) {
+        auto it = h.begin(); std::advance(it, i);
+        auto rt = h.erase(it);
+        EXPECT_INVARIANTS(h);
+        return std::distance(h.begin(), rt);
+    };
+    EXPECT_EQ(erase_one(0), 0); // [_ 2 3 4 5 6 7 8]
+    EXPECT_EQ(erase_one(1), 1); // [_ 2 _ 4 5 6 7 8]
+    EXPECT_EQ(erase_one(5), 5); // [_ 2 _ 4 5 6 7 _]
+    EXPECT_EQ(erase_one(2), 2); // [_ 2 _ _ 5 6 7 _], coalesce before
+    EXPECT_EQ(erase_one(3), 3); // [_ 2 _ _ 5 6 _ _], coalesce after
+    EXPECT_EQ(erase_one(0), 0); // [_ _ _ _ 5 6 _ _], coalesce before and after
+    EXPECT_EQ(erase_one(0), 0); // [_ _ _ _ _ 6 _ _], coalesce before
+    EXPECT_EQ(erase_one(0), 0); // [_ _ _ _ _ _ _ _], last in group
+    EXPECT_TRUE(h.empty());
+}
+
+TEST(hive, EraseTwo)
+{
+    plf::hive<int> h = {1, 2, 3, 4, 5, 6, 7, 8};
+    auto erase_two = [&](int i, int j) {
+        auto it = h.begin(); std::advance(it, i);
+        auto jt = h.begin(); std::advance(jt, j);
+        auto rt = h.erase(it, jt);
+        EXPECT_INVARIANTS(h);
+        return std::distance(h.begin(), rt);
+    };
+    EXPECT_EQ(erase_two(0, 8), 0);
+    h = {1, 2, 3, 4, 5, 6, 7, 8};
+    EXPECT_EQ(erase_two(2, 8), 2); // [1 2 _ _ _ _ _ _]
+    h = {1, 2, 3, 4, 5, 6, 7, 8};
+    EXPECT_EQ(erase_two(0, 6), 0); // [_ _ _ _ _ _ 7 8]
+    h = {1, 2, 3, 4, 5, 6, 7, 8};
+    EXPECT_EQ(erase_two(3, 6), 3); // [1 2 3 _ _ _ 7 8]
+    EXPECT_EQ(erase_two(1, 3), 1); // [1 _ _ _ _ _ 7 8], coalesce after
+    EXPECT_EQ(erase_two(1, 3), 1); // [1 _ _ _ _ _ _ _], coalesce before
+    h = {1, 2, 3, 4, 5, 6, 7, 8};
+    EXPECT_EQ(erase_two(2, 5), 2); // [1 2 _ _ _ 6 7 8]
+    EXPECT_EQ(erase_two(2, 4), 2); // [1 2 _ _ _ _ _ 8], coalesce before
+    EXPECT_EQ(erase_two(0, 2), 0); // [_ _ _ _ _ _ _ 8], coalesce after
+    h = {1, 2, 3, 4, 5, 6, 7, 8};
+    EXPECT_EQ(erase_two(1, 3), 1); // [1 _ _ 4 5 6 7 8]
+    EXPECT_EQ(erase_two(3, 5), 3); // [1 _ _ 4 5 _ _ 8]
+    EXPECT_EQ(erase_two(1, 3), 1); // [1 _ _ _ _ _ _ 8], coalesce before and after
+    EXPECT_EQ(erase_two(0, 2), 0); // [_ _ _ _ _ _ _ _], last in group
+    EXPECT_TRUE(h.empty());
+    h = {1, 2, 3, 4, 5, 6, 7, 8};
+    EXPECT_EQ(erase_two(1, 3), 1); // [1 _ _ 4 5 6 7 8]
+    EXPECT_EQ(erase_two(2, 4), 2); // [1 _ _ 4 _ _ 7 8]
+    EXPECT_EQ(erase_two(1, 3), 1); // [1 _ _ _ _ _ _ 8], remove mid and coalesce before
+    EXPECT_EQ(h.size(), 2u);
+    h = {1, 2, 3, 4, 5, 6, 7, 8};
+    EXPECT_EQ(erase_two(2, 4), 2); // [1 2 _ _ 5 6 7 8]
+    EXPECT_EQ(erase_two(3, 5), 3); // [1 2 _ _ 5 _ _ 8]
+    EXPECT_EQ(erase_two(1, 3), 1); // [1 _ _ _ _ _ _ 8], remove mid and coalesce after
+    EXPECT_EQ(h.size(), 2u);
+    h = {1, 2, 3, 4, 5, 6, 7, 8};
+    EXPECT_EQ(erase_two(0, 2), 0); // [_ _ 3 4 5 6 7 8]
+    EXPECT_EQ(erase_two(1, 2), 1); // [_ _ 3 _ 5 6 7 8]
+    EXPECT_EQ(erase_two(2, 4), 2); // [_ _ 3 _ 5 _ _ 8]
+    EXPECT_EQ(erase_two(0, 2), 0); // [_ _ _ _ _ _ _ 8], remove mid and coalesce before and after
+    EXPECT_EQ(h.size(), 1u);
+}
+
 TEST(hive, InsertAndErase)
 {
     std::mt19937 g;
