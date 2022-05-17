@@ -67,6 +67,28 @@ template<class A, class P> struct hivet_setup<plf::hive<std::pmr::string, A, P>>
     EXPECT_EQ(h.begin().next(h.size()), h.end()); \
     EXPECT_EQ(h.end().prev(h.size()), h.begin());
 
+#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+#define EXPECT_DISTANCE(it, jt, n) \
+    EXPECT_EQ(std::distance(it, jt), n); \
+    EXPECT_EQ(jt - it, n); \
+    EXPECT_EQ(it - jt, -n); \
+    EXPECT_EQ(it + n, jt); \
+    EXPECT_EQ(jt - n, it);
+#elif PLF_HIVE_RELATIONAL_OPERATORS
+#define EXPECT_DISTANCE(it, jt, n) \
+    EXPECT_EQ(std::distance(it, jt), n); \
+    EXPECT_EQ(it.distance(jt), n); \
+    EXPECT_EQ(jt.distance(it), -n); \
+    EXPECT_EQ(it.next(n), jt); \
+    EXPECT_EQ(jt.prev(n), it);
+#else
+#define EXPECT_DISTANCE(it, jt, n) \
+    EXPECT_EQ(std::distance(it, jt), n); \
+    EXPECT_EQ(it.distance(jt), n); \
+    EXPECT_EQ(it.next(n), jt); \
+    EXPECT_EQ(jt.prev(n), it);
+#endif
+
 TYPED_TEST(hivet, BasicInsertClear)
 {
     using Hive = TypeParam;
@@ -182,6 +204,24 @@ TEST(hive, RegressionTestIssue20)
             EXPECT_INVARIANTS(h);
         }
     }
+}
+
+TEST(hive, RegressionTestIssue24)
+{
+    plf::hive<int> h = {1,2,0,4};
+    std::erase(h, 0);
+    auto it = h.begin(); ++it;
+    auto jt = h.begin(); ++jt; ++jt;
+    EXPECT_DISTANCE(it, jt, 1);
+}
+
+TEST(hive, RegressionTestIssue25)
+{
+    plf::hive<int> h = {1,0,1};
+    std::erase(h, 0);
+    auto it = h.end();
+    auto jt = h.end(); --jt;
+    EXPECT_DISTANCE(jt, it, 1);
 }
 
 TYPED_TEST(hivet, CustomAdvanceForward)
@@ -305,32 +345,30 @@ TYPED_TEST(hivet, CustomDistanceFunction)
     std::advance(plus20, 20);
     auto plus200 = h.begin();
     std::advance(plus200, 200);
-    EXPECT_EQ(std::distance(h.begin(), plus20), 20);
-    EXPECT_EQ(std::distance(h.begin(), plus200), 200);
-    EXPECT_EQ(std::distance(plus20, plus200), 180);
+    EXPECT_DISTANCE(h.begin(), plus20, 20);
+    EXPECT_DISTANCE(h.begin(), plus200, 200);
+    EXPECT_DISTANCE(plus20, plus200, 180);
+    EXPECT_DISTANCE(plus200, plus200, 0);
 
-    EXPECT_EQ(h.begin().distance(plus20), 20);
-    EXPECT_EQ(h.begin().distance(plus200), 200);
-    EXPECT_EQ(plus20.distance(plus200), 180);
 #if PLF_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(plus20.distance(h.begin()), -20);
     EXPECT_EQ(plus200.distance(h.begin()), -200);
     EXPECT_EQ(plus200.distance(plus20), -180);
 #endif
-    EXPECT_EQ(plus200.distance(plus200), 0);
 
     // Test const iterators also
     typename Hive::const_iterator c20 = plus20;
     typename Hive::const_iterator c200 = plus200;
-    EXPECT_EQ(h.cbegin().distance(c20), 20);
-    EXPECT_EQ(h.cbegin().distance(c200), 200);
-    EXPECT_EQ(c20.distance(c200), 180);
+    EXPECT_DISTANCE(h.cbegin(), c20, 20);
+    EXPECT_DISTANCE(h.cbegin(), c200, 200);
+    EXPECT_DISTANCE(c20, c200, 180);
+    EXPECT_DISTANCE(c200, c200, 0);
+
 #if PLF_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(c20.distance(h.cbegin()), -20);
     EXPECT_EQ(c200.distance(h.cbegin()), -200);
     EXPECT_EQ(c200.distance(c20), -180);
 #endif
-    EXPECT_EQ(c200.distance(c200), 0);
 }
 
 TYPED_TEST(hivet, CustomAdvanceForwardRev)
@@ -454,32 +492,30 @@ TYPED_TEST(hivet, CustomDistanceFunctionRev)
     std::advance(plus20, 20);
     auto plus200 = h.rbegin();
     std::advance(plus200, 200);
-    EXPECT_EQ(std::distance(h.rbegin(), plus20), 20);
-    EXPECT_EQ(std::distance(h.rbegin(), plus200), 200);
-    EXPECT_EQ(std::distance(plus20, plus200), 180);
+    EXPECT_DISTANCE(h.rbegin(), plus20, 20);
+    EXPECT_DISTANCE(h.rbegin(), plus200, 200);
+    EXPECT_DISTANCE(plus20, plus200, 180);
+    EXPECT_DISTANCE(plus200, plus200, 0);
 
-    EXPECT_EQ(h.rbegin().distance(plus20), 20);
-    EXPECT_EQ(h.rbegin().distance(plus200), 200);
-    EXPECT_EQ(plus20.distance(plus200), 180);
 #if PLF_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(plus20.distance(h.rbegin()), -20);
     EXPECT_EQ(plus200.distance(h.rbegin()), -200);
     EXPECT_EQ(plus200.distance(plus20), -180);
 #endif
-    EXPECT_EQ(plus200.distance(plus200), 0);
 
     // Test const iterators also
     typename Hive::const_reverse_iterator c20 = plus20;
     typename Hive::const_reverse_iterator c200 = plus200;
-    EXPECT_EQ(h.crbegin().distance(c20), 20);
-    EXPECT_EQ(h.crbegin().distance(c200), 200);
-    EXPECT_EQ(c20.distance(c200), 180);
+    EXPECT_DISTANCE(h.crbegin(), c20, 20);
+    EXPECT_DISTANCE(h.crbegin(), c200, 200);
+    EXPECT_DISTANCE(c20, c200, 180);
+    EXPECT_DISTANCE(c200, c200, 0);
+
 #if PLF_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(c20.distance(h.crbegin()), -20);
     EXPECT_EQ(c200.distance(h.crbegin()), -200);
     EXPECT_EQ(c200.distance(c20), -180);
 #endif
-    EXPECT_EQ(c200.distance(c200), 0);
 }
 
 TYPED_TEST(hivet, CopyConstructor)
@@ -1006,7 +1042,9 @@ TEST(hive, EraseOne)
         auto it = h.begin(); std::advance(it, i);
         auto rt = h.erase(it);
         EXPECT_INVARIANTS(h);
-        return std::distance(h.begin(), rt);
+        auto d = std::distance(h.begin(), rt);
+        EXPECT_DISTANCE(h.begin(), rt, d);
+        return d;
     };
     EXPECT_EQ(erase_one(0), 0); // [_ 2 3 4 5 6 7 8]
     EXPECT_EQ(erase_one(1), 1); // [_ 2 _ 4 5 6 7 8]
@@ -1027,7 +1065,9 @@ TEST(hive, EraseTwo)
         auto jt = h.begin(); std::advance(jt, j);
         auto rt = h.erase(it, jt);
         EXPECT_INVARIANTS(h);
-        return std::distance(h.begin(), rt);
+        auto d = std::distance(h.begin(), rt);
+        EXPECT_DISTANCE(h.begin(), rt, d);
+        return d;
     };
     EXPECT_EQ(erase_two(0, 8), 0);
     h = {1, 2, 3, 4, 5, 6, 7, 8};
@@ -1227,7 +1267,7 @@ TEST(hive, InsertAndErase3)
     if (true) {
         auto temp = h.begin();
         std::advance(temp, 20);
-        EXPECT_EQ(std::distance(h.begin(), temp), 20);
+        EXPECT_DISTANCE(h.begin(), temp, 20);
 
         h.erase(temp);
     }
@@ -1236,7 +1276,7 @@ TEST(hive, InsertAndErase3)
         // Check edge-case with advance when erasures present in initial group
         auto temp = h.begin();
         std::advance(temp, 500);
-        EXPECT_EQ(std::distance(h.begin(), temp), 500);
+        EXPECT_DISTANCE(h.begin(), temp, 500);
         ASSERT_NE(temp, h.end());
     }
 
@@ -1392,8 +1432,7 @@ TYPED_TEST(hivet, EraseRandomlyUntilEmpty)
             size_t len = g() % (n + 1 - offset);
             std::advance(it1, offset);
             std::advance(it2, offset + len);
-            EXPECT_EQ(it1.distance(it2), len);
-            EXPECT_EQ(std::distance(it1, it2), len);
+            EXPECT_DISTANCE(it1, it2, len);
             h.erase(it1, it2);
             EXPECT_EQ(h.size(), n - len);
             EXPECT_INVARIANTS(h);
@@ -1424,7 +1463,7 @@ TYPED_TEST(hivet, EraseInsertRandomly)
             size_t len = g() % (n + 1 - offset);
             std::advance(it1, offset);
             std::advance(it2, offset + len);
-            EXPECT_EQ(std::distance(it1, it2), len);
+            EXPECT_DISTANCE(it1, it2, len);
             h.erase(it1, it2);
             EXPECT_EQ(h.size(), n - len);
             EXPECT_INVARIANTS(h);
@@ -1468,10 +1507,8 @@ TEST(hive, RegressionTestIssue8)
 
     auto it = h.begin();
     for (int i = 0; i < 4; ++i, ++it) {
-        EXPECT_EQ(h.begin().distance(it), i);
-#if PLF_HIVE_RELATIONAL_OPERATORS
-        EXPECT_EQ(h.end().distance(it), i - 4);
-#endif
+        EXPECT_DISTANCE(h.begin(), it, i);
+        EXPECT_DISTANCE(it, h.end(), (4 - i));
     }
 }
 
@@ -1513,16 +1550,11 @@ TEST(hive, RegressionTestIssue16)
             for (int j = 0; j <= n - i; ++j) {
                 auto it = h.begin().next(i);
                 auto jt = it.next(j);
-                EXPECT_EQ(it.distance(jt), j);
+                EXPECT_DISTANCE(it, jt, j);
 
                 auto kt = h.end().prev(i);
                 auto lt = kt.prev(j);
-                EXPECT_EQ(lt.distance(kt), j);
-
-#if PLF_HIVE_RELATIONAL_OPERATORS
-                EXPECT_EQ(jt.distance(it), -j);
-                EXPECT_EQ(kt.distance(lt), -j);
-#endif
+                EXPECT_DISTANCE(lt, kt, j);
             }
         }
     }

@@ -431,36 +431,23 @@ private:
             group_(g), idx_(idx) {}
 
         void advance_forward(difference_type n) {
-            assert(!(idx_ == group_->index_of_last_endpoint() && group_->next_group == nullptr));
+            assert(n > 0);
+            assert(group_ != nullptr);
 
             if (idx_ != group_->skipfield(0)) {
-                difference_type distance_from_end = group_->index_of_last_endpoint() - idx_;
-                if (group_->size == static_cast<skipfield_type>(distance_from_end)) {
-                    if (n < distance_from_end) {
-                        idx_ += n;
-                        return;
-                    } else if (group_->next_group == nullptr) {
-                        idx_ = group_->index_of_last_endpoint();
-                        return;
-                    } else {
-                        n -= distance_from_end;
-                    }
-                } else {
-                    skipfield_type endpoint = idx_ + distance_from_end;
-                    while (true) {
-                        ++idx_;
-                        idx_ += group_->skipfield(idx_);
-                        --n;
-
-                        if (idx_ == endpoint) {
-                            break;
-                        } else if (n == 0) {
-                            return;
-                        }
-                    }
-                    if (group_->next_group == nullptr) {
+                skipfield_type endpoint = group_->index_of_last_endpoint();
+                while (true) {
+                    ++idx_;
+                    idx_ += group_->skipfield(idx_);
+                    --n;
+                    if (idx_ == endpoint) {
+                        break;
+                    } else if (n == 0) {
                         return;
                     }
+                }
+                if (group_->next_group == nullptr) {
+                    return;
                 }
                 group_ = group_->next_group;
                 if (n == 0) {
@@ -540,7 +527,7 @@ private:
             } else if (group_->is_packed()) {
                 idx_ = group_->size + n;
             } else {
-                idx_ = group_->capacity;
+                idx_ = group_->index_of_last_endpoint();
                 do {
                     --idx_;
                     idx_ -= group_->skipfield(idx_);
