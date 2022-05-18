@@ -1297,18 +1297,14 @@ public:
 
             if (!(prev_skipfield | after_skipfield)) {
                 g->skipfield(it.idx_) = 1;
-                const skipfield_type index = static_cast<skipfield_type>(it.index_in_group());
-
                 if (g->is_packed()) {
                     g->next_erasure_ = std::exchange(groups_with_erasures_, g);
                 } else {
-                    // ie. if this group already has some erased elements
-                    g->element(g->free_list_head).prevlink_ = index;
+                    g->element(g->free_list_head).prevlink_ = it.idx_;
                 }
-
                 g->element(it.idx_).nextlink_ = g->free_list_head;
                 g->element(it.idx_).prevlink_ = std::numeric_limits<skipfield_type>::max();
-                g->free_list_head = index;
+                g->free_list_head = it.idx_;
             } else if (prev_skipfield & (!after_skipfield)) {
                 // previous erased consecutive elements, none following
                 skipfield_type new_skipblock_length = g->skipfield(it.idx_ - 1) + 1;
@@ -1363,7 +1359,7 @@ public:
                 update_value = following_value + 1;
             }
 
-            auto result = it.unconst();
+            iterator result = it.unconst();
             result.idx_ += update_value;
 
             if (result.idx_ == g->index_of_last_endpoint() && g->next_group != nullptr) {
@@ -1375,54 +1371,31 @@ public:
             }
             // assert_invariants();
             return result;
-        }
-
-        // else: group is empty, consolidate groups
-        const bool in_back_block = (g->next_group == nullptr);
-        const bool in_front_block = (g == begin_.group_);
-
-        if (in_back_block & in_front_block) {
-            reset_only_group_left(g);
-            assert_invariants();
-            return end_;
-        } else if ((!in_back_block) & in_front_block) {
-            g->next_group->prev_group = nullptr;
-            begin_ = iterator(g->next_group, g->next_group->skipfield(0));
-            update_subsequent_group_numbers(begin_.group_);
-            if (!g->is_packed()) {
-                remove_from_groups_with_erasures_list(g);
-            }
-            capacity_ -= g->capacity;
-            deallocate_group(g);  // TODO FIXME BUG HACK: don't do this
-            assert_invariants();
-            return begin_;
-        } else if (!(in_back_block | in_front_block)) {
-            g->next_group->prev_group = g->prev_group;
-            GroupPtr next = g->next_group;
-            g->prev_group->next_group = next;
-            update_subsequent_group_numbers(next);
-
-            if (!g->is_packed()) {
-                remove_from_groups_with_erasures_list(g);
-            }
-
-            if (g->next_group != end_.group_) {
-                capacity_ -= g->capacity;
-                deallocate_group(g);  // TODO FIXME BUG HACK: don't do this
-            } else {
-                unused_groups_push_front(g);
-            }
-            assert_invariants();
-            return iterator(next, next->skipfield(0));
         } else {
+            iterator result;
+            if (g->next_group != nullptr && g->prev_group != nullptr) {
+                g->next_group->prev_group = g->prev_group;
+                g->prev_group->next_group = g->next_group;
+                result = iterator(g->next_group, g->next_group->skipfield(0));
+            } else if (g->next_group != nullptr) {
+                g->next_group->prev_group = nullptr;
+                begin_ = iterator(g->next_group, g->next_group->skipfield(0));
+                result = begin_;
+            } else if (g->prev_group != nullptr) {
+                g->prev_group->next_group = nullptr;
+                end_ = iterator(g->prev_group, g->prev_group->capacity);
+                result = end_;
+            } else {
+                begin_ = iterator();
+                end_ = iterator();
+                result = end_;
+            }
             if (!g->is_packed()) {
                 remove_from_groups_with_erasures_list(g);
             }
-            g->prev_group->next_group = nullptr;
-            end_ = iterator(g->prev_group, g->prev_group->capacity);
             unused_groups_push_front(g);
             assert_invariants();
-            return end_;
+            return result;
         }
     }
 
