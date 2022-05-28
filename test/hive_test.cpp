@@ -57,6 +57,23 @@ template<class A, class P> struct hivet_setup<plf::hive<std::pmr::string, A, P>>
 };
 #endif
 
+template<class H>
+H make_rope(size_t blocksize, size_t cap)
+{
+#if PLF_HIVE_P2596
+    H h;
+    for (size_t i=0; i < cap; i += blocksize) {
+        H temp;
+        temp.reserve(blocksize);
+        h.splice(temp);
+    }
+#else
+    H h(plf::hive_limits(blocksize, blocksize));
+    h.reserve(cap);
+#endif
+    return h;
+}
+
 #define EXPECT_INVARIANTS(h) \
     EXPECT_EQ(h.empty(), (h.size() == 0)); \
     EXPECT_EQ(h.empty(), (h.begin() == h.end())); \
@@ -88,6 +105,77 @@ template<class A, class P> struct hivet_setup<plf::hive<std::pmr::string, A, P>>
     EXPECT_EQ(it.next(n), jt); \
     EXPECT_EQ(jt.prev(n), it);
 #endif
+
+TEST(hive, OutOfRangeReshapeByP2596)
+{
+#if PLF_HIVE_P2596
+    plf::hive<int> h;
+    h.reshape(0);
+    h.reshape(0, 0);
+    h.reshape(0, h.max_size());
+    h.reshape(h.max_block_size());
+    h.reshape(h.max_block_size(), 0);
+    h.reshape(h.max_block_size(), h.max_size());
+    ASSERT_THROW(h.reshape(h.max_block_size() + 1), std::length_error);
+    ASSERT_THROW(h.reshape(h.max_block_size() + 1, 0), std::length_error);
+    ASSERT_THROW(h.reshape(0, h.max_size() + 1), std::length_error);
+#endif
+}
+
+TEST(hive, OutOfRangeLimitsByP0447)
+{
+#if !PLF_HIVE_P2596
+    using H = plf::hive<char>;
+    size_t min = H::block_capacity_hard_limits().min;
+    size_t max = H::block_capacity_hard_limits().max;
+    EXPECT_LE(min, max);
+    ASSERT_GT(min, min-1);
+    ASSERT_LT(max, max+1);
+
+    // These ranges are valid and overlap a physically possible range;
+    // the implementation COULD just clamp them to the possible range.
+    // Instead, P0447R20 says the behavior is undefined.
+
+    ASSERT_THROW(H(plf::hive_limits(min-1, max)), std::length_error);
+    ASSERT_THROW(H(plf::hive_limits(min, max+1)), std::length_error);
+    ASSERT_THROW(H(plf::hive_limits(min-1, max+1)), std::length_error);
+    ASSERT_THROW(H(plf::hive_limits(min-1, min)), std::length_error);
+    ASSERT_THROW(H(plf::hive_limits(max, max+1)), std::length_error);
+
+    H h;
+    ASSERT_THROW(h.reshape({min-1, max}), std::length_error);
+    ASSERT_THROW(h.reshape({min, max+1}), std::length_error);
+    ASSERT_THROW(h.reshape({min-1, max+1}), std::length_error);
+    ASSERT_THROW(h.reshape({min-1, min}), std::length_error);
+    ASSERT_THROW(h.reshape({max, max+1}), std::length_error);
+#endif
+}
+
+TEST(hive, OutOfRangeLimitsByMath)
+{
+#if !PLF_HIVE_P2596
+    using H = plf::hive<char>;
+    size_t min = H::block_capacity_hard_limits().min;
+    size_t max = H::block_capacity_hard_limits().max;
+    EXPECT_LE(min, max);
+    ASSERT_GT(min, min-1);
+    ASSERT_LT(max, max+1);
+
+    // These ranges are invalid, or physically impossible to enforce.
+    // P0447R20 says the behavior is undefined in these cases as well.
+
+    ASSERT_THROW(H(plf::hive_limits(min-1, min-1)), std::length_error);
+    ASSERT_THROW(H(plf::hive_limits(max+1, max+1)), std::length_error);
+    ASSERT_THROW(H(plf::hive_limits(max, max-1)), std::length_error);
+    ASSERT_THROW(H(plf::hive_limits(min+1, min)), std::length_error);
+
+    H h;
+    ASSERT_THROW(h.reshape({min-1, min-1}), std::length_error);
+    ASSERT_THROW(h.reshape({max+1, max+1}), std::length_error);
+    ASSERT_THROW(h.reshape({max, max-1}), std::length_error);
+    ASSERT_THROW(h.reshape({min+1, min}), std::length_error);
+#endif
+}
 
 TYPED_TEST(hivet, BasicInsertClear)
 {
@@ -145,8 +233,7 @@ TEST(hive, RegressionTestIssue20)
     };
 
     for (int t = 1; t < 20; ++t) {
-        plf::hive<S> h;
-        h.reshape({8, 8});
+        plf::hive<S> h = make_rope<plf::hive<S>>(8, 10);
         h.insert(10, S(&should_throw, 42));
         auto it = h.begin();
         std::advance(it, 3);
@@ -155,8 +242,8 @@ TEST(hive, RegressionTestIssue20)
         h.erase(it, jt);
         ASSERT_EQ(h.size(), 7u);
         EXPECT_INVARIANTS(h);
-        should_throw = t;
         try {
+            should_throw = t;
             h.insert(2, S(&should_throw, 42));
             EXPECT_INVARIANTS(h);
             h.insert(3, S(&should_throw, 42));
@@ -179,9 +266,8 @@ TEST(hive, RegressionTestIssue20)
         S(&should_throw, 5),
     };
     for (int t = 1; t < 20; ++t) {
-        plf::hive<S> h;
-        h.reshape({8, 8});
-        int should_throw = 0;
+        plf::hive<S> h = make_rope<plf::hive<S>>(8, 10);
+        should_throw = 0;
         h.insert(10, S(&should_throw, 42));
         auto it = h.begin();
         std::advance(it, 3);
@@ -190,8 +276,8 @@ TEST(hive, RegressionTestIssue20)
         h.erase(it, jt);
         ASSERT_EQ(h.size(), 7u);
         EXPECT_INVARIANTS(h);
-        should_throw = t;
         try {
+            should_throw = t;
             h.insert(a, a+2);
             EXPECT_INVARIANTS(h);
             h.insert(a, a+3);
@@ -222,6 +308,97 @@ TEST(hive, RegressionTestIssue25)
     auto it = h.end();
     auto jt = h.end(); --jt;
     EXPECT_DISTANCE(jt, it, 1);
+}
+
+TEST(hive, ReshapeWithThrow)
+{
+    int should_throw = 0;
+
+    struct S {
+        int *should_throw_ = nullptr;
+        int payload_ = 0;
+        S(int *should_throw, int x) : should_throw_(should_throw), payload_(x) {}
+        S(const S& s) : should_throw_(s.should_throw_), payload_(s.payload_) { if (--*should_throw_ == 0) throw 42; }
+        S& operator=(const S& s) { payload_ = s.payload_; if (--*should_throw_ == 0) throw 42; return *this; }
+        ~S() = default;
+    };
+
+    for (int t = 1; t < 20; ++t) {
+        plf::hive<S> h = make_rope<plf::hive<S>>(9, 20);
+        h.insert(20, S(&should_throw, 42));
+        EXPECT_EQ(h.size(), 20u);
+#if !PLF_HIVE_P2596
+        EXPECT_EQ(h.block_capacity_limits().min, 9);
+        EXPECT_EQ(h.block_capacity_limits().max, 9);
+#endif
+        try {
+            should_throw = t;
+#if PLF_HIVE_P2596
+            h.reshape(6);
+#else
+            h.reshape({6, 6});
+#endif
+            EXPECT_EQ(h.size(), 20u);
+            EXPECT_INVARIANTS(h);
+            break;
+        } catch (int fortytwo) {
+            EXPECT_EQ(fortytwo, 42);
+            EXPECT_EQ(h.size(), 20u);
+            EXPECT_INVARIANTS(h);
+        }
+    }
+}
+
+TEST(hive, ReshapeUnusedBlocksP2596)
+{
+#if PLF_HIVE_P2596
+    plf::hive<char> h = make_rope<plf::hive<char>>(9, 42);
+    h.insert(42, 'x');
+    h.erase(h.begin(), h.begin().next(20));
+    EXPECT_EQ(h.size(), 22u);
+    EXPECT_EQ(h.capacity(), 45u);
+    EXPECT_INVARIANTS(h);
+    h.reshape(10);
+    EXPECT_EQ(h.size(), 22u);
+    EXPECT_INVARIANTS(h);
+#endif
+}
+
+TEST(hive, ReshapeUnusedBlocks)
+{
+#if !PLF_HIVE_P2596
+    plf::hive<char> h = make_rope<plf::hive<char>>(9, 42);
+    h.insert(42, 'x');
+    h.erase(h.begin(), h.begin().next(20));
+    EXPECT_EQ(h.size(), 22u);
+    EXPECT_EQ(h.capacity(), 45u);
+    EXPECT_INVARIANTS(h);
+    h.reshape({6, 6});
+    EXPECT_EQ(h.size(), 22u);
+    EXPECT_EQ(h.capacity(), 24u);
+    EXPECT_INVARIANTS(h);
+#endif
+}
+
+TEST(hive, ReshapeUnusedBlocks2)
+{
+#if !PLF_HIVE_P2596
+    plf::hive<char> h;
+    h.reshape({6, 9});
+    h.splice(plf::hive<char>{1,2,3,4,5,6,7,8,9});
+    h.splice(plf::hive<char>{1,2,3,4,5,6});
+    h.splice(plf::hive<char>{1,2,3,4,5,6});
+    h.splice(plf::hive<char>{1,2,3,4,5,6,7,8,9});
+    h.erase(h.begin(), h.begin().next(10));
+    h.erase(h.end().prev(10), h.end());
+    EXPECT_EQ(h.size(), 10u);
+    EXPECT_EQ(h.capacity(), 30u);
+    EXPECT_INVARIANTS(h);
+    h.reshape({6, 6});
+    EXPECT_EQ(h.size(), 10u);
+    EXPECT_EQ(h.capacity(), 12u);
+    EXPECT_INVARIANTS(h);
+#endif
 }
 
 TYPED_TEST(hivet, CustomAdvanceForward)
@@ -1147,7 +1324,11 @@ TEST(hive, InsertAndErase2)
 {
     std::mt19937 g;
     plf::hive<int> h;
-    h.reshape(plf::hive_limits(10000, h.block_capacity_limits().max));
+#if PLF_HIVE_P2596
+    h.reshape(10'000, 30'000);
+#else
+    h.reshape(plf::hive_limits(10'000, h.block_capacity_limits().max));
+#endif
     h.insert(30'000, 1);
     EXPECT_EQ(h.size(), 30'000u);
     EXPECT_INVARIANTS(h);
@@ -1289,9 +1470,7 @@ TEST(hive, InsertAndErase3)
 
 TEST(hive, Reserve)
 {
-    plf::hive<int> h;
-    h.reshape(plf::hive_limits(3, h.block_capacity_limits().max));
-
+    plf::hive<int> h(10);
     size_t cap = h.capacity();
     h.reserve(100'000);
     EXPECT_GE(h.capacity(), 100'000);
@@ -1544,7 +1723,7 @@ TYPED_TEST(hivet, RegressionTestIssue15)
 TEST(hive, RegressionTestIssue16)
 {
     for (int n = 0; n < 15; ++n) {
-        plf::hive<char> h(plf::hive_limits(4, 4));
+        plf::hive<char> h = make_rope<plf::hive<char>>(4, n);
         h.insert(n, 'x');
         for (int i = 0; i <= n; ++i) {
             for (int j = 0; j <= n - i; ++j) {
@@ -2052,8 +2231,11 @@ TEST(hive, NonCopyable)
 
 TEST(hive, Reshape)
 {
+#if !PLF_HIVE_P2596
     plf::hive<int> h;
     h.reshape(plf::hive_limits(50, 100));
+    EXPECT_EQ(h.block_capacity_limits().min, 50u);
+    EXPECT_EQ(h.block_capacity_limits().max, 100u);
     EXPECT_TRUE(h.empty());
     EXPECT_INVARIANTS(h);
 
@@ -2072,6 +2254,8 @@ TEST(hive, Reshape)
     h.clear();
     h.reshape(plf::hive_limits(200, 2000));
     EXPECT_TRUE(h.empty());
+    EXPECT_EQ(h.block_capacity_limits().min, 200u);
+    EXPECT_EQ(h.block_capacity_limits().max, 2000u);
     EXPECT_INVARIANTS(h);
 
     h.insert(27);
@@ -2097,6 +2281,8 @@ TEST(hive, Reshape)
     EXPECT_INVARIANTS(h);
 
     h.reshape(plf::hive_limits(500, 500));
+    EXPECT_EQ(h.block_capacity_limits().min, 500u);
+    EXPECT_EQ(h.block_capacity_limits().max, 500u);
     EXPECT_EQ(h.size(), 3301u);
     EXPECT_EQ(h.capacity(), 3500u);
     EXPECT_INVARIANTS(h);
@@ -2105,6 +2291,7 @@ TEST(hive, Reshape)
     EXPECT_EQ(h.size(), 3301u);
     EXPECT_EQ(h.capacity(), 3400u);
     EXPECT_INVARIANTS(h);
+#endif
 }
 
 TEST(hive, SpliceLvalue)
@@ -2121,6 +2308,9 @@ TEST(hive, SpliceLvalue)
     EXPECT_INVARIANTS(h1);
     EXPECT_INVARIANTS(h2);
 
+    static_assert(!noexcept(h1.splice(h2)));
+
+#if !PLF_HIVE_P2596
     // Test the throwing case
     h1.reshape({5, 5});
     h2.reshape({10, 10});
@@ -2131,6 +2321,7 @@ TEST(hive, SpliceLvalue)
     EXPECT_INVARIANTS(h2);
     EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), v1.begin(), v1.end()));
     EXPECT_TRUE(std::is_permutation(h2.begin(), h2.end(), v2.begin(), v2.end()));
+#endif
 }
 
 TEST(hive, SpliceRvalue)
@@ -2147,6 +2338,9 @@ TEST(hive, SpliceRvalue)
     EXPECT_INVARIANTS(h1);
     EXPECT_INVARIANTS(h2);
 
+    static_assert(!noexcept(h1.splice(std::move(h2))));
+
+#if !PLF_HIVE_P2596
     // Test the throwing case
     h1.reshape({5, 5});
     h2.reshape({10, 10});
@@ -2157,6 +2351,7 @@ TEST(hive, SpliceRvalue)
     EXPECT_INVARIANTS(h2);
     EXPECT_TRUE(std::is_permutation(h1.begin(), h1.end(), v1.begin(), v1.end()));
     EXPECT_TRUE(std::is_permutation(h2.begin(), h2.end(), v2.begin(), v2.end()));
+#endif
 }
 
 TEST(hive, SpliceProperties)
@@ -2262,7 +2457,7 @@ TEST(hive, TrimDoesntMove)
         explicit S(int i) : i(i) {}
         S(S&&) { throw 42; }
     };
-    plf::hive<S> h(plf::hive_limits{10, 10});
+    plf::hive<S> h = make_rope<plf::hive<S>>(10, 100);
     for (int i=0; i < 100; ++i) {
         h.emplace(i);
     }
@@ -2291,7 +2486,7 @@ TEST(hive, TrimImmobileType)
         S& operator=(S&&) = delete;
         bool operator==(const S& rhs) const { return i_ == rhs.i_; }
     };
-    plf::hive<S> h(plf::hive_limits{4, 4});
+    plf::hive<S> h = make_rope<plf::hive<S>>(4, 100);
     for (int t = 0; t < 100; ++t) {
         for (int i = 0; i < 100; ++i) {
             h.emplace(g());
@@ -2467,51 +2662,56 @@ TEST(hive, PmrCorrectness)
     using Hive = plf::hive<int, std::pmr::polymorphic_allocator<int>>;
     Hive h1(&mr);
     Hive h2({10, 10}, &mr);
-    Hive h3(plf::hive_limits(10, 10), &mr);
     Hive h4(100, &mr);
-    Hive h5(100, {10, 10}, &mr);
-    Hive h6(100, plf::hive_limits(10, 10), &mr);
     Hive h7(100, 42, &mr);
-    Hive h8(100, 42, {10, 10}, &mr);
-    Hive h9(100, 42, plf::hive_limits(10, 10), &mr);
     Hive ha(a, a + 4, &mr);
     Hive hb({1, 2, 3, 4}, &mr);
-    Hive hc({1, 2, 3, 4}, {10, 10}, &mr);
-    Hive hd({1, 2, 3, 4}, plf::hive_limits(10, 10), &mr);
     Hive he(h1, &mr);
     Hive hf(Hive(&mr), &mr);
 
     EXPECT_EQ(h1.size(), 0u);
     EXPECT_EQ(h2.size(), 2u);
-    EXPECT_EQ(h3.size(), 0u);
     EXPECT_EQ(h4.size(), 100u);
-    EXPECT_EQ(h5.size(), 100u);
-    EXPECT_EQ(h6.size(), 100u);
     EXPECT_EQ(h7.size(), 100u);
-    EXPECT_EQ(h8.size(), 100u);
-    EXPECT_EQ(h9.size(), 100u);
     EXPECT_EQ(ha.size(), 4u);
     EXPECT_EQ(hb.size(), 4u);
-    EXPECT_EQ(hc.size(), 4u);
-    EXPECT_EQ(hd.size(), 4u);
     EXPECT_EQ(he.size(), 0u);
     EXPECT_EQ(hf.size(), 0u);
 
     h1.insert(100, 42);
     h2.insert(100, 42);
-    h3.insert(100, 42);
     h4.insert(100, 42);
-    h5.insert(100, 42);
-    h6.insert(100, 42);
     h7.insert(100, 42);
-    h8.insert(100, 42);
-    h9.insert(100, 42);
     ha.insert(100, 42);
     hb.insert(100, 42);
-    hc.insert(100, 42);
-    hd.insert(100, 42);
     he.insert(100, 42);
     hf.insert(100, 42);
+
+#if !PLF_HIVE_P2596
+    Hive h3(plf::hive_limits(10, 10), &mr);
+    Hive h5(100, {10, 10}, &mr);
+    Hive h6(100, plf::hive_limits(10, 10), &mr);
+    Hive h8(100, 42, {10, 10}, &mr);
+    Hive h9(100, 42, plf::hive_limits(10, 10), &mr);
+    Hive hc({1, 2, 3, 4}, {10, 10}, &mr);
+    Hive hd({1, 2, 3, 4}, plf::hive_limits(10, 10), &mr);
+
+    EXPECT_EQ(h3.size(), 0u);
+    EXPECT_EQ(h5.size(), 100u);
+    EXPECT_EQ(h6.size(), 100u);
+    EXPECT_EQ(h8.size(), 100u);
+    EXPECT_EQ(h9.size(), 100u);
+    EXPECT_EQ(hc.size(), 4u);
+    EXPECT_EQ(hd.size(), 4u);
+
+    h3.insert(100, 42);
+    h5.insert(100, 42);
+    h6.insert(100, 42);
+    h8.insert(100, 42);
+    h9.insert(100, 42);
+    hc.insert(100, 42);
+    hd.insert(100, 42);
+#endif
 
 #if __cpp_lib_ranges >= 201911 && __cpp_lib_ranges_to_container >= 202202
     Hive hg(std::from_range, a, &mr);
@@ -2529,7 +2729,11 @@ TEST(hive, PmrCorrectReshape)
 {
     plf::hive<int, std::pmr::polymorphic_allocator<int>> h(10);
     PmrGuard guard;
+#if PLF_HIVE_P2596
+    h.reshape(400);
+#else
     h.reshape({4, 4});
+#endif
     EXPECT_EQ(h.size(), 10u);
     EXPECT_INVARIANTS(h);
 }
@@ -2538,8 +2742,12 @@ TEST(hive, PmrCorrectShrinkToFit)
 {
     plf::hive<int, std::pmr::polymorphic_allocator<int>> h(10);
     PmrGuard guard;
+#if PLF_HIVE_P2596
+    h.reshape(400);
+#else
     h.reshape({4, 4});
     h.reshape({3, 10});
+#endif
     h.shrink_to_fit();
     EXPECT_EQ(h.size(), 10u);
     EXPECT_INVARIANTS(h);
