@@ -955,19 +955,19 @@ public:
         source.blank();
     }
 
-    hive(hive&& source, const hive_identity_t<allocator_type>& alloc):
-        end_(std::move(source.end_)),
-        begin_(std::move(source.begin_)),
-        groups_with_erasures_(std::move(source.groups_with_erasures_)),
-        unused_groups_(std::move(source.unused_groups_)),
-        size_(source.size_),
-        capacity_(source.capacity_),
-        allocator_(alloc),
-        min_group_capacity_(source.min_group_capacity_),
-        max_group_capacity_(source.max_group_capacity_)
+    hive(hive&& source, const hive_identity_t<allocator_type>& alloc) : hive(alloc)
     {
         assert(&source != this);
-        source.blank();
+        bool should_use_source_allocator = (
+            std::allocator_traits<allocator_type>::is_always_equal::value ||
+            alloc == source.get_allocator()
+        );
+        if (should_use_source_allocator) {
+            *this = std::move(source);
+        } else {
+            reserve(source.size());
+            range_assign_impl(std::make_move_iterator(source.begin()), std::make_move_iterator(source.end()));
+        }
     }
 
     hive(size_type n, const T& value, const allocator_type &alloc = allocator_type()) :
@@ -2100,7 +2100,8 @@ public:
     }
 
     hive& operator=(hive&& source)
-        noexcept(std::allocator_traits<allocator_type>::propagate_on_container_move_assignment::value || std::allocator_traits<allocator_type>::is_always_equal::value)
+        noexcept(std::allocator_traits<allocator_type>::propagate_on_container_move_assignment::value ||
+                 std::allocator_traits<allocator_type>::is_always_equal::value)
     {
         assert(&source != this);
         destroy_all_data();

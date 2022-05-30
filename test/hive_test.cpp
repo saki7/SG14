@@ -2533,6 +2533,40 @@ TEST(hive, PmrCorrectReshape)
     EXPECT_EQ(h.size(), 10u);
     EXPECT_INVARIANTS(h);
 }
+
+TEST(hive, PmrCorrectShrinkToFit)
+{
+    plf::hive<int, std::pmr::polymorphic_allocator<int>> h(10);
+    PmrGuard guard;
+    h.reshape({4, 4});
+    h.reshape({3, 10});
+    h.shrink_to_fit();
+    EXPECT_EQ(h.size(), 10u);
+    EXPECT_INVARIANTS(h);
+}
+
+TEST(hive, PmrCorrectAllocAwareCtors)
+{
+    std::pmr::monotonic_buffer_resource mr(10'000);
+    plf::hive<int, std::pmr::polymorphic_allocator<int>> h1(10);
+    {
+        PmrGuard guard;
+        std::pmr::unsynchronized_pool_resource mr(std::pmr::new_delete_resource());
+        plf::hive<int, std::pmr::polymorphic_allocator<int>> h2(h1, &mr);
+        EXPECT_EQ(h2.size(), 10u);
+        EXPECT_INVARIANTS(h2);
+    }
+    EXPECT_EQ(h1.size(), 10u);
+    EXPECT_INVARIANTS(h1);
+    {
+        PmrGuard guard;
+        std::pmr::unsynchronized_pool_resource mr(std::pmr::new_delete_resource());
+        plf::hive<int, std::pmr::polymorphic_allocator<int>> h3(std::move(h1), &mr);
+        EXPECT_EQ(h3.size(), 10u);
+        EXPECT_INVARIANTS(h3);
+    }
+    EXPECT_INVARIANTS(h1);
+}
 #endif // __cpp_lib_memory_resource >= 201603
 
 #endif // __cplusplus >= 201703
