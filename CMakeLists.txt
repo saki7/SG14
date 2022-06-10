@@ -89,6 +89,7 @@ target_include_directories(${PROJECT_NAME} INTERFACE
 	$<BUILD_INTERFACE:${SG14_INCLUDE_DIRECTORY}>
 )
 
+add_subdirectory(benchmarks)
 add_subdirectory(test)
 
 install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}_targets)
