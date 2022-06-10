@@ -2450,6 +2450,39 @@ TEST(hive, SpliceLargeRandom)
     }
 }
 
+TEST(hive, SpliceRegressionTest)
+{
+    int a[100] = {};
+    plf::hive<int> h;
+    auto s = [&]() {
+        plf::hive<int> temp;
+        temp.reserve(100);
+        h.splice(temp);
+    };
+    s();
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(h.capacity(), 100u);
+    h.insert(a, a + 100);
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(h.capacity(), 100u);
+    s();
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(h.capacity(), 200u);
+    h.insert(a, a + 100);
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(h.capacity(), 200u);
+    h.erase(h.begin(), std::next(h.begin(), 100));
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(h.capacity(), 200u);
+    s();
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(h.capacity(), 300u);
+    h.insert(a, a + 100);
+    EXPECT_INVARIANTS(h);
+    EXPECT_EQ(h.size(), 200u);
+    EXPECT_EQ(h.capacity(), 300u);
+}
+
 TEST(hive, TrimDoesntMove)
 {
     struct S {

@@ -1774,8 +1774,8 @@ public:
                     assert(begin_.group_ == nullptr);
                     begin_ = std::move(source.begin_);
                 }
+                end_ = std::move(source.end_);
             }
-            end_ = std::move(source.end_);
             size_ += std::exchange(source.size_, 0);
             capacity_ += std::exchange(source.capacity_, 0);
 
@@ -1786,8 +1786,6 @@ public:
 
         assert_invariants();
         source.assert_invariants();
-        assert(source.size() == 0u);
-        assert(source.capacity() == 0u);
     }
 
     inline void splice(hive&& source) { this->splice(source); }
