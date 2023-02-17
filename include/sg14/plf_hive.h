@@ -1912,13 +1912,16 @@ private:
             GroupPtr g = groups_with_erasures_;
             assert(g->free_list_head != std::numeric_limits<skipfield_type>::max());
             skipfield_type skipblock_length = g->skipfield(g->free_list_head);
-            if (skipblock_length >= n) {
+            if (skipblock_length > n) {
                 callback_fill_skipblock<false>(n, cb, g);
                 assert_invariants();
                 return;
             } else {
                 callback_fill_skipblock<true>(skipblock_length, cb, g);
                 n -= skipblock_length;
+                if (n == 0) {
+                    return;
+                }
             }
         }
         assert_invariants();

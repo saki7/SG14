@@ -2811,4 +2811,19 @@ TEST(hive, PmrCorrectAllocAwareCtors)
 }
 #endif // __cpp_lib_memory_resource >= 201603
 
+TEST(hive, RangeInsertRegressionTest)
+{
+  auto h = plf::hive<int>(100, 42);
+  h.erase(std::next(h.begin()));
+  h.erase(std::next(h.begin()));
+  EXPECT_EQ(h.size(), 98);
+  h.insert(2, 42); // 42 copies of "42"
+  EXPECT_EQ(h.size(), 100);
+  int sum = 0;
+  for (int i : h) {
+    sum += i;
+  }
+  EXPECT_EQ(sum, 4200);
+}
+
 #endif // __cplusplus >= 201703
