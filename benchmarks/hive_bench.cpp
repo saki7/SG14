@@ -13,10 +13,13 @@
 #undef PLF_HIVE_P2596
 #undef plf
 
+#if __cplusplus >= 202002L
 #undef PLF_HIVE_H
 #define plf matt
+#undef __cpp_lib_hive
 #include "../../plf_hive/plf_hive.h"
 #undef plf
+#endif // __cplusplus >= 202002L
 
 #include <benchmark/benchmark.h>
 
@@ -63,7 +66,7 @@ struct xoshiro256ss {
 
 #define N 1000
 
-#if N < 256
+#if __cplusplus >= 202002L && N < 256
 static void BM_PlfStackIssue1_MattSmart(benchmark::State& state) {
     int fake_input[N] = {};
     xoshiro256ss g;

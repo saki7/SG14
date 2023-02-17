@@ -1990,17 +1990,18 @@ TYPED_TEST(hivet, MoveOnlyInputIterator)
         auto& operator++() { ++p_; return *this; }
         void operator++(int) { ++p_; }
         bool operator==(const MoveOnlyInputIterator& rhs) const { return p_ == rhs.p_; }
+        bool operator==(const Value *p) const { return p_ == p; }
+#if __cplusplus < 202002L
         bool operator!=(const MoveOnlyInputIterator& rhs) const { return p_ != rhs.p_; }
-#if __cpp_lib_ranges >= 201911
-        bool operator==(Value *p) const { return p_ == p; }
-        bool operator!=(Value *p) const { return p_ != p; }
 #endif
     };
+
     static_assert(std::is_move_constructible<MoveOnlyInputIterator>::value);
     static_assert(!std::is_copy_constructible<MoveOnlyInputIterator>::value);
 #if __cpp_lib_concepts >= 202002
     static_assert(std::input_or_output_iterator<MoveOnlyInputIterator>);
     static_assert(!std::forward_iterator<MoveOnlyInputIterator>);
+    static_assert(std::sentinel_for<Value*, MoveOnlyInputIterator>);
 #endif
 
     Value a[] = {
@@ -2678,7 +2679,7 @@ TEST(hive, SortDoesntUseAllocator)
     try {
         while (true) (void)mr.allocate(1);
     } catch (...) { }
-    ASSERT_THROW(mr.allocate(1), std::bad_alloc);
+    ASSERT_THROW((void)mr.allocate(1), std::bad_alloc);
     h.sort();
     int expected[] = {1,1,3,4,5};
     EXPECT_TRUE(std::equal(h.begin(), h.end(), expected, expected + 5));
