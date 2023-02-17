@@ -134,6 +134,7 @@ matrix:
 
 script:
   - mkdir build && cd build && cmake .. && cmake --build . && ./bin/utest
+  - mkdir build && cd build && cmake .. -DCMAKE_CXX_STANDARD=14 && cmake --build . && ./bin/utest
 
 notifications:
   email:

@@ -3,7 +3,7 @@
 
 #if __cplusplus >= 201703
 
-#include <sg14/plf_hive.h>
+#include <sg14/hive.h>
 
 #include <gtest/gtest.h>
 
@@ -26,41 +26,41 @@
 template<class T> struct hivet : testing::Test {};
 
 using hivet_types = testing::Types<
-    plf::hive<unsigned char>
-    , plf::hive<int, std::allocator<int>, plf::hive_priority::performance>
-    , plf::hive<int, std::allocator<int>, plf::hive_priority::memory_use>
-    , plf::hive<std::string>            // non-trivial construction/destruction
+    sg14::hive<unsigned char>
+    , sg14::hive<int, std::allocator<int>, sg14::hive_priority::performance>
+    , sg14::hive<int, std::allocator<int>, sg14::hive_priority::memory_use>
+    , sg14::hive<std::string>            // non-trivial construction/destruction
 #if __cpp_lib_memory_resource >= 201603
-    , plf::hive<int, std::pmr::polymorphic_allocator<int>>                            // pmr allocator
-    , plf::hive<std::pmr::string, std::pmr::polymorphic_allocator<std::pmr::string>>  // uses-allocator construction
+    , sg14::hive<int, std::pmr::polymorphic_allocator<int>>                            // pmr allocator
+    , sg14::hive<std::pmr::string, std::pmr::polymorphic_allocator<std::pmr::string>>  // uses-allocator construction
 #endif
 >;
 TYPED_TEST_SUITE(hivet, hivet_types);
 
 template<class> struct hivet_setup;
-template<class A, class P> struct hivet_setup<plf::hive<unsigned char, A, P>> {
+template<class A, class P> struct hivet_setup<sg14::hive<unsigned char, A, P>> {
     static unsigned char value(int i) { return i; }
     static bool int_eq_t(int i, char v) { return v == (unsigned char)(i); }
 };
-template<class A, class P> struct hivet_setup<plf::hive<int, A, P>> {
+template<class A, class P> struct hivet_setup<sg14::hive<int, A, P>> {
     static int value(int i) { return i; }
     static bool int_eq_t(int i, int v) { return v == i; }
 };
-template<class A, class P> struct hivet_setup<plf::hive<std::string, A, P>> {
+template<class A, class P> struct hivet_setup<sg14::hive<std::string, A, P>> {
     static std::string value(int i) { return std::string("ensure that a memory allocation happens here") + std::to_string(i); }
     static bool int_eq_t(int i, const std::string& v) { return v == value(i); }
 };
 #if __cpp_lib_memory_resource >= 201603
-template<class A, class P> struct hivet_setup<plf::hive<std::pmr::string, A, P>> {
-    static std::pmr::string value(int i) { return hivet_setup<plf::hive<std::string, A, P>>::value(i).c_str(); }
-    static bool int_eq_t(int i, std::string_view v) { return v == hivet_setup<plf::hive<std::string, A, P>>::value(i); }
+template<class A, class P> struct hivet_setup<sg14::hive<std::pmr::string, A, P>> {
+    static std::pmr::string value(int i) { return hivet_setup<sg14::hive<std::string, A, P>>::value(i).c_str(); }
+    static bool int_eq_t(int i, std::string_view v) { return v == hivet_setup<sg14::hive<std::string, A, P>>::value(i); }
 };
 #endif
 
 template<class H>
 H make_rope(size_t blocksize, size_t cap)
 {
-#if PLF_HIVE_P2596
+#if SG14_HIVE_P2596
     H h;
     for (size_t i=0; i < cap; i += blocksize) {
         H temp;
@@ -68,7 +68,7 @@ H make_rope(size_t blocksize, size_t cap)
         h.splice(temp);
     }
 #else
-    H h(plf::hive_limits(blocksize, blocksize));
+    H h(sg14::hive_limits(blocksize, blocksize));
     h.reserve(cap);
 #endif
     return h;
@@ -84,14 +84,14 @@ H make_rope(size_t blocksize, size_t cap)
     EXPECT_EQ(h.begin().next(h.size()), h.end()); \
     EXPECT_EQ(h.end().prev(h.size()), h.begin());
 
-#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+#if SG14_HIVE_RANDOM_ACCESS_ITERATORS
 #define EXPECT_DISTANCE(it, jt, n) \
     EXPECT_EQ(std::distance(it, jt), n); \
     EXPECT_EQ(jt - it, n); \
     EXPECT_EQ(it - jt, -n); \
     EXPECT_EQ(it + n, jt); \
     EXPECT_EQ(jt - n, it);
-#elif PLF_HIVE_RELATIONAL_OPERATORS
+#elif SG14_HIVE_RELATIONAL_OPERATORS
 #define EXPECT_DISTANCE(it, jt, n) \
     EXPECT_EQ(std::distance(it, jt), n); \
     EXPECT_EQ(it.distance(jt), n); \
@@ -108,8 +108,8 @@ H make_rope(size_t blocksize, size_t cap)
 
 TEST(hive, OutOfRangeReshapeByP2596)
 {
-#if PLF_HIVE_P2596
-    plf::hive<int> h;
+#if SG14_HIVE_P2596
+    sg14::hive<int> h;
     h.reshape(0);
     h.reshape(0, 0);
     h.reshape(0, h.max_size());
@@ -124,8 +124,8 @@ TEST(hive, OutOfRangeReshapeByP2596)
 
 TEST(hive, OutOfRangeLimitsByP0447)
 {
-#if !PLF_HIVE_P2596
-    using H = plf::hive<char>;
+#if !SG14_HIVE_P2596
+    using H = sg14::hive<char>;
     size_t min = H::block_capacity_hard_limits().min;
     size_t max = H::block_capacity_hard_limits().max;
     EXPECT_LE(min, max);
@@ -136,11 +136,11 @@ TEST(hive, OutOfRangeLimitsByP0447)
     // the implementation COULD just clamp them to the possible range.
     // Instead, P0447R20 says the behavior is undefined.
 
-    ASSERT_THROW(H(plf::hive_limits(min-1, max)), std::length_error);
-    ASSERT_THROW(H(plf::hive_limits(min, max+1)), std::length_error);
-    ASSERT_THROW(H(plf::hive_limits(min-1, max+1)), std::length_error);
-    ASSERT_THROW(H(plf::hive_limits(min-1, min)), std::length_error);
-    ASSERT_THROW(H(plf::hive_limits(max, max+1)), std::length_error);
+    ASSERT_THROW(H(sg14::hive_limits(min-1, max)), std::length_error);
+    ASSERT_THROW(H(sg14::hive_limits(min, max+1)), std::length_error);
+    ASSERT_THROW(H(sg14::hive_limits(min-1, max+1)), std::length_error);
+    ASSERT_THROW(H(sg14::hive_limits(min-1, min)), std::length_error);
+    ASSERT_THROW(H(sg14::hive_limits(max, max+1)), std::length_error);
 
     H h;
     ASSERT_THROW(h.reshape({min-1, max}), std::length_error);
@@ -153,8 +153,8 @@ TEST(hive, OutOfRangeLimitsByP0447)
 
 TEST(hive, OutOfRangeLimitsByMath)
 {
-#if !PLF_HIVE_P2596
-    using H = plf::hive<char>;
+#if !SG14_HIVE_P2596
+    using H = sg14::hive<char>;
     size_t min = H::block_capacity_hard_limits().min;
     size_t max = H::block_capacity_hard_limits().max;
     EXPECT_LE(min, max);
@@ -164,10 +164,10 @@ TEST(hive, OutOfRangeLimitsByMath)
     // These ranges are invalid, or physically impossible to enforce.
     // P0447R20 says the behavior is undefined in these cases as well.
 
-    ASSERT_THROW(H(plf::hive_limits(min-1, min-1)), std::length_error);
-    ASSERT_THROW(H(plf::hive_limits(max+1, max+1)), std::length_error);
-    ASSERT_THROW(H(plf::hive_limits(max, max-1)), std::length_error);
-    ASSERT_THROW(H(plf::hive_limits(min+1, min)), std::length_error);
+    ASSERT_THROW(H(sg14::hive_limits(min-1, min-1)), std::length_error);
+    ASSERT_THROW(H(sg14::hive_limits(max+1, max+1)), std::length_error);
+    ASSERT_THROW(H(sg14::hive_limits(max, max-1)), std::length_error);
+    ASSERT_THROW(H(sg14::hive_limits(min+1, min)), std::length_error);
 
     H h;
     ASSERT_THROW(h.reshape({min-1, min-1}), std::length_error);
@@ -213,7 +213,7 @@ TEST(hive, FirstInsertThrows)
     struct S {
         S() { throw 42; }
     };
-    plf::hive<S> h;
+    sg14::hive<S> h;
     EXPECT_THROW(h.emplace(), int);
     EXPECT_EQ(h.size(), 0u);
     EXPECT_INVARIANTS(h);
@@ -233,7 +233,7 @@ TEST(hive, RegressionTestIssue20)
     };
 
     for (int t = 1; t < 20; ++t) {
-        plf::hive<S> h = make_rope<plf::hive<S>>(8, 10);
+        sg14::hive<S> h = make_rope<sg14::hive<S>>(8, 10);
         h.insert(10, S(&should_throw, 42));
         auto it = h.begin();
         std::advance(it, 3);
@@ -266,7 +266,7 @@ TEST(hive, RegressionTestIssue20)
         S(&should_throw, 5),
     };
     for (int t = 1; t < 20; ++t) {
-        plf::hive<S> h = make_rope<plf::hive<S>>(8, 10);
+        sg14::hive<S> h = make_rope<sg14::hive<S>>(8, 10);
         should_throw = 0;
         h.insert(10, S(&should_throw, 42));
         auto it = h.begin();
@@ -294,7 +294,7 @@ TEST(hive, RegressionTestIssue20)
 
 TEST(hive, RegressionTestIssue24)
 {
-    plf::hive<int> h = {1,2,0,4};
+    sg14::hive<int> h = {1,2,0,4};
     std::erase(h, 0);
     auto it = h.begin(); ++it;
     auto jt = h.begin(); ++jt; ++jt;
@@ -303,7 +303,7 @@ TEST(hive, RegressionTestIssue24)
 
 TEST(hive, RegressionTestIssue25)
 {
-    plf::hive<int> h = {1,0,1};
+    sg14::hive<int> h = {1,0,1};
     std::erase(h, 0);
     auto it = h.end();
     auto jt = h.end(); --jt;
@@ -324,16 +324,16 @@ TEST(hive, ReshapeWithThrow)
     };
 
     for (int t = 1; t < 20; ++t) {
-        plf::hive<S> h = make_rope<plf::hive<S>>(9, 20);
+        sg14::hive<S> h = make_rope<sg14::hive<S>>(9, 20);
         h.insert(20, S(&should_throw, 42));
         EXPECT_EQ(h.size(), 20u);
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
         EXPECT_EQ(h.block_capacity_limits().min, 9);
         EXPECT_EQ(h.block_capacity_limits().max, 9);
 #endif
         try {
             should_throw = t;
-#if PLF_HIVE_P2596
+#if SG14_HIVE_P2596
             h.reshape(6);
 #else
             h.reshape({6, 6});
@@ -351,8 +351,8 @@ TEST(hive, ReshapeWithThrow)
 
 TEST(hive, ReshapeUnusedBlocksP2596)
 {
-#if PLF_HIVE_P2596
-    plf::hive<char> h = make_rope<plf::hive<char>>(9, 42);
+#if SG14_HIVE_P2596
+    sg14::hive<char> h = make_rope<sg14::hive<char>>(9, 42);
     h.insert(42, 'x');
     h.erase(h.begin(), h.begin().next(20));
     EXPECT_EQ(h.size(), 22u);
@@ -366,8 +366,8 @@ TEST(hive, ReshapeUnusedBlocksP2596)
 
 TEST(hive, ReshapeUnusedBlocks)
 {
-#if !PLF_HIVE_P2596
-    plf::hive<char> h = make_rope<plf::hive<char>>(9, 42);
+#if !SG14_HIVE_P2596
+    sg14::hive<char> h = make_rope<sg14::hive<char>>(9, 42);
     h.insert(42, 'x');
     h.erase(h.begin(), h.begin().next(20));
     EXPECT_EQ(h.size(), 22u);
@@ -382,13 +382,13 @@ TEST(hive, ReshapeUnusedBlocks)
 
 TEST(hive, ReshapeUnusedBlocks2)
 {
-#if !PLF_HIVE_P2596
-    plf::hive<char> h;
+#if !SG14_HIVE_P2596
+    sg14::hive<char> h;
     h.reshape({6, 9});
-    h.splice(plf::hive<char>{1,2,3,4,5,6,7,8,9});
-    h.splice(plf::hive<char>{1,2,3,4,5,6});
-    h.splice(plf::hive<char>{1,2,3,4,5,6});
-    h.splice(plf::hive<char>{1,2,3,4,5,6,7,8,9});
+    h.splice(sg14::hive<char>{1,2,3,4,5,6,7,8,9});
+    h.splice(sg14::hive<char>{1,2,3,4,5,6});
+    h.splice(sg14::hive<char>{1,2,3,4,5,6});
+    h.splice(sg14::hive<char>{1,2,3,4,5,6,7,8,9});
     h.erase(h.begin(), h.begin().next(10));
     h.erase(h.end().prev(10), h.end());
     EXPECT_EQ(h.size(), 10u);
@@ -527,7 +527,7 @@ TYPED_TEST(hivet, CustomDistanceFunction)
     EXPECT_DISTANCE(plus20, plus200, 180);
     EXPECT_DISTANCE(plus200, plus200, 0);
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(plus20.distance(h.begin()), -20);
     EXPECT_EQ(plus200.distance(h.begin()), -200);
     EXPECT_EQ(plus200.distance(plus20), -180);
@@ -541,7 +541,7 @@ TYPED_TEST(hivet, CustomDistanceFunction)
     EXPECT_DISTANCE(c20, c200, 180);
     EXPECT_DISTANCE(c200, c200, 0);
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(c20.distance(h.cbegin()), -20);
     EXPECT_EQ(c200.distance(h.cbegin()), -200);
     EXPECT_EQ(c200.distance(c20), -180);
@@ -674,7 +674,7 @@ TYPED_TEST(hivet, CustomDistanceFunctionRev)
     EXPECT_DISTANCE(plus20, plus200, 180);
     EXPECT_DISTANCE(plus200, plus200, 0);
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(plus20.distance(h.rbegin()), -20);
     EXPECT_EQ(plus200.distance(h.rbegin()), -200);
     EXPECT_EQ(plus200.distance(plus20), -180);
@@ -688,7 +688,7 @@ TYPED_TEST(hivet, CustomDistanceFunctionRev)
     EXPECT_DISTANCE(c20, c200, 180);
     EXPECT_DISTANCE(c200, c200, 0);
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
     EXPECT_EQ(c20.distance(h.crbegin()), -20);
     EXPECT_EQ(c200.distance(h.crbegin()), -200);
     EXPECT_EQ(c200.distance(c20), -180);
@@ -714,12 +714,12 @@ TYPED_TEST(hivet, CopyConstructor)
 
 TEST(hive, MoveConstructor)
 {
-    plf::hive<int> h = {1, 2, 3, 4, 5, 6, 7};
+    sg14::hive<int> h = {1, 2, 3, 4, 5, 6, 7};
     h.insert(10'000, 42);
 
-    plf::hive<int> copy = h;
+    sg14::hive<int> copy = h;
 
-    plf::hive<int> h2 = std::move(h);
+    sg14::hive<int> h2 = std::move(h);
     EXPECT_TRUE(h.empty());
     EXPECT_INVARIANTS(h);
     EXPECT_EQ(h2.size(), 10'007);
@@ -727,7 +727,7 @@ TEST(hive, MoveConstructor)
     EXPECT_TRUE(std::equal(copy.begin(), copy.end(), h2.begin(), h2.end()));
 
     h = copy;
-    plf::hive<int> h3(std::move(h), copy.get_allocator());
+    sg14::hive<int> h3(std::move(h), copy.get_allocator());
     EXPECT_TRUE(h.empty());
     EXPECT_INVARIANTS(h);
     EXPECT_EQ(h3.size(), 10'007);
@@ -737,7 +737,7 @@ TEST(hive, MoveConstructor)
 
 TEST(hive, ReverseIterator)
 {
-    plf::hive<int> h = {1, 2, 3, 4, 5};
+    sg14::hive<int> h = {1, 2, 3, 4, 5};
     std::vector<int> expected = {1, 2, 3, 4, 5};
     EXPECT_TRUE(std::equal(h.begin(), h.end(), expected.begin(), expected.end()));
     EXPECT_TRUE(std::equal(h.cbegin(), h.cend(), expected.begin(), expected.end()));
@@ -747,7 +747,7 @@ TEST(hive, ReverseIterator)
 
 TEST(hive, ReverseIteratorBase)
 {
-    plf::hive<int> h = {1, 2, 3, 4, 5};
+    sg14::hive<int> h = {1, 2, 3, 4, 5};
     EXPECT_EQ(h.rend().base(), h.begin());
     EXPECT_EQ(h.crend().base(), h.cbegin());
     EXPECT_EQ(h.rbegin().base(), h.end());
@@ -755,15 +755,15 @@ TEST(hive, ReverseIteratorBase)
 
     auto rit = h.rbegin();
     auto crit = h.crbegin();
-    static_assert(std::is_same<decltype(rit.base()), plf::hive<int>::iterator>::value, "");
-    static_assert(std::is_same<decltype(crit.base()), plf::hive<int>::const_iterator>::value, "");
+    static_assert(std::is_same<decltype(rit.base()), sg14::hive<int>::iterator>::value, "");
+    static_assert(std::is_same<decltype(crit.base()), sg14::hive<int>::const_iterator>::value, "");
     static_assert(noexcept(rit.base()), "");
     static_assert(noexcept(crit.base()), "");
 }
 
 TEST(hive, ShrinkToFit)
 {
-    plf::hive<int> h = {1, 2, 3, 4, 5};
+    sg14::hive<int> h = {1, 2, 3, 4, 5};
     size_t oldcap = h.capacity();
     h.shrink_to_fit();
     EXPECT_EQ(h.size(), 5u);
@@ -773,7 +773,7 @@ TEST(hive, ShrinkToFit)
 
 TEST(hive, InsertInMovedFromContainer)
 {
-    plf::hive<int> h = {1, 2, 3, 4, 5};
+    sg14::hive<int> h = {1, 2, 3, 4, 5};
     auto dummy = std::move(h);
     EXPECT_TRUE(h.empty());
     h.insert(42);
@@ -784,8 +784,8 @@ TEST(hive, InsertInMovedFromContainer)
 
 TEST(hive, Swap)
 {
-    plf::hive<int> h1 = {1, 2, 3, 4, 5};
-    plf::hive<int> h2 = {3, 1, 4};
+    sg14::hive<int> h1 = {1, 2, 3, 4, 5};
+    sg14::hive<int> h2 = {3, 1, 4};
 
     h1.swap(h2);
     EXPECT_EQ(h1.size(), 3u);
@@ -804,7 +804,7 @@ TEST(hive, Swap)
 
 TEST(hive, MaxSize)
 {
-    plf::hive<int> h1 = {1, 2, 3, 4, 5};
+    sg14::hive<int> h1 = {1, 2, 3, 4, 5};
     EXPECT_GE(h1.max_size(), 100'000u);
     static_assert(noexcept(h1.max_size()), "");
     static_assert(std::is_same<decltype(h1.max_size()), size_t>::value, "");
@@ -812,7 +812,7 @@ TEST(hive, MaxSize)
 
 TEST(hive, IteratorConvertibility)
 {
-    using H = plf::hive<int>;
+    using H = sg14::hive<int>;
     using It = H::iterator;
     using CIt = H::const_iterator;
     using RIt = H::reverse_iterator;
@@ -855,7 +855,7 @@ template<class T> using Tag = typename std::iterator_traits<T>::iterator_categor
 
 TEST(hive, IteratorCategory)
 {
-    using H = plf::hive<int>;
+    using H = sg14::hive<int>;
     using It = H::iterator;
     using CIt = H::const_iterator;
     using RIt = H::reverse_iterator;
@@ -865,7 +865,7 @@ TEST(hive, IteratorCategory)
     static_assert(std::is_base_of<std::bidirectional_iterator_tag, Tag<CIt>>::value, "");
     static_assert(std::is_base_of<std::bidirectional_iterator_tag, Tag<RIt>>::value, "");
     static_assert(std::is_base_of<std::bidirectional_iterator_tag, Tag<CRIt>>::value, "");
-#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+#if SG14_HIVE_RANDOM_ACCESS_ITERATORS
     static_assert(std::is_base_of<std::random_access_iterator_tag, Tag<It>>::value, "");
     static_assert(std::is_base_of<std::random_access_iterator_tag, Tag<CIt>>::value, "");
     static_assert(std::is_base_of<std::random_access_iterator_tag, Tag<RIt>>::value, "");
@@ -881,7 +881,7 @@ TEST(hive, IteratorCategory)
 #if __cpp_lib_ranges >= 201911
 TEST(hive, RangeConcepts)
 {
-    using H = plf::hive<int>;
+    using H = sg14::hive<int>;
     using It = H::iterator;
     using CIt = H::const_iterator;
     using RIt = H::reverse_iterator;
@@ -892,7 +892,7 @@ TEST(hive, RangeConcepts)
     static_assert(std::bidirectional_iterator<RIt>, "");
     static_assert(std::bidirectional_iterator<CRIt>, "");
     static_assert(std::ranges::bidirectional_range<H>, "");
-#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+#if SG14_HIVE_RANDOM_ACCESS_ITERATORS
     static_assert(std::random_access_iterator<It>, "");
     static_assert(std::random_access_iterator<CIt>, "");
     static_assert(std::random_access_iterator<RIt>, "");
@@ -934,7 +934,7 @@ TYPED_TEST(hivet, IteratorComparison)
         EXPECT_EQ((it2 == it1), false);
         EXPECT_EQ((it2 != it1), true);
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
@@ -955,7 +955,7 @@ TYPED_TEST(hivet, IteratorComparison)
 #endif
     }
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered<typename Hive::iterator>);
 #endif
@@ -981,7 +981,7 @@ TYPED_TEST(hivet, ConstIteratorComparison)
         EXPECT_EQ((it2 == it1), false);
         EXPECT_EQ((it2 != it1), true);
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
@@ -1002,7 +1002,7 @@ TYPED_TEST(hivet, ConstIteratorComparison)
 #endif
     }
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered<typename Hive::const_iterator>);
 #endif
@@ -1028,7 +1028,7 @@ TYPED_TEST(hivet, MixedIteratorComparison)
         EXPECT_EQ((it2 == it1), false);
         EXPECT_EQ((it2 != it1), true);
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
@@ -1049,7 +1049,7 @@ TYPED_TEST(hivet, MixedIteratorComparison)
 #endif
     }
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered_with<
         typename Hive::iterator,
@@ -1081,7 +1081,7 @@ TYPED_TEST(hivet, ReverseIteratorComparison)
         EXPECT_EQ((it2 == it1), false);
         EXPECT_EQ((it2 != it1), true);
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
@@ -1102,7 +1102,7 @@ TYPED_TEST(hivet, ReverseIteratorComparison)
 #endif
     }
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered<typename Hive::reverse_iterator>);
 #endif
@@ -1128,7 +1128,7 @@ TYPED_TEST(hivet, ConstReverseIteratorComparison)
         EXPECT_EQ((it2 == it1), false);
         EXPECT_EQ((it2 != it1), true);
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
@@ -1149,7 +1149,7 @@ TYPED_TEST(hivet, ConstReverseIteratorComparison)
 #endif
     }
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered<typename Hive::const_reverse_iterator>);
 #endif
@@ -1175,7 +1175,7 @@ TYPED_TEST(hivet, MixedReverseIteratorComparison)
         EXPECT_EQ((it2 == it1), false);
         EXPECT_EQ((it2 != it1), true);
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
         EXPECT_EQ((it1 < it2), true);
         EXPECT_EQ((it1 <= it2), true);
         EXPECT_EQ((it1 > it2), false);
@@ -1196,7 +1196,7 @@ TYPED_TEST(hivet, MixedReverseIteratorComparison)
 #endif
     }
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
 #if __cpp_lib_concepts >= 202002
     static_assert(std::totally_ordered_with<
         typename Hive::reverse_iterator,
@@ -1214,7 +1214,7 @@ TYPED_TEST(hivet, MixedReverseIteratorComparison)
 
 TEST(hive, EraseOne)
 {
-    plf::hive<int> h = {1, 2, 3, 4, 5, 6, 7, 8};
+    sg14::hive<int> h = {1, 2, 3, 4, 5, 6, 7, 8};
     auto erase_one = [&](int i) {
         auto it = h.begin(); std::advance(it, i);
         auto rt = h.erase(it);
@@ -1236,7 +1236,7 @@ TEST(hive, EraseOne)
 
 TEST(hive, EraseTwo)
 {
-    plf::hive<int> h = {1, 2, 3, 4, 5, 6, 7, 8};
+    sg14::hive<int> h = {1, 2, 3, 4, 5, 6, 7, 8};
     auto erase_two = [&](int i, int j) {
         auto it = h.begin(); std::advance(it, i);
         auto jt = h.begin(); std::advance(jt, j);
@@ -1286,7 +1286,7 @@ TEST(hive, EraseTwo)
 TEST(hive, InsertAndErase)
 {
     std::mt19937 g;
-    plf::hive<int> h;
+    sg14::hive<int> h;
     for (int i = 0; i < 500'000; ++i) {
         h.insert(i);
     }
@@ -1323,11 +1323,11 @@ TEST(hive, InsertAndErase)
 TEST(hive, InsertAndErase2)
 {
     std::mt19937 g;
-    plf::hive<int> h;
-#if PLF_HIVE_P2596
+    sg14::hive<int> h;
+#if SG14_HIVE_P2596
     h.reshape(10'000, 30'000);
 #else
-    h.reshape(plf::hive_limits(10'000, h.block_capacity_limits().max));
+    h.reshape(sg14::hive_limits(10'000, h.block_capacity_limits().max));
 #endif
     h.insert(30'000, 1);
     EXPECT_EQ(h.size(), 30'000u);
@@ -1424,7 +1424,7 @@ TEST(hive, InsertAndErase2)
 
 TEST(hive, InsertAndErase3)
 {
-    plf::hive<int> h(500'000, 10);
+    sg14::hive<int> h(500'000, 10);
     auto first = h.begin();
     auto last = h.end();
     std::advance(first, 300'000);
@@ -1470,7 +1470,7 @@ TEST(hive, InsertAndErase3)
 
 TEST(hive, Reserve)
 {
-    plf::hive<int> h(10);
+    sg14::hive<int> h(10);
     size_t cap = h.capacity();
     h.reserve(100'000);
     EXPECT_GE(h.capacity(), 100'000);
@@ -1481,7 +1481,7 @@ TEST(hive, Reserve)
 TEST(hive, MultipleSingleInsertErase)
 {
     std::mt19937 g;
-    plf::hive<int> h(110'000, 1);
+    sg14::hive<int> h(110'000, 1);
 
     size_t count = h.size();
     for (int i = 0; i < 50'000; ++i) {
@@ -1506,7 +1506,7 @@ TEST(hive, MultipleSingleInsertErase)
 
 TEST(hive, Erase)
 {
-    plf::hive<int> h;
+    sg14::hive<int> h;
     for (int i = 0; i < 1000; ++i) {
         h.insert(i);
     }
@@ -1556,7 +1556,7 @@ TEST(hive, Erase)
 
 TEST(hive, RangeEraseHalfErasedAlternating)
 {
-    plf::hive<int> v;
+    sg14::hive<int> v;
     for (int i = 0; i < 3000; ++i) {
         v.insert(i);
     }
@@ -1577,7 +1577,7 @@ TEST(hive, RangeEraseHalfErasedAlternating)
 TEST(hive, RangeEraseThirdErasedRandomized)
 {
     std::mt19937 g;
-    plf::hive<int> v(3000, 42);
+    sg14::hive<int> v(3000, 42);
     for (auto it = v.begin(); it != v.end(); ) {
         if (g() % 2 == 0) {
             it = v.erase(it);
@@ -1677,7 +1677,7 @@ TYPED_TEST(hivet, EraseEmptyRange)
 
 TEST(hive, RegressionTestIssue8)
 {
-    plf::hive<int> h = {1,2,3,4,5};
+    sg14::hive<int> h = {1,2,3,4,5};
     h.erase(h.begin());
     h.erase(h.begin());
     h.insert(6);
@@ -1701,7 +1701,7 @@ TEST(hive, RegressionTestIssue14)
     };
     static_assert(std::is_nothrow_copy_constructible<S>::value, "");
 
-    plf::hive<S> h;
+    sg14::hive<S> h;
     int a[] = {1, 2, 3, 4, 5};
     ASSERT_THROW(h.assign(a, a + 5), int);
     EXPECT_INVARIANTS(h);
@@ -1723,7 +1723,7 @@ TYPED_TEST(hivet, RegressionTestIssue15)
 TEST(hive, RegressionTestIssue16)
 {
     for (int n = 0; n < 15; ++n) {
-        plf::hive<char> h = make_rope<plf::hive<char>>(4, n);
+        sg14::hive<char> h = make_rope<sg14::hive<char>>(4, n);
         h.insert(n, 'x');
         for (int i = 0; i <= n; ++i) {
             for (int j = 0; j <= n - i; ++j) {
@@ -1866,7 +1866,7 @@ TYPED_TEST(hivet, ConstructFromIteratorPair)
 TEST(hive, ConstructFromVectorBoolIteratorPair)
 {
     std::vector<bool> v = { true, false, true, false, true };
-    auto h = plf::hive<bool>(v.begin(), v.end());
+    auto h = sg14::hive<bool>(v.begin(), v.end());
     EXPECT_EQ(h.size(), 5u);
     EXPECT_INVARIANTS(h);
     EXPECT_EQ(std::count(h.begin(), h.end(), true), 3);
@@ -1876,9 +1876,9 @@ TEST(hive, ConstructFromVectorBoolIteratorPair)
 #if __cpp_lib_ranges >= 201911 && __cpp_lib_ranges_to_container >= 202202
 TEST(hive, ConstructFromRange)
 {
-    plf::hive<int> v = {1, 2, 3};
+    sg14::hive<int> v = {1, 2, 3};
     auto r = v | std::views::take(2);
-    plf::hive<int> h(std::from_range, r);
+    sg14::hive<int> h(std::from_range, r);
     EXPECT_EQ(h.size(), 2u);
     EXPECT_INVARIANTS(h);
     EXPECT_EQ(*h.begin(), 1);
@@ -2039,7 +2039,7 @@ TYPED_TEST(hivet, MoveOnlyInputIterator)
 
 TEST(hive, ReserveAndFill)
 {
-    plf::hive<int> v;
+    sg14::hive<int> v;
     v.trim_capacity();
     v.reserve(50'000);
     v.insert(60'000, 1);
@@ -2050,7 +2050,7 @@ TEST(hive, ReserveAndFill)
 
 TEST(hive, ReserveAndFill2)
 {
-    plf::hive<int> v;
+    sg14::hive<int> v;
     v.reserve(50'000);
     v.insert(60, 1);
     EXPECT_EQ(v.size(), 60u);
@@ -2077,7 +2077,7 @@ TEST(hive, ReserveAndFill2)
 
 TEST(hive, Assign)
 {
-    plf::hive<int> v(50, 2);
+    sg14::hive<int> v(50, 2);
     v.assign(50, 1);
     EXPECT_EQ(v.size(), 50u);
     EXPECT_INVARIANTS(v);
@@ -2097,7 +2097,7 @@ TEST(hive, Assign)
 TEST(hive, AssignFuzz)
 {
     std::mt19937 g;
-    plf::hive<int> v;
+    sg14::hive<int> v;
     for (int t = 0; t < 10; ++t) {
         size_t n = g() % 100'000;
         int x = g() % 20;
@@ -2111,7 +2111,7 @@ TEST(hive, AssignFuzz)
 TEST(hive, AssignOverloads)
 {
     int a[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    plf::hive<int> h;
+    sg14::hive<int> h;
     h.assign(a, a + 10);
     EXPECT_TRUE(std::equal(h.begin(), h.end(), a, a + 10));
     EXPECT_INVARIANTS(h);
@@ -2150,7 +2150,7 @@ TYPED_TEST(hivet, AssignOverloadsForRanges)
 TEST(hive, AssignIteratorPairFuzz)
 {
     std::mt19937 g;
-    plf::hive<int> h;
+    sg14::hive<int> h;
     for (int t = 0; t < 10; ++t) {
         size_t n = g() % 100'000;
         int x = g() % 20;
@@ -2169,7 +2169,7 @@ TEST(hive, PerfectForwarding)
         explicit S(int&&, int& i) : success(true) { i = 1; }
     };
 
-    plf::hive<S> v;
+    sg14::hive<S> v;
     int i = 0;
     v.emplace(7, i);
     EXPECT_EQ(v.size(), 1u);
@@ -2191,7 +2191,7 @@ TEST(hive, BasicEmplace)
         explicit S(int n) : number(n) {}
     };
 
-    plf::hive<S> v;
+    sg14::hive<S> v;
     for (int i = 0; i < 100; ++i) {
         v.emplace(i);
     }
@@ -2206,7 +2206,7 @@ TEST(hive, BasicEmplace)
 
 TEST(hive, MoveOnly)
 {
-    plf::hive<std::unique_ptr<int>> h;
+    sg14::hive<std::unique_ptr<int>> h;
     h.emplace(std::make_unique<int>(1));
     h.emplace(std::make_unique<int>(2));
     EXPECT_EQ(h.size(), 2u);
@@ -2221,7 +2221,7 @@ TEST(hive, NonCopyable)
         S(const S&) = delete;
         S& operator=(const S&) = delete;
     };
-    plf::hive<S> h;
+    sg14::hive<S> h;
     h.emplace(1);
     h.emplace(2);
     EXPECT_EQ(h.size(), 2u);
@@ -2232,9 +2232,9 @@ TEST(hive, NonCopyable)
 
 TEST(hive, Reshape)
 {
-#if !PLF_HIVE_P2596
-    plf::hive<int> h;
-    h.reshape(plf::hive_limits(50, 100));
+#if !SG14_HIVE_P2596
+    sg14::hive<int> h;
+    h.reshape(sg14::hive_limits(50, 100));
     EXPECT_EQ(h.block_capacity_limits().min, 50u);
     EXPECT_EQ(h.block_capacity_limits().max, 100u);
     EXPECT_TRUE(h.empty());
@@ -2253,7 +2253,7 @@ TEST(hive, Reshape)
     EXPECT_INVARIANTS(h);
 
     h.clear();
-    h.reshape(plf::hive_limits(200, 2000));
+    h.reshape(sg14::hive_limits(200, 2000));
     EXPECT_TRUE(h.empty());
     EXPECT_EQ(h.block_capacity_limits().min, 200u);
     EXPECT_EQ(h.block_capacity_limits().max, 2000u);
@@ -2265,12 +2265,12 @@ TEST(hive, Reshape)
     EXPECT_INVARIANTS(h);
 
     static_assert(noexcept(h.block_capacity_limits()), "");
-    plf::hive_limits soft = h.block_capacity_limits();
+    sg14::hive_limits soft = h.block_capacity_limits();
     EXPECT_EQ(soft.min, 200u);
     EXPECT_EQ(soft.max, 2000u);
 
     static_assert(noexcept(decltype(h)::block_capacity_hard_limits()), "");
-    plf::hive_limits hard = decltype(h)::block_capacity_hard_limits();
+    sg14::hive_limits hard = decltype(h)::block_capacity_hard_limits();
     EXPECT_EQ(hard.min, 3u);
     EXPECT_EQ(hard.max, 65535u);
 
@@ -2281,14 +2281,14 @@ TEST(hive, Reshape)
     EXPECT_EQ(h.capacity(), 5200u);
     EXPECT_INVARIANTS(h);
 
-    h.reshape(plf::hive_limits(500, 500));
+    h.reshape(sg14::hive_limits(500, 500));
     EXPECT_EQ(h.block_capacity_limits().min, 500u);
     EXPECT_EQ(h.block_capacity_limits().max, 500u);
     EXPECT_EQ(h.size(), 3301u);
     EXPECT_EQ(h.capacity(), 3500u);
     EXPECT_INVARIANTS(h);
 
-    h.reshape(plf::hive_limits(200, 200));
+    h.reshape(sg14::hive_limits(200, 200));
     EXPECT_EQ(h.size(), 3301u);
     EXPECT_EQ(h.capacity(), 3400u);
     EXPECT_INVARIANTS(h);
@@ -2299,8 +2299,8 @@ TEST(hive, SpliceLvalue)
 {
     std::vector<int> v1 = {1, 2, 3};
     std::vector<int> v2 = {11, 12};
-    plf::hive<int> h1(v1.begin(), v1.end());
-    plf::hive<int> h2(v2.begin(), v2.end());
+    sg14::hive<int> h1(v1.begin(), v1.end());
+    sg14::hive<int> h2(v2.begin(), v2.end());
 
     h1.splice(h2); // lvalue
     v1.insert(v1.end(), v2.begin(), v2.end());
@@ -2311,7 +2311,7 @@ TEST(hive, SpliceLvalue)
 
     static_assert(!noexcept(h1.splice(h2)));
 
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
     // Test the throwing case
     h1.reshape({5, 5});
     h2.reshape({10, 10});
@@ -2329,8 +2329,8 @@ TEST(hive, SpliceRvalue)
 {
     std::vector<int> v1 = {1, 2, 3};
     std::vector<int> v2 = {11, 12};
-    plf::hive<int> h1(v1.begin(), v1.end());
-    plf::hive<int> h2(v2.begin(), v2.end());
+    sg14::hive<int> h1(v1.begin(), v1.end());
+    sg14::hive<int> h2(v2.begin(), v2.end());
 
     h1.splice(std::move(h2)); // rvalue
     v1.insert(v1.end(), v2.begin(), v2.end());
@@ -2341,7 +2341,7 @@ TEST(hive, SpliceRvalue)
 
     static_assert(!noexcept(h1.splice(std::move(h2))));
 
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
     // Test the throwing case
     h1.reshape({5, 5});
     h2.reshape({10, 10});
@@ -2367,7 +2367,7 @@ TEST(hive, SpliceProperties)
     };
 
     if (true) {
-        plf::hive<S> h;
+        sg14::hive<S> h;
 
         static_assert(std::is_same<decltype(h.splice(h)), void>::value, "");
         static_assert(std::is_same<decltype(h.splice(std::move(h))), void>::value, "");
@@ -2376,14 +2376,14 @@ TEST(hive, SpliceProperties)
 
         // Splice from an empty hive
         h.emplace(1);
-        h.splice(plf::hive<S>());
+        h.splice(sg14::hive<S>());
         EXPECT_EQ(h.size(), 1u);
         EXPECT_INVARIANTS(h);
     }
     if (true) {
         // Splice to an empty hive
-        plf::hive<S> h1;
-        plf::hive<S> h2;
+        sg14::hive<S> h1;
+        sg14::hive<S> h2;
         h2.emplace(2);
         while (h2.size() != h2.capacity()) {
             h2.emplace(3);
@@ -2418,7 +2418,7 @@ TEST(hive, SpliceProperties)
 TEST(hive, SpliceLargeRandom)
 {
     std::mt19937 g;
-    plf::hive<int> h1(1000, 1);
+    sg14::hive<int> h1(1000, 1);
 
     for (int t = 0; t < 10; ++t) {
         for (auto it = h1.begin(); it != h1.end(); ++it) {
@@ -2429,7 +2429,7 @@ TEST(hive, SpliceLargeRandom)
         }
         EXPECT_INVARIANTS(h1);
 
-        plf::hive<int> h2(1000, t);
+        sg14::hive<int> h2(1000, t);
         for (auto it = h2.begin(); it != h2.end(); ++it) {
             if (g() & 1) {
                 it = h2.erase(it);
@@ -2454,9 +2454,9 @@ TEST(hive, SpliceLargeRandom)
 TEST(hive, SpliceRegressionTest)
 {
     int a[100] = {};
-    plf::hive<int> h;
+    sg14::hive<int> h;
     auto s = [&]() {
-        plf::hive<int> temp;
+        sg14::hive<int> temp;
         temp.reserve(100);
         h.splice(temp);
     };
@@ -2491,7 +2491,7 @@ TEST(hive, TrimDoesntMove)
         explicit S(int i) : i(i) {}
         S(S&&) { throw 42; }
     };
-    plf::hive<S> h = make_rope<plf::hive<S>>(10, 100);
+    sg14::hive<S> h = make_rope<sg14::hive<S>>(10, 100);
     for (int i=0; i < 100; ++i) {
         h.emplace(i);
     }
@@ -2520,7 +2520,7 @@ TEST(hive, TrimImmobileType)
         S& operator=(S&&) = delete;
         bool operator==(const S& rhs) const { return i_ == rhs.i_; }
     };
-    plf::hive<S> h = make_rope<plf::hive<S>>(4, 100);
+    sg14::hive<S> h = make_rope<sg14::hive<S>>(4, 100);
     for (int t = 0; t < 100; ++t) {
         for (int i = 0; i < 100; ++i) {
             h.emplace(g());
@@ -2567,11 +2567,11 @@ TYPED_TEST(hivet, TrimWhileEmpty)
 TEST(hive, StdErase)
 {
     std::mt19937 g;
-    plf::hive<int> h1;
+    sg14::hive<int> h1;
     for (int count = 0; count != 1000; ++count) {
         h1.insert(g() & 1);
     }
-    plf::hive<int> h2 = h1;
+    sg14::hive<int> h2 = h1;
     ASSERT_EQ(h1.size(), 1000u);
 
     int count0 = std::count(h1.begin(), h1.end(), 0);
@@ -2592,9 +2592,9 @@ TEST(hive, StdErase)
 
 TEST(hive, StdErase2)
 {
-    auto h = plf::hive<int>(100, 100);
+    auto h = sg14::hive<int>(100, 100);
     h.insert(100, 200);
-    plf::hive<int> h2 = h;
+    sg14::hive<int> h2 = h;
     ASSERT_EQ(h.size(), 200u);
 
     erase(h, 100);
@@ -2616,7 +2616,7 @@ TEST(hive, StdErase2)
 
 TEST(hive, StdEraseIf)
 {
-    plf::hive<int> h;
+    sg14::hive<int> h;
     for (int count = 0; count != 1000; ++count) {
         h.insert(count);
     }
@@ -2630,7 +2630,7 @@ TEST(hive, StdEraseIf)
 TEST(hive, ConstexprCtor)
 {
     struct S { S() {} };
-    static constinit plf::hive<S> h;
+    static constinit sg14::hive<S> h;
     EXPECT_TRUE(h.empty());
 }
 #endif
@@ -2644,14 +2644,14 @@ struct PmrGuard {
 
 TEST(hive, DefaultCtorDoesntAllocate)
 {
-    using Hive = plf::hive<int, std::pmr::polymorphic_allocator<int>>;
+    using Hive = sg14::hive<int, std::pmr::polymorphic_allocator<int>>;
     PmrGuard guard;
     Hive h;  // should not allocate
 }
 
 TEST(hive, TrimAndSpliceDontAllocate)
 {
-    using Hive = plf::hive<int, std::pmr::polymorphic_allocator<int>>;
+    using Hive = sg14::hive<int, std::pmr::polymorphic_allocator<int>>;
     Hive h1 = {1,2,3,4,5};
     h1.reserve(100);
     Hive h2 = {1,2,3,4};
@@ -2671,7 +2671,7 @@ TEST(hive, SortDoesntUseAllocator)
     PmrGuard guard;
     char buffer[1000];
     std::pmr::monotonic_buffer_resource mr(buffer, sizeof buffer);
-    using Hive = plf::hive<int, std::pmr::polymorphic_allocator<int>>;
+    using Hive = sg14::hive<int, std::pmr::polymorphic_allocator<int>>;
     Hive h(&mr);
     h = {3,1,4,1,5};
 
@@ -2693,7 +2693,7 @@ TEST(hive, PmrCorrectness)
 
     PmrGuard guard;
 
-    using Hive = plf::hive<int, std::pmr::polymorphic_allocator<int>>;
+    using Hive = sg14::hive<int, std::pmr::polymorphic_allocator<int>>;
     Hive h1(&mr);
     Hive h2({10, 10}, &mr);
     Hive h4(100, &mr);
@@ -2721,14 +2721,14 @@ TEST(hive, PmrCorrectness)
     he.insert(100, 42);
     hf.insert(100, 42);
 
-#if !PLF_HIVE_P2596
-    Hive h3(plf::hive_limits(10, 10), &mr);
+#if !SG14_HIVE_P2596
+    Hive h3(sg14::hive_limits(10, 10), &mr);
     Hive h5(100, {10, 10}, &mr);
-    Hive h6(100, plf::hive_limits(10, 10), &mr);
+    Hive h6(100, sg14::hive_limits(10, 10), &mr);
     Hive h8(100, 42, {10, 10}, &mr);
-    Hive h9(100, 42, plf::hive_limits(10, 10), &mr);
+    Hive h9(100, 42, sg14::hive_limits(10, 10), &mr);
     Hive hc({1, 2, 3, 4}, {10, 10}, &mr);
-    Hive hd({1, 2, 3, 4}, plf::hive_limits(10, 10), &mr);
+    Hive hd({1, 2, 3, 4}, sg14::hive_limits(10, 10), &mr);
 
     EXPECT_EQ(h3.size(), 0u);
     EXPECT_EQ(h5.size(), 100u);
@@ -2761,9 +2761,9 @@ TEST(hive, PmrCorrectness)
 
 TEST(hive, PmrCorrectReshape)
 {
-    plf::hive<int, std::pmr::polymorphic_allocator<int>> h(10);
+    sg14::hive<int, std::pmr::polymorphic_allocator<int>> h(10);
     PmrGuard guard;
-#if PLF_HIVE_P2596
+#if SG14_HIVE_P2596
     h.reshape(400);
 #else
     h.reshape({4, 4});
@@ -2774,9 +2774,9 @@ TEST(hive, PmrCorrectReshape)
 
 TEST(hive, PmrCorrectShrinkToFit)
 {
-    plf::hive<int, std::pmr::polymorphic_allocator<int>> h(10);
+    sg14::hive<int, std::pmr::polymorphic_allocator<int>> h(10);
     PmrGuard guard;
-#if PLF_HIVE_P2596
+#if SG14_HIVE_P2596
     h.reshape(400);
 #else
     h.reshape({4, 4});
@@ -2790,11 +2790,11 @@ TEST(hive, PmrCorrectShrinkToFit)
 TEST(hive, PmrCorrectAllocAwareCtors)
 {
     std::pmr::monotonic_buffer_resource mr(10'000);
-    plf::hive<int, std::pmr::polymorphic_allocator<int>> h1(10);
+    sg14::hive<int, std::pmr::polymorphic_allocator<int>> h1(10);
     {
         PmrGuard guard;
         std::pmr::unsynchronized_pool_resource mr(std::pmr::new_delete_resource());
-        plf::hive<int, std::pmr::polymorphic_allocator<int>> h2(h1, &mr);
+        sg14::hive<int, std::pmr::polymorphic_allocator<int>> h2(h1, &mr);
         EXPECT_EQ(h2.size(), 10u);
         EXPECT_INVARIANTS(h2);
     }
@@ -2803,7 +2803,7 @@ TEST(hive, PmrCorrectAllocAwareCtors)
     {
         PmrGuard guard;
         std::pmr::unsynchronized_pool_resource mr(std::pmr::new_delete_resource());
-        plf::hive<int, std::pmr::polymorphic_allocator<int>> h3(std::move(h1), &mr);
+        sg14::hive<int, std::pmr::polymorphic_allocator<int>> h3(std::move(h1), &mr);
         EXPECT_EQ(h3.size(), 10u);
         EXPECT_INVARIANTS(h3);
     }
@@ -2813,7 +2813,7 @@ TEST(hive, PmrCorrectAllocAwareCtors)
 
 TEST(hive, RangeInsertRegressionTest)
 {
-  auto h = plf::hive<int>(100, 42);
+  auto h = sg14::hive<int>(100, 42);
   h.erase(std::next(h.begin()));
   h.erase(std::next(h.begin()));
   EXPECT_EQ(h.size(), 98);

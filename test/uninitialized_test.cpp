@@ -46,12 +46,12 @@ TEST(uninitialized_value_construct, Basic)
         auto m = (lifetest*)malloc(sizeof(lifetest) * n);
         lifetest::reset();
 
-        stdext::uninitialized_value_construct(m, m + n);
+        sg14::uninitialized_value_construct(m, m + n);
         ASSERT_EQ(lifetest::construct, n);
         ASSERT_EQ(lifetest::destruct, 0);
         ASSERT_EQ(lifetest::move, 0);
 
-        stdext::destruct(m, m + n);
+        sg14::destroy(m, m + n);
         ASSERT_EQ(lifetest::construct, n);
         ASSERT_EQ(lifetest::destruct, n);
         ASSERT_EQ(lifetest::move, 0);
@@ -60,7 +60,7 @@ TEST(uninitialized_value_construct, Basic)
     }
 
     auto m = (int*)malloc(sizeof(int) * 5);
-    stdext::uninitialized_value_construct(m, m + 5);
+    sg14::uninitialized_value_construct(m, m + 5);
     assert(std::all_of(m, m + 5, [](int x) { return x == 0; }));
     free(m);
 }
@@ -71,18 +71,18 @@ TEST(uninitialized_default_construct, Basic)
         auto mem1 = (lifetest*)malloc(sizeof(lifetest) * n);
         lifetest::reset();
 
-        stdext::uninitialized_default_construct(mem1, mem1 + n);
+        sg14::uninitialized_default_construct(mem1, mem1 + n);
         ASSERT_EQ(lifetest::construct, n);
         ASSERT_EQ(lifetest::destruct, 0);
         ASSERT_EQ(lifetest::move, 0);
 
         auto mem2 = (lifetest*)malloc(sizeof(lifetest) * n);
-        stdext::uninitialized_move(mem1, mem1 + n, mem2);
+        sg14::uninitialized_move(mem1, mem1 + n, mem2);
         ASSERT_EQ(lifetest::construct, n);
         ASSERT_EQ(lifetest::destruct, 0);
         ASSERT_EQ(lifetest::move, n);
 
-        stdext::destruct(mem2, mem2 + n);
+        sg14::destroy(mem2, mem2 + n);
         ASSERT_EQ(lifetest::construct, n);
         ASSERT_EQ(lifetest::destruct, n);
         ASSERT_EQ(lifetest::move, n);

@@ -36,7 +36,7 @@
 #include <iterator>
 #include <vector>
 
-namespace stdext {
+namespace sg14 {
 
 namespace flatmap_detail {
     template<class T, class = void> struct qualifies_as_range : std::false_type {};
@@ -646,7 +646,7 @@ public:
 
     template<class InputIterator,
              class = typename std::enable_if<flatmap_detail::qualifies_as_input_iterator<InputIterator>::value>::type>
-    void insert(stdext::sorted_unique_t, InputIterator first, InputIterator last) {
+    void insert(sg14::sorted_unique_t, InputIterator first, InputIterator last) {
         // TODO: if InputIterator is bidirectional, this loop should (go backward??)
         // TODO: if we're inserting lots of elements, stick them at the end and then sort
         auto it = begin();
@@ -667,7 +667,7 @@ public:
         this->insert(il.begin(), il.end());
     }
 
-    void insert(stdext::sorted_unique_t s, std::initializer_list<value_type> il) {
+    void insert(sg14::sorted_unique_t s, std::initializer_list<value_type> il) {
         this->insert(s, il.begin(), il.end());
     }
 
@@ -1219,4 +1219,4 @@ flat_map(sorted_unique_t, std::initializer_list<std::pair<const Key, T>>, Alloca
 
 #endif
 
-} // namespace stdext
+} // namespace sg14

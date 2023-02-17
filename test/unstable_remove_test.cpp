@@ -35,15 +35,15 @@ TEST(unstable_remove, all)
 
     auto partitionfn = [&](std::vector<foo>& f)
     {
-        stdext::partition(f.begin(), f.end(), cmp);
+        std::partition(f.begin(), f.end(), cmp);
     };
     auto unstablefn = [&](std::vector<foo>& f)
     {
-        stdext::unstable_remove_if(f.begin(), f.end(), cmp);
+        (void)sg14::unstable_remove_if(f.begin(), f.end(), cmp);
     };
     auto removefn = [&](std::vector<foo>& f)
     {
-        stdext::remove_if(f.begin(), f.end(), cmp);
+        (void)std::remove_if(f.begin(), f.end(), cmp);
     };
     auto time = [&](auto&& f)
     {

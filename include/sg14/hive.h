@@ -19,27 +19,26 @@
 //  misrepresented as being the original software.
 // 3. This notice may not be removed or altered from any source distribution.
 
-#ifndef PLF_HIVE_H
-#define PLF_HIVE_H
+#pragma once
 
-#ifndef PLF_HIVE_P2596
- #define PLF_HIVE_P2596 1
+#ifndef SG14_HIVE_P2596
+ #define SG14_HIVE_P2596 1
 #endif
 
-#ifndef PLF_HIVE_RANDOM_ACCESS_ITERATORS
- #define PLF_HIVE_RANDOM_ACCESS_ITERATORS 0
+#ifndef SG14_HIVE_RANDOM_ACCESS_ITERATORS
+ #define SG14_HIVE_RANDOM_ACCESS_ITERATORS 0
 #endif
 
-#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
- #define PLF_HIVE_RELATIONAL_OPERATORS 1  // random access iterators require relational operators
+#if SG14_HIVE_RANDOM_ACCESS_ITERATORS
+ #define SG14_HIVE_RELATIONAL_OPERATORS 1  // random access iterators require relational operators
 #endif
 
-#ifndef PLF_HIVE_RELATIONAL_OPERATORS
- #define PLF_HIVE_RELATIONAL_OPERATORS 1
+#ifndef SG14_HIVE_RELATIONAL_OPERATORS
+ #define SG14_HIVE_RELATIONAL_OPERATORS 1
 #endif
 
-#ifndef PLF_HIVE_DEBUGGING
- #define PLF_HIVE_DEBUGGING 0
+#ifndef SG14_HIVE_DEBUGGING
+ #define SG14_HIVE_DEBUGGING 0
 #endif
 
 #include <algorithm>
@@ -67,7 +66,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace plf {
+namespace sg14 {
 
 // Polyfill std::type_identity_t
 template<class T> struct hive_identity { using type = T; };
@@ -103,7 +102,7 @@ static inline void hive_try_finally(F&& task, R&& finally) {
     task();
 }
 
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
 struct hive_limits {
     constexpr hive_limits(size_t mn, size_t mx) noexcept : min(mn), max(mx) {}
     size_t min, max;
@@ -119,7 +118,7 @@ namespace hive_priority {
     };
 }
 
-template <class T, class allocator_type = std::allocator<T>, class priority = plf::hive_priority::performance>
+template <class T, class allocator_type = std::allocator<T>, class priority = sg14::hive_priority::performance>
 class hive {
     template<bool IsConst> class hive_iterator;
     template<bool IsConst> class hive_reverse_iterator;
@@ -217,12 +216,12 @@ private:
             // as an indication to remove the group. Also used in combination with capacity to check if group is full.
         GroupPtr next_erasure_ = nullptr;
             // The next group in the singly-linked list of groups with erasures ie. with active erased-element free lists. nullptr if no next group.
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
         size_type groupno_ = 0;
             // Used for comparison (> < >= <= <=>) iterator operators (used by distance function and user).
 #endif
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
         inline size_t group_number() const { return groupno_; }
         inline void set_group_number(size_type x) { groupno_ = x; }
 #else
@@ -230,7 +229,7 @@ private:
         inline void set_group_number(size_type) { }
 #endif
 
-#if PLF_HIVE_DEBUGGING
+#if SG14_HIVE_DEBUGGING
         void debug_dump() {
             printf(
                 "  group #%zu [%zu/%zu used] (last_endpoint=%p, elts=%p, skipfield=%p, freelist=%zu, erasenext=%p)",
@@ -261,7 +260,7 @@ private:
                 printf(" [%d]\n", int(skipfield(capacity)));
             }
         }
-#endif // PLF_HIVE_DEBUGGING
+#endif // SG14_HIVE_DEBUGGING
 
         explicit group(skipfield_type cap) :
             last_endpoint(addr_of_element(0)), capacity(cap)
@@ -300,16 +299,16 @@ private:
         skipfield_type idx_ = 0;
 
     public:
-#if PLF_HIVE_DEBUGGING
+#if SG14_HIVE_DEBUGGING
         void debug_dump() const {
             printf("iterator(");
             if (group_) printf("#%zu", group_->group_number());
             else printf("null");
             printf(", %zu)\n", size_t(idx_));
         }
-#endif // PLF_HIVE_DEBUGGING
+#endif // SG14_HIVE_DEBUGGING
 
-#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+#if SG14_HIVE_RANDOM_ACCESS_ITERATORS
         using iterator_category = std::random_access_iterator_tag;
 #else
         using iterator_category = std::bidirectional_iterator_tag;
@@ -354,7 +353,7 @@ private:
         friend bool operator!=(const hive_iterator& a, const hive_iterator& b) { return a.group_ != b.group_ || a.idx_ != b.idx_; }
 #endif
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
 #if __cpp_impl_three_way_comparison >= 201907
         friend std::strong_ordering operator<=>(const hive_iterator& a, const hive_iterator& b) {
             return a.group_ == b.group_ ?
@@ -617,7 +616,7 @@ private:
         }
 
         difference_type distance(hive_iterator last) const {
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
             if (last < *this) {
                 return -last.distance_forward(*this);
             }
@@ -625,7 +624,7 @@ private:
             return distance_forward(last);
         }
 
-#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+#if SG14_HIVE_RANDOM_ACCESS_ITERATORS
         friend hive_iterator& operator+=(hive_iterator& a, difference_type n) { a.advance(n); return a; }
         friend hive_iterator& operator-=(hive_iterator& a, difference_type n) { a.advance(-n); return a; }
         friend hive_iterator operator+(const hive_iterator& a, difference_type n) { return a.next(n); }
@@ -641,7 +640,7 @@ private:
         hive_iterator<IsConst> it_;
 
     public:
-#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+#if SG14_HIVE_RANDOM_ACCESS_ITERATORS
         using iterator_category = std::random_access_iterator_tag;
 #else
         using iterator_category = std::bidirectional_iterator_tag;
@@ -672,7 +671,7 @@ private:
         friend bool operator!=(const hive_reverse_iterator& a, const hive_reverse_iterator& b) { return b.it_ != a.it_; }
 #endif
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
 #if __cpp_impl_three_way_comparison >= 201907
         friend std::strong_ordering operator<=>(const hive_reverse_iterator& a, const hive_reverse_iterator& b) { return (b.it_ <=> a.it_); }
 #else
@@ -712,7 +711,7 @@ private:
             it_.advance(-n);
         }
 
-#if PLF_HIVE_RANDOM_ACCESS_ITERATORS
+#if SG14_HIVE_RANDOM_ACCESS_ITERATORS
         friend hive_reverse_iterator& operator+=(hive_reverse_iterator& a, difference_type n) { a.advance(n); return a; }
         friend hive_reverse_iterator& operator-=(hive_reverse_iterator& a, difference_type n) { a.advance(-n); return a; }
         friend hive_reverse_iterator operator+(const hive_reverse_iterator& a, difference_type n) { return a.next(n); }
@@ -725,9 +724,9 @@ private:
 
 public:
     void assert_invariants() const {
-#if PLF_HIVE_DEBUGGING
+#if SG14_HIVE_DEBUGGING
         assert(size_ <= capacity_);
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
         assert(min_group_capacity_ <= max_group_capacity_);
 #endif
         if (size_ == 0) {
@@ -760,7 +759,7 @@ public:
         size_type total_size = 0;
         size_type total_cap = 0;
         for (GroupPtr g = begin_.group_; g != nullptr; g = g->next_group) {
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
             assert(min_group_capacity_ <= g->capacity);
             assert(g->capacity <= max_group_capacity_);
 #endif
@@ -783,7 +782,7 @@ public:
             if (g->size != g->capacity && g->next_group != nullptr) {
                 assert(!g->is_packed());
             }
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
             if (g->next_group != nullptr) {
                 assert(g->group_number() < g->next_group->group_number());
             }
@@ -810,7 +809,7 @@ public:
         assert(total_size == size_);
         assert((unused_groups_ != nullptr) == (unused_groups_tail_ != nullptr));
         for (GroupPtr g = unused_groups_; g != nullptr; g = g->next_group) {
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
             assert(min_group_capacity_ <= g->capacity);
             assert(g->capacity <= max_group_capacity_);
 #endif
@@ -834,12 +833,12 @@ public:
     }
 
     void debug_dump() const {
-#if PLF_HIVE_DEBUGGING
+#if SG14_HIVE_DEBUGGING
         printf(
             "hive [%zu/%zu used] (erase=%p, unused=%p, mincap=%zu, maxcap=%zu)\n",
             size_t(size_), size_t(capacity_),
             groups_with_erasures_, unused_groups_,
-#if PLF_HIVE_P2596
+#if SG14_HIVE_P2596
             size_t(impl_min_block_size()), size_t(impl_max_block_size())
 #else
             size_t(min_group_capacity_), size_t(max_group_capacity_)
@@ -870,7 +869,7 @@ public:
             printf(" %zu", g->group_number());
         }
         printf("\n");
-#endif // PLF_HIVE_DEBUGGING
+#endif // SG14_HIVE_DEBUGGING
     }
 
 private:
@@ -882,13 +881,13 @@ private:
     size_type size_ = 0;
     size_type capacity_ = 0;
     allocator_type allocator_;
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
     skipfield_type min_group_capacity_ = block_capacity_hard_limits().min;
     skipfield_type max_group_capacity_ = block_capacity_hard_limits().max;
 #endif
 
-#if !PLF_HIVE_P2596
-    static inline void check_limits(plf::hive_limits soft) {
+#if !SG14_HIVE_P2596
+    static inline void check_limits(sg14::hive_limits soft) {
         auto hard = block_capacity_hard_limits();
         if (!(hard.min <= soft.min && soft.min <= soft.max && soft.max <= hard.max)) {
             throw std::length_error("Supplied limits are outside the allowable range");
@@ -914,7 +913,7 @@ private:
         capacity_ = 0;
     }
 
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
     void renumber_all_groups() {
         size_type groupno = 0;
         for (GroupPtr g = begin_.group_; g != nullptr; g = g->next_group) {
@@ -930,7 +929,7 @@ public:
     explicit hive(const allocator_type &alloc) : allocator_(alloc) {}
     hive(const hive& h) : hive(h, std::allocator_traits<allocator_type>::select_on_container_copy_construction(h.allocator_)) {}
 
-#if PLF_HIVE_P2596
+#if SG14_HIVE_P2596
     hive(const hive& h, const hive_identity_t<allocator_type>& alloc) :
         allocator_(alloc)
     {
@@ -938,14 +937,14 @@ public:
         range_assign_impl(h.begin(), h.end());
     }
 #else
-    explicit hive(plf::hive_limits limits) :
+    explicit hive(sg14::hive_limits limits) :
         min_group_capacity_(static_cast<skipfield_type>(limits.min)),
         max_group_capacity_(static_cast<skipfield_type>(limits.max))
     {
         check_limits(limits);
     }
 
-    hive(plf::hive_limits limits, const allocator_type &alloc) :
+    hive(sg14::hive_limits limits, const allocator_type &alloc) :
         allocator_(alloc),
         min_group_capacity_(static_cast<skipfield_type>(limits.min)),
         max_group_capacity_(static_cast<skipfield_type>(limits.max))
@@ -972,7 +971,7 @@ public:
         size_(source.size_),
         capacity_(source.capacity_),
         allocator_(source.get_allocator())
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
         , min_group_capacity_(source.min_group_capacity_)
         , max_group_capacity_(source.max_group_capacity_)
 #endif
@@ -991,7 +990,7 @@ public:
         if (should_use_source_allocator) {
             *this = std::move(source);
         } else {
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
             reshape(source.block_capacity_limits());
 #endif
             reserve(source.size());
@@ -1032,8 +1031,8 @@ public:
         assign(il.begin(), il.end());
     }
 
-#if !PLF_HIVE_P2596
-    hive(size_type n, const T& value, plf::hive_limits limits, const allocator_type &alloc = allocator_type()) :
+#if !SG14_HIVE_P2596
+    hive(size_type n, const T& value, sg14::hive_limits limits, const allocator_type &alloc = allocator_type()) :
         allocator_(alloc),
         min_group_capacity_(static_cast<skipfield_type>(limits.min)),
         max_group_capacity_(static_cast<skipfield_type>(limits.max))
@@ -1042,7 +1041,7 @@ public:
         assign(n, value);
     }
 
-    hive(size_type n, plf::hive_limits limits, const allocator_type &alloc = allocator_type()) :
+    hive(size_type n, sg14::hive_limits limits, const allocator_type &alloc = allocator_type()) :
         allocator_(alloc),
         min_group_capacity_(static_cast<skipfield_type>(limits.min)),
         max_group_capacity_(static_cast<skipfield_type>(limits.max))
@@ -1052,7 +1051,7 @@ public:
     }
 
     template<class It, class = std::enable_if_t<!std::is_integral<It>::value>>
-    hive(It first, It last, plf::hive_limits limits, const allocator_type &alloc = allocator_type()) :
+    hive(It first, It last, sg14::hive_limits limits, const allocator_type &alloc = allocator_type()) :
         allocator_(alloc),
         min_group_capacity_(static_cast<skipfield_type>(limits.min)),
         max_group_capacity_(static_cast<skipfield_type>(limits.max))
@@ -1061,7 +1060,7 @@ public:
         assign(std::move(first), std::move(last));
     }
 
-    hive(std::initializer_list<T> il, plf::hive_limits limits, const allocator_type &alloc = allocator_type()):
+    hive(std::initializer_list<T> il, sg14::hive_limits limits, const allocator_type &alloc = allocator_type()):
         allocator_(alloc),
         min_group_capacity_(static_cast<skipfield_type>(limits.min)),
         max_group_capacity_(static_cast<skipfield_type>(limits.max))
@@ -1087,10 +1086,10 @@ public:
         assign_range(std::forward<R>(rg));
     }
 
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
     template<std::ranges::input_range R>
         requires std::convertible_to<std::ranges::range_reference_t<R>, T>
-    explicit hive(std::from_range_t, R&& rg, plf::hive_limits limits, const allocator_type &alloc = allocator_type()) :
+    explicit hive(std::from_range_t, R&& rg, sg14::hive_limits limits, const allocator_type &alloc = allocator_type()) :
         allocator_(alloc),
         min_group_capacity_(static_cast<skipfield_type>(limits.min)),
         max_group_capacity_(static_cast<skipfield_type>(limits.max))
@@ -1098,7 +1097,7 @@ public:
         check_limits(limits);
         assign_range(std::forward<R>(rg));
     }
-#endif // !PLF_HIVE_P2596
+#endif // !SG14_HIVE_P2596
 #endif // __cpp_lib_ranges >= 201911 && __cpp_lib_ranges_to_container >= 202202
 
     ~hive() {
@@ -1682,7 +1681,7 @@ public:
         swap(unused_groups_tail_, source.unused_groups_tail_);
         swap(size_, source.size_);
         swap(capacity_, source.capacity_);
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
         swap(min_group_capacity_, source.min_group_capacity_);
         swap(max_group_capacity_, source.max_group_capacity_);
 #endif
@@ -1724,7 +1723,7 @@ public:
             throw std::length_error("Result of splice would exceed max_size()");
         }
 
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
         if (source.min_group_capacity_ < min_group_capacity_ || source.max_group_capacity_ > max_group_capacity_) {
             for (GroupPtr it = source.begin_.group_; it != nullptr; it = it->next_group) {
                 if (it->capacity < min_group_capacity_ || it->capacity > max_group_capacity_) {
@@ -1765,7 +1764,7 @@ public:
                 source.begin_.group_->prev_group = end_.group_;
                 if (end_.group_ != nullptr) {
                     end_.group_->next_group = source.begin_.group_;
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
                     if (source.begin_.group_->group_number() <= end_.group_->group_number()) {
                         renumber_all_groups();
                     }
@@ -1993,7 +1992,7 @@ private:
     }
 
     inline void update_subsequent_group_numbers(GroupPtr g) {
-#if PLF_HIVE_RELATIONAL_OPERATORS
+#if SG14_HIVE_RELATIONAL_OPERATORS
         do {
             g->groupno_ -= 1;
             g = g->next_group;
@@ -2085,7 +2084,7 @@ public:
     inline size_type max_size() const noexcept { return std::allocator_traits<allocator_type>::max_size(get_allocator()); }
     inline size_type capacity() const noexcept { return capacity_; }
 
-#if PLF_HIVE_P2596
+#if SG14_HIVE_P2596
     inline size_type max_block_size() const noexcept {
         size_type a = impl_max_block_size();
         size_type b = max_size();
@@ -2100,7 +2099,7 @@ private:
     inline size_type recommend_block_size() const {
         size_type r = size_;
         if (r < 8) r = 8;
-#if PLF_HIVE_P2596
+#if SG14_HIVE_P2596
         if (r > impl_max_block_size()) r = impl_max_block_size();
 #else
         if (r < min_group_capacity_) r = min_group_capacity_;
@@ -2190,7 +2189,7 @@ private:
     }
 
 public:
-#if PLF_HIVE_P2596
+#if SG14_HIVE_P2596
     bool reshape(size_type min, size_type n = 0) {
         if (n > max_size()) {
             throw std::length_error("n must be at most max_size()");
@@ -2227,7 +2226,7 @@ public:
         }
     }
 #else
-    void reshape(plf::hive_limits limits) {
+    void reshape(sg14::hive_limits limits) {
         check_limits(limits);
         assert_invariants();
 
@@ -2245,12 +2244,12 @@ public:
         max_group_capacity_ = limits.max;
     }
 
-    inline plf::hive_limits block_capacity_limits() const noexcept {
-        return plf::hive_limits(min_group_capacity_, max_group_capacity_);
+    inline sg14::hive_limits block_capacity_limits() const noexcept {
+        return sg14::hive_limits(min_group_capacity_, max_group_capacity_);
     }
 
-    static constexpr plf::hive_limits block_capacity_hard_limits() noexcept {
-        return plf::hive_limits(impl_min_block_size(), std::numeric_limits<skipfield_type>::max());
+    static constexpr sg14::hive_limits block_capacity_hard_limits() noexcept {
+        return sg14::hive_limits(impl_min_block_size(), std::numeric_limits<skipfield_type>::max());
     }
 #endif
 
@@ -2297,7 +2296,7 @@ public:
                 unused_groups_tail_ = std::move(source.unused_groups_tail_);
                 size_ = source.size_;
                 capacity_ = source.capacity_;
-#if !PLF_HIVE_P2596
+#if !SG14_HIVE_P2596
                 min_group_capacity_ = source.min_group_capacity_;
                 max_group_capacity_ = source.max_group_capacity_;
 #endif
@@ -2323,7 +2322,7 @@ public:
     }
 
     void shrink_to_fit() {
-#if PLF_HIVE_P2596
+#if SG14_HIVE_P2596
         const size_type min = impl_min_block_size();
         const size_type max = impl_max_block_size();
 #else
@@ -2374,7 +2373,7 @@ public:
     }
 
     void reserve(size_type n) {
-#if PLF_HIVE_P2596
+#if SG14_HIVE_P2596
         reserve_impl(n, impl_min_block_size(), impl_max_block_size());
 #else
         reserve_impl(n, min_group_capacity_, max_group_capacity_);
@@ -2460,15 +2459,15 @@ public:
     }
 
     inline size_type unique() { return unique(std::equal_to<T>()); }
-}; // hive
+};
 
-} // namespace plf
+} // namespace sg14
 
 namespace std {
 
     template<class T, class A, class P, class Pred>
-    typename plf::hive<T, A, P>::size_type erase_if(plf::hive<T, A, P>& h, Pred pred) {
-        typename plf::hive<T, A, P>::size_type count = 0;
+    typename sg14::hive<T, A, P>::size_type erase_if(sg14::hive<T, A, P>& h, Pred pred) {
+        typename sg14::hive<T, A, P>::size_type count = 0;
         auto end = h.end();
         for (auto it = h.begin(); it != end; ++it) {
             if (pred(*it)) {
@@ -2492,9 +2491,7 @@ namespace std {
     }
 
     template<class T, class A, class P>
-    inline typename plf::hive<T, A, P>::size_type erase(plf::hive<T, A, P>& h, const T& value) {
+    inline typename sg14::hive<T, A, P>::size_type erase(sg14::hive<T, A, P>& h, const T& value) {
         return std::erase_if(h, [&](const T &x) { return x == value; });
     }
 } // namespace std
-
-#endif // PLF_HIVE_H

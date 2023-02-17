@@ -1,4 +1,4 @@
-#include <sg14/ring.h>
+#include <sg14/ring_span.h>
 
 #include <gtest/gtest.h>
 

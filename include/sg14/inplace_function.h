@@ -34,7 +34,7 @@
 #define SG14_INPLACE_FUNCTION_THROW(x) throw (x)
 #endif
 
-namespace stdext {
+namespace sg14 {
 
 namespace inplace_function_detail {
 
@@ -379,4 +379,4 @@ private:
     }
 };
 
-} // namespace stdext
+} // namespace sg14

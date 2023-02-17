@@ -36,7 +36,7 @@
 #include <iterator>
 #include <vector>
 
-namespace stdext {
+namespace sg14 {
 
 namespace flatset_detail {
     template<class T, class = void> struct qualifies_as_range : std::false_type {};
@@ -759,4 +759,4 @@ flat_set(InputIterator, InputIterator, Allocator, int=0/*to please MSVC*/)
 
 #endif
 
-} // namespace stdext
+} // namespace sg14

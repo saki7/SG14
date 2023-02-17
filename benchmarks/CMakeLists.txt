@@ -2,7 +2,7 @@
 find_package(benchmark REQUIRED)
 
 set(BENCH_SOURCE_FILES
-    hive_bench.cpp
+    dummy_bench.cpp
 )
 
 set(BENCH_NAME ubench)

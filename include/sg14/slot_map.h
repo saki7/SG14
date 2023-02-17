@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <initializer_list>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -35,7 +36,7 @@
 #define SLOT_MAP_THROW_EXCEPTION(type, ...) throw type(__VA_ARGS__)
 #endif
 
-namespace stdext {
+namespace sg14 {
 
 namespace slot_map_detail {
 
@@ -108,6 +109,15 @@ public:
     constexpr slot_map& operator=(const slot_map&) = default;
     constexpr slot_map& operator=(slot_map&&) = default;
     ~slot_map() = default;
+
+    constexpr slot_map(std::initializer_list<mapped_type> il) : slot_map(il.begin(), il.end()) {}
+
+    template<class It, class = std::enable_if_t<!std::is_integral<It>::value>>
+    constexpr slot_map(It first, It last) {
+        for ( ; first != last; ++first) {
+            insert(*first);
+        }
+    }
 
     // The at() functions have both generation counter checking
     // and bounds checking, and throw if either check fails.
@@ -376,4 +386,4 @@ constexpr void swap(slot_map<T, Key, Container>& lhs, slot_map<T, Key, Container
     lhs.swap(rhs);
 }
 
-} // namespace stdext
+} // namespace sg14

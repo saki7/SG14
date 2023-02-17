@@ -15,15 +15,15 @@
 template<class T> struct flat_mapt : testing::Test {};
 
 using flat_mapt_types = testing::Types<
-    stdext::flat_map<int, const char*>                                                // basic
-    , stdext::flat_map<int, const char*, std::greater<int>>                           // custom comparator
+    sg14::flat_map<int, const char*>                                                // basic
+    , sg14::flat_map<int, const char*, std::greater<int>>                           // custom comparator
 #if __cplusplus >= 201402L
-    , stdext::flat_map<int, const char*, std::greater<>>                              // transparent comparator
+    , sg14::flat_map<int, const char*, std::greater<>>                              // transparent comparator
 #endif
-    , stdext::flat_map<int, const char*, std::less<int>, std::deque<int>>             // custom container
+    , sg14::flat_map<int, const char*, std::less<int>, std::deque<int>>             // custom container
 #if __cpp_lib_memory_resource >= 201603
-    , stdext::flat_map<int, const char*, std::less<int>, std::pmr::vector<int>>       // pmr container
-    , stdext::flat_map<int, std::pmr::string, std::less<int>, std::pmr::vector<int>>  // uses-allocator construction
+    , sg14::flat_map<int, const char*, std::less<int>, std::pmr::vector<int>>       // pmr container
+    , sg14::flat_map<int, std::pmr::string, std::less<int>, std::pmr::vector<int>>  // uses-allocator construction
 #endif
 >;
 TYPED_TEST_SUITE(flat_mapt, flat_mapt_types);
@@ -48,7 +48,7 @@ private:
 
 TEST(flat_map, AmbiguousErase)
 {
-    stdext::flat_map<AmbiguousEraseWidget, int> fs;
+    sg14::flat_map<AmbiguousEraseWidget, int> fs;
     fs.emplace("a", 1);
     fs.emplace("b", 2);
     fs.emplace("c", 3);
@@ -68,7 +68,7 @@ TEST(flat_map, ExtractDoesntSwap)
     {
         std::pmr::monotonic_buffer_resource mr;
         std::pmr::polymorphic_allocator<int> a(&mr);
-        stdext::flat_map<int, int, std::less<>, std::pmr::vector<int>, std::pmr::vector<int>> fs({{1, 10}, {2, 20}}, a);
+        sg14::flat_map<int, int, std::less<>, std::pmr::vector<int>, std::pmr::vector<int>> fs({{1, 10}, {2, 20}}, a);
         auto ctrs = std::move(fs).extract();
         assert(ctrs.keys.get_allocator() == a);
         assert(ctrs.values.get_allocator() == a);
@@ -78,7 +78,7 @@ TEST(flat_map, ExtractDoesntSwap)
     // Sanity-check with std::allocator, even though this can't fail.
     {
         std::allocator<int> a;
-        stdext::flat_map<int, int, std::less<>, std::vector<int>, std::vector<int>> fs({{1, 10}, {2, 20}}, a);
+        sg14::flat_map<int, int, std::less<>, std::vector<int>, std::vector<int>> fs({{1, 10}, {2, 20}}, a);
         auto ctrs = std::move(fs).extract();
         assert(ctrs.keys.get_allocator() == a);
         assert(ctrs.values.get_allocator() == a);
@@ -116,7 +116,7 @@ int InstrumentedWidget::copy_ctors = 0;
 
 TEST(flat_map, MoveOperationsPilferOwnership)
 {
-    using FS = stdext::flat_map<InstrumentedWidget, int>;
+    using FS = sg14::flat_map<InstrumentedWidget, int>;
     InstrumentedWidget::move_ctors = 0;
     InstrumentedWidget::copy_ctors = 0;
     FS fs;
@@ -153,15 +153,15 @@ TEST(flat_map, MoveOperationsPilferOwnership)
 
 TEST(flat_map, SortedUniqueConstruction)
 {
-    auto a = stdext::sorted_unique;
-    stdext::sorted_unique_t b;
-    stdext::sorted_unique_t c{};
+    auto a = sg14::sorted_unique;
+    sg14::sorted_unique_t b;
+    sg14::sorted_unique_t c{};
     (void)a; (void)b; (void)c;
 
 #if 0 // TODO: GCC cannot compile this
     struct explicitness_tester {
         bool test(std::vector<int>) { return true; }
-        bool test(stdext::sorted_unique_t) { return false; }
+        bool test(sg14::sorted_unique_t) { return false; }
     };
     explicitness_tester tester;
     assert(tester.test({}) == true);
@@ -170,8 +170,8 @@ TEST(flat_map, SortedUniqueConstruction)
 
 TEST(flat_map, TryEmplace)
 {
-    stdext::flat_map<int, InstrumentedWidget> fm;
-    std::pair<stdext::flat_map<int, InstrumentedWidget>::iterator, bool> pair;
+    sg14::flat_map<int, InstrumentedWidget> fm;
+    std::pair<sg14::flat_map<int, InstrumentedWidget>::iterator, bool> pair;
     if (true) {
         // try_emplace for a non-existent key does move-from.
         InstrumentedWidget w("abc");
@@ -228,7 +228,7 @@ TEST(flat_map, TryEmplace)
 
 TEST(flat_map, VectorBool)
 {
-    using FM = stdext::flat_map<bool, bool>;
+    using FM = sg14::flat_map<bool, bool>;
     FM fm;
     auto it_inserted = fm.emplace(true, false);
     assert(it_inserted.second);
@@ -285,7 +285,7 @@ static auto flatmap_is_ctadable_from(long, Args&&...)
 
 TEST(flat_map, DeductionGuides)
 {
-    using stdext::flat_map;
+    using sg14::flat_map;
 #if defined(__cpp_deduction_guides)
     if (true) {
         // flat_map(Container)
@@ -306,7 +306,7 @@ TEST(flat_map, DeductionGuides)
         flat_map fm5(il);
         static_assert(std::is_same_v<decltype(fm5), flat_map<int, std::string>>);
         assert(fm5.size() == 3);
-        assert(( fm5 == decltype(fm5)(stdext::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
+        assert(( fm5 == decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
     }
     if (true) {
         // flat_map(KeyContainer, MappedContainer)
@@ -314,10 +314,10 @@ TEST(flat_map, DeductionGuides)
         std::vector<std::string> vs {"a","b"};
         flat_map fm1(vi, vs);
         static_assert(std::is_same_v<decltype(fm1), flat_map<int, std::string>>);
-        assert(( fm1 == flat_map<int, std::string>(stdext::sorted_unique, {{1,"b"}, {2,"a"}}) ));
+        assert(( fm1 == flat_map<int, std::string>(sg14::sorted_unique, {{1,"b"}, {2,"a"}}) ));
         flat_map fm2(std::move(vs), std::move(vi));
         static_assert(std::is_same_v<decltype(fm2), flat_map<std::string, int>>);
-        assert(( fm2 == flat_map<std::string, int>(stdext::sorted_unique, {{"a",2}, {"b",1}}) ));
+        assert(( fm2 == flat_map<std::string, int>(sg14::sorted_unique, {{"a",2}, {"b",1}}) ));
     }
     if (true) {
         // flat_map(Container, Allocator)
@@ -337,71 +337,71 @@ TEST(flat_map, DeductionGuides)
         std::vector<std::string> vs {"a","b"};
         flat_map fm1(vi, vs, std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm1), flat_map<int, std::string>>);
-        assert(( fm1 == decltype(fm1)(stdext::sorted_unique, {{1,"b"}, {2,"a"}}) ));
+        assert(( fm1 == decltype(fm1)(sg14::sorted_unique, {{1,"b"}, {2,"a"}}) ));
 #if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<int> pvi {2,1};
         std::pmr::vector<std::pmr::string> pvs {"a","b"};
         flat_map fm2(pvi, pvs, std::pmr::polymorphic_allocator<char>());
         static_assert(std::is_same_v<decltype(fm2), flat_map<int, std::pmr::string, std::less<int>, std::pmr::vector<int>, std::pmr::vector<std::pmr::string>>>);
-        assert(( fm2 == decltype(fm2)(stdext::sorted_unique, {{1,"b"}, {2,"a"}}) ));
+        assert(( fm2 == decltype(fm2)(sg14::sorted_unique, {{1,"b"}, {2,"a"}}) ));
 #endif
     }
     if (true) {
         // flat_map(sorted_unique_t, Container)
         std::vector<std::pair<std::string, int>> v;
-        flat_map fm1(stdext::sorted_unique, v);
+        flat_map fm1(sg14::sorted_unique, v);
         static_assert(std::is_same_v<decltype(fm1), flat_map<std::string, int>>);
-        flat_map fm2 = flat_map(stdext::sorted_unique, std::deque<std::pair<std::string, int>>());
+        flat_map fm2 = flat_map(sg14::sorted_unique, std::deque<std::pair<std::string, int>>());
         static_assert(std::is_same_v<decltype(fm2), flat_map<std::string, int>>);
         std::list<std::pair<const int* const, const int*>> lst;
-        flat_map fm3(stdext::sorted_unique, lst);
+        flat_map fm3(sg14::sorted_unique, lst);
         static_assert(std::is_same_v<decltype(fm3), flat_map<const int*, const int*>>);
 #if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<std::pair<std::pmr::string, int>> pv;
-        flat_map fm4(stdext::sorted_unique, pv);
+        flat_map fm4(sg14::sorted_unique, pv);
         static_assert(std::is_same_v<decltype(fm4), flat_map<std::pmr::string, int>>);
 #endif
         std::initializer_list<std::pair<int, std::string>> il = {{1,"c"}, {3,"b"}, {5,"a"}};
-        flat_map fm5(stdext::sorted_unique, il);
+        flat_map fm5(sg14::sorted_unique, il);
         static_assert(std::is_same_v<decltype(fm5), flat_map<int, std::string>>);
-        assert(( fm5 == decltype(fm5)(stdext::sorted_unique, {{1,"c"}, {3,"b"}, {5,"a"}}) ));
+        assert(( fm5 == decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"b"}, {5,"a"}}) ));
     }
     if (true) {
         // flat_map(sorted_unique_t, KeyContainer, MappedContainer)
         std::vector<int> vi {1,2};
         std::vector<std::string> vs {"a","b"};
-        flat_map fm1(stdext::sorted_unique, vi, vs);
+        flat_map fm1(sg14::sorted_unique, vi, vs);
         static_assert(std::is_same_v<decltype(fm1), flat_map<int, std::string>>);
-        assert(( fm1 == decltype(fm1)(stdext::sorted_unique, {{1,"a"}, {2,"b"}}) ));
-        flat_map fm2(stdext::sorted_unique, std::move(vs), std::move(vi));
+        assert(( fm1 == decltype(fm1)(sg14::sorted_unique, {{1,"a"}, {2,"b"}}) ));
+        flat_map fm2(sg14::sorted_unique, std::move(vs), std::move(vi));
         static_assert(std::is_same_v<decltype(fm2), flat_map<std::string, int>>);
-        assert(( fm2 == decltype(fm2)(stdext::sorted_unique, {{"a",1}, {"b",2}}) ));
+        assert(( fm2 == decltype(fm2)(sg14::sorted_unique, {{"a",1}, {"b",2}}) ));
     }
     if (true) {
         // flat_map(sorted_unique_t, Container, Allocator)
         std::vector<std::pair<std::string, int>> v;
-        flat_map fm1(stdext::sorted_unique, v, std::allocator<int>());
+        flat_map fm1(sg14::sorted_unique, v, std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm1), flat_map<std::string, int>>);
 #if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<std::pair<std::pmr::string, int>> pv;
         // TODO: neither of these lines compiles, and it's unclear what is INTENDED to happen
-        // flat_map fm2(stdext::sorted_unique, pv, std::allocator<int>());
-        // flat_map fm2(stdext::sorted_unique, pv, std::pmr::polymorphic_allocator<int>());
+        // flat_map fm2(sg14::sorted_unique, pv, std::allocator<int>());
+        // flat_map fm2(sg14::sorted_unique, pv, std::pmr::polymorphic_allocator<int>());
 #endif
     }
     if (true) {
         // flat_map(sorted_unique_t, KeyContainer, MappedContainer, Allocator)
         std::vector<int> vi {2,1};
         std::vector<std::string> vs {"a","b"};
-        flat_map fm1(stdext::sorted_unique, vs, vi, std::allocator<int>());
+        flat_map fm1(sg14::sorted_unique, vs, vi, std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm1), flat_map<std::string, int>>);
-        assert(( fm1 == decltype(fm1)(stdext::sorted_unique, {{"a",2}, {"b",1}}) ));
+        assert(( fm1 == decltype(fm1)(sg14::sorted_unique, {{"a",2}, {"b",1}}) ));
 #if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<int> pvi {1, 2};
         std::pmr::vector<std::pmr::string> pvs {"b","a"};
-        flat_map fm2(stdext::sorted_unique, pvi, pvs, std::pmr::polymorphic_allocator<char>());
+        flat_map fm2(sg14::sorted_unique, pvi, pvs, std::pmr::polymorphic_allocator<char>());
         static_assert(std::is_same_v<decltype(fm2), flat_map<int, std::pmr::string, std::less<int>, std::pmr::vector<int>, std::pmr::vector<std::pmr::string>>>);
-        assert(( fm2 == decltype(fm2)(stdext::sorted_unique, {{1,"b"}, {2,"a"}}) ));
+        assert(( fm2 == decltype(fm2)(sg14::sorted_unique, {{1,"b"}, {2,"a"}}) ));
 #endif
     }
     if (true) {
@@ -420,7 +420,7 @@ TEST(flat_map, DeductionGuides)
         std::initializer_list<std::pair<int, std::string>> il = {{1,"c"}, {5,"b"}, {3,"a"}};
         flat_map fm5(il.begin(), il.end());
         static_assert(std::is_same_v<decltype(fm5), flat_map<int, std::string>>);
-        assert(( fm5 == decltype(fm5)(stdext::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
+        assert(( fm5 == decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
     }
     if (true) {
         // flat_map(InputIterator, InputIterator, Compare = Compare())
@@ -446,12 +446,12 @@ TEST(flat_map, DeductionGuides)
         std::initializer_list<std::pair<int, std::string>> il = {{1,"c"}, {5,"b"}, {3,"a"}};
         flat_map fm5(il.begin(), il.end(), std::less<int>());
         static_assert(std::is_same_v<decltype(fm5), flat_map<int, std::string>>);
-        assert(( fm5 == decltype(fm5)(stdext::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
+        assert(( fm5 == decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
 
         flat_map fm6(arr, arr + 4, free_function_less);
         static_assert(std::is_same_v<decltype(fm6), flat_map<int, int, bool(*)(const int&, const int&)>>);
         assert(fm6.key_comp() == free_function_less);
-        assert(( fm6 == decltype(fm6)(stdext::sorted_unique, {{1,2}, {2,3}, {3,4}, {4,5}}, free_function_less) ));
+        assert(( fm6 == decltype(fm6)(sg14::sorted_unique, {{1,2}, {2,3}, {3,4}, {4,5}}, free_function_less) ));
     }
     if (true) {
         // flat_map(InputIterator, InputIterator, Compare, Allocator)
@@ -478,12 +478,12 @@ TEST(flat_map, DeductionGuides)
         std::initializer_list<std::pair<int, std::string>> il = {{1,"c"}, {5,"b"}, {3,"a"}};
         flat_map fm5(il.begin(), il.end(), std::less<int>(), std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm5), flat_map<int, std::string>>);
-        assert(( fm5 == decltype(fm5)(stdext::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
+        assert(( fm5 == decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
 
         flat_map fm6(arr, arr + 4, free_function_less, std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm6), flat_map<int, int, bool(*)(const int&, const int&)>>);
         assert(fm6.key_comp() == free_function_less);
-        assert(( fm6 == decltype(fm6)(stdext::sorted_unique, {{1,2}, {2,3}, {3,4}, {4,5}}, free_function_less) ));
+        assert(( fm6 == decltype(fm6)(sg14::sorted_unique, {{1,2}, {2,3}, {3,4}, {4,5}}, free_function_less) ));
     }
     if (true) {
         // flat_map(InputIterator, InputIterator, Allocator)
@@ -571,12 +571,12 @@ TYPED_TEST(flat_mapt, Construction)
     }
     if (std::is_sorted(keys.begin(), keys.end(), Compare())) {
         for (auto&& fs : {
-            FS(stdext::sorted_unique, pairs),
-            FS(stdext::sorted_unique, pairs.begin(), pairs.end()),
-            FS(stdext::sorted_unique, {{1, "a"}, {3, "c"}, {5, "b"}}),
-            FS(stdext::sorted_unique, pairs, Compare()),
-            FS(stdext::sorted_unique, pairs.begin(), pairs.end(), Compare()),
-            FS(stdext::sorted_unique, {{1, "a"}, {3, "c"}, {5, "b"}}, Compare()),
+            FS(sg14::sorted_unique, pairs),
+            FS(sg14::sorted_unique, pairs.begin(), pairs.end()),
+            FS(sg14::sorted_unique, {{1, "a"}, {3, "c"}, {5, "b"}}),
+            FS(sg14::sorted_unique, pairs, Compare()),
+            FS(sg14::sorted_unique, pairs.begin(), pairs.end(), Compare()),
+            FS(sg14::sorted_unique, {{1, "a"}, {3, "c"}, {5, "b"}}, Compare()),
         }) {
             assert(std::is_sorted(fs.keys().begin(), fs.keys().end(), fs.key_comp()));
             assert(std::is_sorted(fs.begin(), fs.end(), fs.value_comp()));

@@ -115,7 +115,7 @@ struct Monad<std::unique_ptr<T_>> {
 } // namespace
 
 template<class T, class Key, template<class...> class Container>
-static void print_slot_map(const stdext::slot_map<T, Key, Container>& sm)
+static void print_slot_map(const sg14::slot_map<T, Key, Container>& sm)
 {
     printf("%d slots:", (int)sm.slots_.size());
     for (auto&& slot : sm.slots_) {
@@ -338,7 +338,7 @@ void VerifyCapacityExists(Bool expected)
 TEST(slot_map, MemberTypedefs)
 {
     if (true) {
-        using SM = stdext::slot_map<int>;
+        using SM = sg14::slot_map<int>;
         static_assert(std::is_same<typename SM::key_type, std::pair<unsigned, unsigned>>::value, "");
         static_assert(std::is_same<typename SM::mapped_type, int>::value, "");
         static_assert(std::is_same<typename SM::key_index_type, unsigned>::value, "");
@@ -356,7 +356,7 @@ TEST(slot_map, MemberTypedefs)
         static_assert(std::is_same<typename SM::value_type, int>::value, "");
     }
     if (true) {
-        using SM = stdext::slot_map<bool>;
+        using SM = sg14::slot_map<bool>;
         static_assert(std::is_same<typename SM::key_type, std::pair<unsigned, unsigned>>::value, "");
         static_assert(std::is_same<typename SM::mapped_type, bool>::value, "");
         static_assert(std::is_same<typename SM::key_index_type, unsigned>::value, "");
@@ -374,7 +374,7 @@ TEST(slot_map, MemberTypedefs)
         static_assert(std::is_same<typename SM::value_type, bool>::value, "");
     }
     if (true) {
-        using SM = stdext::slot_map<double, TestKey::key_16_8_t>;
+        using SM = sg14::slot_map<double, TestKey::key_16_8_t>;
         static_assert(std::is_same<typename SM::key_type, TestKey::key_16_8_t>::value, "");
         static_assert(std::is_same<typename SM::mapped_type, double>::value, "");
         static_assert(std::is_same<typename SM::key_index_type, uint16_t>::value, "");
@@ -392,7 +392,7 @@ TEST(slot_map, MemberTypedefs)
         static_assert(std::is_same<typename SM::value_type, double>::value, "");
     }
     if (true) {
-        using SM = stdext::slot_map<int, std::pair<char, int>, TestContainer::Vector>;
+        using SM = sg14::slot_map<int, std::pair<char, int>, TestContainer::Vector>;
         static_assert(std::is_same<typename SM::key_type, std::pair<char, int>>::value, "");
         static_assert(std::is_same<typename SM::mapped_type, int>::value, "");
         static_assert(std::is_same<typename SM::key_index_type, char>::value, "");
@@ -411,7 +411,7 @@ TEST(slot_map, MemberTypedefs)
     }
 #if __cplusplus >= 201703L
     if (true) {
-        using SM = stdext::slot_map<double, TestKey::key_11_5_t>;
+        using SM = sg14::slot_map<double, TestKey::key_11_5_t>;
         static_assert(std::is_same<typename SM::key_type, TestKey::key_11_5_t>::value, "");
         static_assert(std::is_same<typename SM::mapped_type, double>::value, "");
         static_assert(std::is_same<typename SM::key_index_type, uint16_t>::value, "");
@@ -515,7 +515,7 @@ static void IndexesAreUsedEvenlyTest()
 TEST(slot_map, Basic)
 {
     // Test the most basic slot_map.
-    using slot_map_1 = stdext::slot_map<int>;
+    using slot_map_1 = sg14::slot_map<int>;
     static_assert(std::is_nothrow_move_constructible<slot_map_1>::value, "preserve nothrow-movability of vector");
     BasicTests<slot_map_1>(42, 37);
     BoundsCheckingTest<slot_map_1>();
@@ -532,7 +532,7 @@ TEST(slot_map, Basic)
 TEST(slot_map, CustomKeyType)
 {
     // Test slot_map with a custom key type (C++14 destructuring).
-    using slot_map_2 = stdext::slot_map<unsigned long, TestKey::key_16_8_t>;
+    using slot_map_2 = sg14::slot_map<unsigned long, TestKey::key_16_8_t>;
     BasicTests<slot_map_2>(425, 375);
     BoundsCheckingTest<slot_map_2>();
     FullContainerStressTest<slot_map_2>([]() { return 42; });
@@ -546,7 +546,7 @@ TEST(slot_map, CustomKeyType)
 
 #if __cplusplus >= 201703L
     // Test slot_map with a custom key type (C++17 destructuring).
-    using slot_map_3 = stdext::slot_map<int, TestKey::key_11_5_t>;
+    using slot_map_3 = sg14::slot_map<int, TestKey::key_11_5_t>;
     BasicTests<slot_map_3>(42, 37);
     BoundsCheckingTest<slot_map_3>();
     FullContainerStressTest<slot_map_3>([]() { return 42; });
@@ -563,7 +563,7 @@ TEST(slot_map, CustomKeyType)
 TEST(slot_map, DequeContainer)
 {
     // Test slot_map with a custom (but standard and random-access) container type.
-    using slot_map_4 = stdext::slot_map<int, std::pair<unsigned, unsigned>, std::deque>;
+    using slot_map_4 = sg14::slot_map<int, std::pair<unsigned, unsigned>, std::deque>;
     BasicTests<slot_map_4>(415, 315);
     BoundsCheckingTest<slot_map_4>();
     FullContainerStressTest<slot_map_4>([]() { return 37; });
@@ -579,7 +579,7 @@ TEST(slot_map, DequeContainer)
 TEST(slot_map, CustomRAContainer)
 {
     // Test slot_map with a custom (non-standard, random-access) container type.
-    using slot_map_5 = stdext::slot_map<int, std::pair<unsigned, unsigned>, TestContainer::Vector>;
+    using slot_map_5 = sg14::slot_map<int, std::pair<unsigned, unsigned>, TestContainer::Vector>;
     static_assert(!std::is_nothrow_move_constructible<slot_map_5>::value, "preserve non-nothrow-movability of Vector");
     BasicTests<slot_map_5>(415, 315);
     BoundsCheckingTest<slot_map_5>();
@@ -596,7 +596,7 @@ TEST(slot_map, CustomRAContainer)
 TEST(slot_map, CustomBidiContainer)
 {
     // Test slot_map with a custom (standard, bidirectional-access) container type.
-    using slot_map_6 = stdext::slot_map<int, std::pair<unsigned, unsigned>, std::list>;
+    using slot_map_6 = sg14::slot_map<int, std::pair<unsigned, unsigned>, std::list>;
     static_assert(std::is_nothrow_move_constructible<slot_map_6>::value == std::is_nothrow_move_constructible<std::list<int>>::value,
                   "preserve implementation-defined nothrow-movability of std::list");
     BasicTests<slot_map_6>(415, 315);
@@ -615,7 +615,7 @@ TEST(slot_map, MoveOnlyValueType)
 {
     // Test slot_map with a move-only value_type.
     // Sadly, standard containers do not propagate move-only-ness, so we must use our custom Vector instead.
-    using slot_map_7 = stdext::slot_map<std::unique_ptr<int>, std::pair<unsigned, int>, TestContainer::Vector>;
+    using slot_map_7 = sg14::slot_map<std::unique_ptr<int>, std::pair<unsigned, int>, TestContainer::Vector>;
     static_assert(std::is_move_constructible<slot_map_7>::value, "");
     static_assert(std::is_move_assignable<slot_map_7>::value, "");
     static_assert(! std::is_copy_constructible<slot_map_7>::value, "");

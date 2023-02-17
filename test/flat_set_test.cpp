@@ -14,14 +14,14 @@
 template<class T> struct flat_sett : testing::Test {};
 
 using flat_sett_types = testing::Types<
-    stdext::flat_set<int>                                           // basic
-    , stdext::flat_set<int, std::greater<int>>                      // custom comparator
+    sg14::flat_set<int>                                           // basic
+    , sg14::flat_set<int, std::greater<int>>                      // custom comparator
 #if __cplusplus >= 201402L
-    , stdext::flat_set<int, std::greater<>>                         // transparent comparator
+    , sg14::flat_set<int, std::greater<>>                         // transparent comparator
 #endif
-    , stdext::flat_set<int, std::less<int>, std::deque<int>>        // custom container
+    , sg14::flat_set<int, std::less<int>, std::deque<int>>        // custom container
 #if __cpp_lib_memory_resource >= 201603
-    , stdext::flat_set<int, std::less<int>, std::pmr::vector<int>>  // pmr container
+    , sg14::flat_set<int, std::less<int>, std::pmr::vector<int>>  // pmr container
 #endif
 >;
 TYPED_TEST_SUITE(flat_sett, flat_sett_types);
@@ -33,8 +33,8 @@ struct AmbiguousEraseWidget {
         return a.s_ < b.s_;
     }
 
-    using iterator = stdext::flat_set<AmbiguousEraseWidget>::iterator;
-    using const_iterator = stdext::flat_set<AmbiguousEraseWidget>::const_iterator;
+    using iterator = sg14::flat_set<AmbiguousEraseWidget>::iterator;
+    using const_iterator = sg14::flat_set<AmbiguousEraseWidget>::const_iterator;
 
     explicit AmbiguousEraseWidget(const char *s) : s_(s) {}
     AmbiguousEraseWidget(iterator) : s_("notfound") {}
@@ -48,7 +48,7 @@ private:
 
 TEST(flat_set, AmbiguousErase)
 {
-    stdext::flat_set<AmbiguousEraseWidget> fs;
+    sg14::flat_set<AmbiguousEraseWidget> fs;
     fs.emplace("a");
     fs.emplace("b");
     fs.emplace("c");
@@ -70,7 +70,7 @@ TEST(flat_set, ExtractDoesntSwap)
     {
         std::pmr::monotonic_buffer_resource mr;
         std::pmr::polymorphic_allocator<int> a(&mr);
-        stdext::flat_set<int, std::less<int>, std::pmr::vector<int>> fs({1, 2}, a);
+        sg14::flat_set<int, std::less<int>, std::pmr::vector<int>> fs({1, 2}, a);
         std::pmr::vector<int> v = std::move(fs).extract();
         assert(v.get_allocator() == a);
         assert(fs.empty());
@@ -80,7 +80,7 @@ TEST(flat_set, ExtractDoesntSwap)
     // Sanity-check with std::allocator, even though this can't fail.
     {
         std::allocator<int> a;
-        stdext::flat_set<int, std::less<int>, std::vector<int>> fs({1, 2}, a);
+        sg14::flat_set<int, std::less<int>, std::vector<int>> fs({1, 2}, a);
         std::vector<int> v = std::move(fs).extract();
         assert(v.get_allocator() == a);
         assert(fs.empty());
@@ -111,8 +111,8 @@ bool ComparatorWithThrowingSwap::please_throw = false;
 TEST(flat_set, ThrowingSwapDoesntBreakInvariants)
 {
     using std::swap;
-    stdext::flat_set<int, ComparatorWithThrowingSwap> fsx({1,2,3}, ComparatorWithThrowingSwap(std::less<int>()));
-    stdext::flat_set<int, ComparatorWithThrowingSwap> fsy({4,5,6}, ComparatorWithThrowingSwap(std::greater<int>()));
+    sg14::flat_set<int, ComparatorWithThrowingSwap> fsx({1,2,3}, ComparatorWithThrowingSwap(std::less<int>()));
+    sg14::flat_set<int, ComparatorWithThrowingSwap> fsy({4,5,6}, ComparatorWithThrowingSwap(std::greater<int>()));
 
     if (true) {
         ComparatorWithThrowingSwap::please_throw = false;
@@ -134,7 +134,7 @@ TEST(flat_set, ThrowingSwapDoesntBreakInvariants)
 TEST(flat_set, VectorBool)
 {
 #if __cplusplus >= 201402L  // C++11 doesn't support vector<bool>::emplace
-    using FS = stdext::flat_set<bool>;
+    using FS = sg14::flat_set<bool>;
     FS fs;
     auto it_inserted = fs.emplace(true);
     assert(it_inserted.second);
@@ -171,7 +171,7 @@ struct VectorBoolEvilComparator {
 
 TEST(flat_set, VectorBoolEvilComparator)
 {
-    using FS = stdext::flat_set<bool, VectorBoolEvilComparator>;
+    using FS = sg14::flat_set<bool, VectorBoolEvilComparator>;
     FS fs;
     (void)fs.lower_bound(true);
     (void)fs.upper_bound(true);
@@ -206,7 +206,7 @@ int InstrumentedWidget::copy_ctors = 0;
 
 TEST(flat_set, MoveOperationsPilferOwnership)
 {
-    using FS = stdext::flat_set<InstrumentedWidget>;
+    using FS = sg14::flat_set<InstrumentedWidget>;
     InstrumentedWidget::move_ctors = 0;
     InstrumentedWidget::copy_ctors = 0;
     FS fs;
@@ -283,12 +283,12 @@ TYPED_TEST(flat_sett, Construction)
     }
     if (std::is_sorted(vec.begin(), vec.end(), Compare())) {
         for (auto&& fs : {
-            FS(stdext::sorted_unique, vec),
-            FS(stdext::sorted_unique, vec.begin(), vec.end()),
-            FS(stdext::sorted_unique, {1, 3, 5}),
-            FS(stdext::sorted_unique, vec, Compare()),
-            FS(stdext::sorted_unique, vec.begin(), vec.end(), Compare()),
-            FS(stdext::sorted_unique, {1, 3, 5}, Compare()),
+            FS(sg14::sorted_unique, vec),
+            FS(sg14::sorted_unique, vec.begin(), vec.end()),
+            FS(sg14::sorted_unique, {1, 3, 5}),
+            FS(sg14::sorted_unique, vec, Compare()),
+            FS(sg14::sorted_unique, vec.begin(), vec.end(), Compare()),
+            FS(sg14::sorted_unique, {1, 3, 5}, Compare()),
         }) {
             auto cmp = fs.key_comp();
             assert(std::is_sorted(fs.begin(), fs.end(), cmp));
