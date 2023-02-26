@@ -706,3 +706,19 @@ TYPED_TEST(flat_mapt, Search)
     static_assert(std::is_same<decltype(it), typename FM::iterator>::value, "");
     static_assert(std::is_same<decltype(cit), typename FM::const_iterator>::value, "");
 }
+
+TEST(flat_map, Iterators)
+{
+    sg14::flat_map<int, char> fm = {{3,'3'}, {1,'1'}, {4,'4'}, {2,'2'}};
+    EXPECT_EQ(fm.begin(), fm.cbegin());
+    EXPECT_EQ(fm.end(), fm.cend());
+    EXPECT_EQ(fm.rbegin(), fm.crbegin());
+    EXPECT_EQ(fm.rend(), fm.crend());
+    std::vector<std::pair<int, char>> underlying = {{1,'1'}, {2,'2'}, {3,'3'}, {4,'4'}};
+    std::vector<std::pair<const int&, char&>> expected(underlying.begin(), underlying.end());
+    std::vector<std::pair<const int&, const char&>> cexpected(underlying.begin(), underlying.end());
+    EXPECT_TRUE(std::equal(fm.begin(), fm.end(), expected.begin(), expected.end()));
+    EXPECT_TRUE(std::equal(fm.cbegin(), fm.cend(), cexpected.begin(), cexpected.end()));
+    EXPECT_TRUE(std::equal(fm.rbegin(), fm.rend(), expected.rbegin(), expected.rend()));
+    EXPECT_TRUE(std::equal(fm.crbegin(), fm.crend(), cexpected.rbegin(), cexpected.rend()));
+}

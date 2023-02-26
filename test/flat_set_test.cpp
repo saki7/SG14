@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cassert>
 #include <deque>
 #include <functional>
@@ -306,4 +307,18 @@ TYPED_TEST(flat_sett, SpecialMembers)
     static_assert(std::is_copy_assignable<FS>::value, "");
     static_assert(std::is_move_assignable<FS>::value, "");
     static_assert(std::is_nothrow_destructible<FS>::value, "");
+}
+
+TEST(flat_set, Iterators)
+{
+    sg14::flat_set<int> fs = {3, 1, 4, 2};
+    EXPECT_EQ(fs.begin(), fs.cbegin());
+    EXPECT_EQ(fs.end(), fs.cend());
+    EXPECT_EQ(fs.rbegin(), fs.crbegin());
+    EXPECT_EQ(fs.rend(), fs.crend());
+    std::vector<int> expected = {1, 2, 3, 4};
+    EXPECT_TRUE(std::equal(fs.begin(), fs.end(), expected.begin(), expected.end()));
+    EXPECT_TRUE(std::equal(fs.cbegin(), fs.cend(), expected.begin(), expected.end()));
+    EXPECT_TRUE(std::equal(fs.rbegin(), fs.rend(), expected.rbegin(), expected.rend()));
+    EXPECT_TRUE(std::equal(fs.crbegin(), fs.crend(), expected.rbegin(), expected.rend()));
 }
