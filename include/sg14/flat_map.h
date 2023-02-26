@@ -849,6 +849,10 @@ public:
         return c_.keys;
     }
 
+    MappedContainer& values() {
+        return c_.values;
+    }
+
     const MappedContainer& values() const {
         return c_.values;
     }

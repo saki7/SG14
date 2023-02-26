@@ -722,3 +722,21 @@ TEST(flat_map, Iterators)
     EXPECT_TRUE(std::equal(fm.rbegin(), fm.rend(), expected.rbegin(), expected.rend()));
     EXPECT_TRUE(std::equal(fm.crbegin(), fm.crend(), cexpected.rbegin(), cexpected.rend()));
 }
+
+TEST(flat_map, ContainerAccessors)
+{
+    // The C++23 flat_map provides only `ctrs = fm.extract()` and `fm.replace(ctrs)`,
+    // but the SG14 version provides direct access to the containers in place.
+    sg14::flat_map<int, char> fm = {{3,'3'}, {1,'1'}, {4,'4'}, {2,'2'}};
+    const auto& cfm = fm;
+    static_assert(std::is_same<decltype(fm.keys()), const std::vector<int>&>::value, "");
+    static_assert(std::is_same<decltype(fm.values()), std::vector<char>&>::value, "");
+    static_assert(std::is_same<decltype(cfm.keys()), const std::vector<int>&>::value, "");
+    static_assert(std::is_same<decltype(cfm.values()), const std::vector<char>&>::value, "");
+    std::vector<int> expected_keys = {1, 2, 3, 4};
+    std::vector<char> expected_values = {'1', '2', '3', '4'};
+    EXPECT_EQ(fm.keys(), expected_keys);
+    EXPECT_EQ(fm.values(), expected_values);
+    EXPECT_EQ(cfm.keys(), expected_keys);
+    EXPECT_EQ(cfm.values(), expected_values);
+}
