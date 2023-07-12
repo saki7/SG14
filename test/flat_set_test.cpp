@@ -322,3 +322,16 @@ TEST(flat_set, Iterators)
     EXPECT_TRUE(std::equal(fs.rbegin(), fs.rend(), expected.rbegin(), expected.rend()));
     EXPECT_TRUE(std::equal(fs.crbegin(), fs.crend(), expected.rbegin(), expected.rend()));
 }
+
+TEST(flat_set, ContainerAccessors)
+{
+    // The C++23 flat_set provides only `ctr = fs.extract()` and `fs.replace(ctr)`,
+    // but the SG14 version provides direct access to the container in place.
+    sg14::flat_set<int> fs = {3, 1, 4, 2};
+    const auto& cfs = fs;
+    static_assert(std::is_same<decltype(fs.keys()), const std::vector<int>&>::value, "");
+    static_assert(std::is_same<decltype(cfs.keys()), const std::vector<int>&>::value, "");
+    std::vector<int> expected_keys = {1, 2, 3, 4};
+    EXPECT_EQ(fs.keys(), expected_keys);
+    EXPECT_EQ(cfs.keys(), expected_keys);
+}

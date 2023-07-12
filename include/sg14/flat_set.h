@@ -501,6 +501,10 @@ public:
     Compare key_comp() const { return compare_; }
     Compare value_comp() const { return compare_; }
 
+    const KeyContainer& keys() const {
+        return c_;
+    }
+
     iterator find(const Key& t) {
         auto it = this->lower_bound(t);
         if (it == this->end() || compare_(t, *it)) {

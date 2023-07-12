@@ -714,13 +714,14 @@ TEST(flat_map, Iterators)
     EXPECT_EQ(fm.end(), fm.cend());
     EXPECT_EQ(fm.rbegin(), fm.crbegin());
     EXPECT_EQ(fm.rend(), fm.crend());
-    std::vector<std::pair<int, char>> underlying = {{1,'1'}, {2,'2'}, {3,'3'}, {4,'4'}};
-    std::vector<std::pair<const int&, char&>> expected(underlying.begin(), underlying.end());
-    std::vector<std::pair<const int&, const char&>> cexpected(underlying.begin(), underlying.end());
-    EXPECT_TRUE(std::equal(fm.begin(), fm.end(), expected.begin(), expected.end()));
-    EXPECT_TRUE(std::equal(fm.cbegin(), fm.cend(), cexpected.begin(), cexpected.end()));
-    EXPECT_TRUE(std::equal(fm.rbegin(), fm.rend(), expected.rbegin(), expected.rend()));
-    EXPECT_TRUE(std::equal(fm.crbegin(), fm.crend(), cexpected.rbegin(), cexpected.rend()));
+    std::vector<std::pair<int, char>> expected = {{1,'1'}, {2,'2'}, {3,'3'}, {4,'4'}};
+    auto eq = [](auto&& p1, auto&& p2) {
+        return (p1.first == p2.first) && (p1.second == p2.second);
+    };
+    EXPECT_TRUE(std::equal(fm.begin(), fm.end(), expected.begin(), expected.end(), eq));
+    EXPECT_TRUE(std::equal(fm.cbegin(), fm.cend(), expected.cbegin(), expected.cend(), eq));
+    EXPECT_TRUE(std::equal(fm.rbegin(), fm.rend(), expected.rbegin(), expected.rend(), eq));
+    EXPECT_TRUE(std::equal(fm.crbegin(), fm.crend(), expected.crbegin(), expected.crend(), eq));
 }
 
 TEST(flat_map, ContainerAccessors)
