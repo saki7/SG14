@@ -5,8 +5,10 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <deque>
 #include <iostream>
 #include <iterator>
+#include <random>
 #include <vector>
 
 struct foo
@@ -19,6 +21,50 @@ struct foo
         return result;
     }
 };
+
+TEST(unstable_remove, deque_examples)
+{
+    std::mt19937 g;
+    std::deque<unsigned int> original;
+    for (int i = 0; i < 10'000; ++i) {
+        original.push_back(g());
+    }
+    auto pred = [](int x) { return (x % 2) == 0; };
+
+    auto expected = original;
+    expected.erase(std::remove_if(expected.begin(), expected.end(), pred), expected.end());
+
+    {
+        auto dq = original;
+        dq.erase(sg14::unstable_remove_if(dq.begin(), dq.end(), pred), dq.end());
+
+        EXPECT_EQ(dq.size(), expected.size());
+        EXPECT_TRUE(std::is_permutation(dq.begin(), dq.end(), expected.begin(), expected.end()));
+    }
+    {
+        auto dq = original;
+        dq.erase(dq.begin(), std::find_if_not(dq.begin(), dq.end(), pred));
+        dq.erase(sg14::unstable_remove_if(dq.begin(), dq.end(), pred), dq.end());
+
+        EXPECT_EQ(dq.size(), expected.size());
+        EXPECT_TRUE(std::is_permutation(dq.begin(), dq.end(), expected.begin(), expected.end()));
+    }
+    {
+        auto dq = original;
+        dq.erase(dq.begin(), sg14::unstable_remove_if(dq.rbegin(), dq.rend(), pred).base());
+
+        EXPECT_EQ(dq.size(), expected.size());
+        EXPECT_TRUE(std::is_permutation(dq.begin(), dq.end(), expected.begin(), expected.end()));
+    }
+    {
+        auto dq = original;
+        dq.erase(std::find_if_not(dq.rbegin(), dq.rend(), pred).base(), dq.end());
+        dq.erase(dq.begin(), sg14::unstable_remove_if(dq.rbegin(), dq.rend(), pred).base());
+
+        EXPECT_EQ(dq.size(), expected.size());
+        EXPECT_TRUE(std::is_permutation(dq.begin(), dq.end(), expected.begin(), expected.end()));
+    }
+}
 
 TEST(unstable_remove, all)
 {

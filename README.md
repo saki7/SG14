@@ -8,7 +8,12 @@ SG14, see [the mailing list](http://lists.isocpp.org/mailman/listinfo.cgi/sg14).
 
 ## What's included
 
-### Efficient algorithms
+Each subheading of the form "(C++YY > C++XX)" means that some approximation of
+this feature is present in C++YY, but the `sg14::` version is intended to compile
+as far back as C++XX. A subheading "(future > C++XX)" means that this feature
+isn't available in any version of standard C++, yet.
+
+### Efficient removal algorithms (future > C++14)
 
 ```
 #include <sg14/algorithm_ext.h>
@@ -22,10 +27,37 @@ of the non-removed elements. It doesn't "shuffle elements leftward"; it simply "
 removed element with `*--last`." These algorithms were proposed in
 [P0041](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2015/p0041r0.html).
 
-Note that `std::erase_if(lst, Pred)` is more efficient than
-`lst.erase(sg14::unstable_remove_if(lst, Pred), lst.end())` when
-`lst` is a `std::list`; therefore P0041 also proposed a set of
-`sg14::unstable_erase_if` overloads, which we don't provide, yet.
+#### Why not `sg14::unstable_erase(ctr, x)`?
+
+When `lst` is a `std::list`,
+`std::erase(lst, x)` is more efficient than
+`lst.erase(sg14::unstable_remove(lst.begin(), lst.end(), x), lst.end())`.
+Therefore P0041 also proposed new overload sets `std::unstable_erase`
+and `std::unstable_erase_if`.
+
+We don't provide `sg14::unstable_erase{,_if}`
+mainly because there's no good way to do it without either
+including every container's header (`<vector>`, `<deque>`, `<list>`,
+`<forward_list>`, `<set>`,...), which is expensive; or else forward-declaring every container,
+which is implementation-defined and error-prone.
+
+There is also the minor question of whether, when `dq` is a `deque`,
+`unstable_erase_if(dq, pred)` should be implemented as
+```
+    dq.erase(dq.begin(), std::find_if_not(dq.begin(), dq.end(), pred));
+    dq.erase(sg14::unstable_remove_if(dq.begin(), dq.end(), pred), dq.end());
+```
+or
+```
+    dq.erase(std::find_if_not(dq.rbegin(), dq.rend(), pred).base(), dq.end());
+    dq.erase(dq.begin(), sg14::unstable_remove_if(dq.rbegin(), dq.rend(), pred).base());
+```
+The answer depends not only on the internal state of the deque (known only to the
+STL implementation) but also on the expected workload (known only to the user-programmer):
+If we plan to `push_back` soon, then it makes sense to swap items toward the front of the
+deque, but if we plan to `push_front`, then it makes more sense to swap toward the back.
+
+### Uninitialized memory algorithms (C++17 > C++14)
 
 ```
 FwdIt sg14::uninitialized_move(It first, Sent last, FwdIt d_first);
@@ -40,7 +72,7 @@ and adopted into C++17. The `sg14` versions are slightly more general (they take
 iterator-sentinel pairs) and portable back to C++11, but in C++17 you should
 use the `std` versions, please.
 
-### Flat associative container adaptors
+### Flat associative container adaptors (C++23 > C++14)
 
 ```
 #include <sg14/flat_set.h>
@@ -64,7 +96,7 @@ C++23 also provides `flat_multimap` and `flat_multiset`, which we don't provide.
 
 Boost also provides all four adaptors; see [`boost::container::flat_set`](https://www.boost.org/doc/libs/1_81_0/doc/html/container/non_standard_containers.html#container.non_standard_containers.flat_xxx).
 
-### In-place type-erased types
+### In-place type-erased types (future > C++14)
 
 ```
 #include <sg14/inplace_function.h>
@@ -112,7 +144,7 @@ follows that same design. For example:
 In practice, most of your uses of `std::function<T(U)>` should be replaced not with
 `sg14::inplace_function<T(U)>` but rather with `sg14::inplace_function<T(U) const>`.
 
-### Circular `ring_span`
+### Circular `ring_span` (future > C++14)
 
 ```
 #include <sg14/ring_span.h>
@@ -140,7 +172,7 @@ This adaptor was proposed in
 [P0059](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0059r4.pdf).
 Martin Moene has another implementation at [martinmoene/ring-span-lite](https://github.com/martinmoene/ring-span-lite).
 
-### `slot_map`
+### `slot_map` (future > C++14)
 
 ```
 #include <sg14/slot_map.h>
@@ -171,7 +203,7 @@ back into a dereferenceable `iterator`:
 This container adaptor was proposed in
 [P0661](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0661r0.pdf).
 
-### `hive` (C++17 and later)
+### `hive` (future > C++17)
 
 ```
 #include <sg14/hive.h>
