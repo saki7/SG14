@@ -94,40 +94,40 @@ template<class R, class... Args> struct vtable
     const process_ptr_t relocate_ptr;
     const destructor_ptr_t destructor_ptr;
 
-    explicit constexpr vtable() noexcept :
-        invoke_ptr{ [](storage_ptr_t, Args&&...) -> R
+    constexpr explicit vtable() noexcept :
+        invoke_ptr( [](storage_ptr_t, Args&&...) -> R
             { SG14_INPLACE_FUNCTION_THROW(std::bad_function_call()); }
-        },
-        copy_ptr{ [](storage_ptr_t, storage_ptr_t) -> void {} },
-        relocate_ptr{ [](storage_ptr_t, storage_ptr_t) -> void {} },
-        destructor_ptr{ [](storage_ptr_t) -> void {} }
+        ),
+        copy_ptr( [](storage_ptr_t, storage_ptr_t) {} ),
+        relocate_ptr( [](storage_ptr_t, storage_ptr_t) {} ),
+        destructor_ptr( [](storage_ptr_t) {} )
     {}
 
-    template<class C> explicit constexpr vtable(wrapper<C>) noexcept :
-        invoke_ptr{ [](storage_ptr_t storage_ptr, Args&&... args) -> R
+    template<class C> constexpr explicit vtable(wrapper<C>) noexcept :
+        invoke_ptr( [](storage_ptr_t storage_ptr, Args&&... args) -> R
             { return (*static_cast<C*>(storage_ptr))(
                 static_cast<Args&&>(args)...
             ); }
-        },
-        copy_ptr{ [](storage_ptr_t dst_ptr, storage_ptr_t src_ptr) -> void
+        ),
+        copy_ptr( [](storage_ptr_t dst_ptr, storage_ptr_t src_ptr)
             { ::new (dst_ptr) C{ (*static_cast<C*>(src_ptr)) }; }
-        },
-        relocate_ptr{ [](storage_ptr_t dst_ptr, storage_ptr_t src_ptr) -> void
+        ),
+        relocate_ptr( [](storage_ptr_t dst_ptr, storage_ptr_t src_ptr)
             {
                 ::new (dst_ptr) C{ std::move(*static_cast<C*>(src_ptr)) };
                 static_cast<C*>(src_ptr)->~C();
             }
-        },
-        destructor_ptr{ [](storage_ptr_t src_ptr) -> void
+        ),
+        destructor_ptr( [](storage_ptr_t src_ptr)
             { static_cast<C*>(src_ptr)->~C(); }
-        }
+        )
     {}
 
     vtable(const vtable&) = delete;
     vtable(vtable&&) = delete;
 
-    vtable& operator= (const vtable&) = delete;
-    vtable& operator= (vtable&&) = delete;
+    vtable& operator=(const vtable&) = delete;
+    vtable& operator=(vtable&&) = delete;
 
     ~vtable() = default;
 };
@@ -217,7 +217,7 @@ public:
     using alignment = std::integral_constant<size_t, Alignment>;
 
     inplace_function() noexcept :
-        vtable_ptr_{std::addressof(inplace_function_detail::empty_vtable<R, Args...>)}
+        vtable_ptr_(std::addressof(inplace_function_detail::empty_vtable<R, Args...>))
     {}
 
     template<
@@ -242,10 +242,10 @@ public:
             "inplace_function cannot be constructed from object with this (large) alignment"
         );
 
-        static const vtable_t vt{inplace_function_detail::wrapper<C>{}};
+        static const vtable_t vt(inplace_function_detail::wrapper<C>{});
         vtable_ptr_ = std::addressof(vt);
 
-        ::new (std::addressof(storage_)) C{std::forward<T>(closure)};
+        ::new (std::addressof(storage_)) C(std::forward<T>(closure));
     }
 
     template<size_t Cap, size_t Align>
@@ -269,11 +269,11 @@ public:
     }
 
     inplace_function(std::nullptr_t) noexcept :
-        vtable_ptr_{std::addressof(inplace_function_detail::empty_vtable<R, Args...>)}
+        vtable_ptr_(std::addressof(inplace_function_detail::empty_vtable<R, Args...>))
     {}
 
     inplace_function(const inplace_function& other) :
-        vtable_ptr_{other.vtable_ptr_}
+        vtable_ptr_(other.vtable_ptr_)
     {
         vtable_ptr_->copy_ptr(
             std::addressof(storage_),
@@ -282,7 +282,7 @@ public:
     }
 
     inplace_function(inplace_function&& other) noexcept :
-        vtable_ptr_{std::exchange(other.vtable_ptr_, std::addressof(inplace_function_detail::empty_vtable<R, Args...>))}
+        vtable_ptr_(std::exchange(other.vtable_ptr_, std::addressof(inplace_function_detail::empty_vtable<R, Args...>)))
     {
         vtable_ptr_->relocate_ptr(
             std::addressof(storage_),
@@ -332,7 +332,7 @@ public:
         return operator bool();
     }
 
-    explicit constexpr operator bool() const noexcept
+    constexpr explicit operator bool() const noexcept
     {
         return vtable_ptr_ != std::addressof(inplace_function_detail::empty_vtable<R, Args...>);
     }
@@ -373,7 +373,7 @@ private:
         vtable_ptr_t vtable_ptr,
         typename vtable_t::process_ptr_t process_ptr,
         typename vtable_t::storage_ptr_t storage_ptr
-    ) : vtable_ptr_{vtable_ptr}
+    ) : vtable_ptr_(vtable_ptr)
     {
         process_ptr(std::addressof(storage_), storage_ptr);
     }
