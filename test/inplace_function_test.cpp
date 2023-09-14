@@ -46,6 +46,22 @@ static double GlobalFunction(const std::string& s, int i)
     return gNextReturn;
 }
 
+TEST(inplace_function, ConstinitDefaultConstructible)
+{
+    // C++20 introduced `constinit`, which is compatible with
+    // non-trivially destructible types like inplace_function.
+    // C++20 also relaxed the requirement that `constexpr` variables
+    // must have trivial destructors, but we don't take advantage
+    // of that yet.
+    //
+#if __cplusplus >= 202002L
+    static constinit sg14::inplace_function<void()> f;
+    EXPECT_FALSE(bool(f));
+    static constinit sg14::inplace_function<int(int)> g;
+    EXPECT_FALSE(bool(g));
+#endif
+}
+
 TEST(inplace_function, FunctionPointer)
 {
     // Even compatible function pointers require an appropriate amount of "storage".
