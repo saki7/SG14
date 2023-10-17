@@ -6,6 +6,7 @@ set(TEST_SOURCE_FILES
     flat_set_test.cpp
     hive_test.cpp
     inplace_function_test.cpp
+    inplace_vector_test.cpp
     ring_span_test.cpp
     slot_map_test.cpp
     uninitialized_test.cpp

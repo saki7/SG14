@@ -12,16 +12,21 @@
 #include <string>
 #include <vector>
 
+#if __cplusplus >= 201702L
+#include <sg14/inplace_vector.h>
+#endif
+
 template<class T> struct flat_sett : testing::Test {};
 
 using flat_sett_types = testing::Types<
     sg14::flat_set<int>                                           // basic
     , sg14::flat_set<int, std::greater<int>>                      // custom comparator
-#if __cplusplus >= 201402L
     , sg14::flat_set<int, std::greater<>>                         // transparent comparator
-#endif
     , sg14::flat_set<int, std::less<int>, std::deque<int>>        // custom container
-#if __cpp_lib_memory_resource >= 201603
+#if __cplusplus >= 201702L
+    , sg14::flat_set<int, std::less<int>, sg14::inplace_vector<int, 1000>> // interop with sg14::inplace_vector
+#endif
+#if __cpp_lib_memory_resource >= 201603L
     , sg14::flat_set<int, std::less<int>, std::pmr::vector<int>>  // pmr container
 #endif
 >;

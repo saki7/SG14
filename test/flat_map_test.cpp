@@ -12,6 +12,10 @@
 #include <string>
 #include <vector>
 
+#if __cplusplus >= 201702L
+#include <sg14/inplace_vector.h>
+#endif
+
 template<class T> struct flat_mapt : testing::Test {};
 
 using flat_mapt_types = testing::Types<
@@ -21,6 +25,9 @@ using flat_mapt_types = testing::Types<
     , sg14::flat_map<int, const char*, std::greater<>>                              // transparent comparator
 #endif
     , sg14::flat_map<int, const char*, std::less<int>, std::deque<int>>             // custom container
+#if __cplusplus >= 201702L
+    , sg14::flat_map<int, const char*, std::less<int>, sg14::inplace_vector<int, 100>, sg14::inplace_vector<const char*, 50>>
+#endif
 #if __cpp_lib_memory_resource >= 201603
     , sg14::flat_map<int, const char*, std::less<int>, std::pmr::vector<int>>       // pmr container
     , sg14::flat_map<int, std::pmr::string, std::less<int>, std::pmr::vector<int>>  // uses-allocator construction

@@ -9,8 +9,8 @@ SG14, see [the mailing list](http://lists.isocpp.org/mailman/listinfo.cgi/sg14).
 ## What's included
 
 Each subheading of the form "(C++YY > C++XX)" means that some approximation of
-this feature is present in C++YY, but the `sg14::` version is intended to compile
-as far back as C++XX. A subheading "(future > C++XX)" means that this feature
+this facility is present in C++YY, but the `sg14::` version is intended to compile
+as far back as C++XX. A subheading "(future > C++XX)" means that this facility
 isn't available in any version of standard C++, yet.
 
 ### Efficient removal algorithms (future > C++14)
@@ -94,7 +94,32 @@ and adopted into C++23. The `sg14` versions are portable back to C++14.
 
 C++23 also provides `flat_multimap` and `flat_multiset`, which we don't provide.
 
-Boost also provides all four adaptors; see [`boost::container::flat_set`](https://www.boost.org/doc/libs/1_81_0/doc/html/container/non_standard_containers.html#container.non_standard_containers.flat_xxx).
+Boost also provides all four adaptors; see [`boost::container::flat_set`](https://www.boost.org/doc/libs/1_83_0/doc/html/container/non_standard_containers.html#container.non_standard_containers.flat_xxx).
+
+### In-place vector (future > C++17)
+
+```
+#include <sg14/inplace_vector.h>
+
+template<class T, size_t N>
+class sg14::inplace_vector;
+```
+
+`sg14::inplace_vector<int, 10>` is a drop-in replacement for `std::vector<int>`,
+but under the hood it stores its elements directly in-line, like a `std::array`, instead
+of using the heap. This container is proposed in
+[P0843](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p0843r9.html)
+and will likely be in C++26. The `sg14` version is portable back to C++17.
+
+Boost provides this container under the name [`boost::container::static_vector`](https://www.boost.org/doc/libs/1_83_0/doc/html/container/non_standard_containers.html#container.non_standard_containers.static_vector).
+
+#### Why not `std::erase{,_if}(inplace_vector, x)`?
+
+We shouldn't inject our own overloads into `namespace std`.
+We could provide `sg14::erase` instead, but then you'd have to know whether
+you had a `std::vector` or a `sg14::inplace_vector` in order to use it;
+or else use an ADL call, which isn't how `std::erase` is designed to be used.
+The erase-remove idiom works fine for `inplace_vector`.
 
 ### In-place type-erased types (future > C++14)
 
