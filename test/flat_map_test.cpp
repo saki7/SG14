@@ -647,7 +647,10 @@ TYPED_TEST(flat_mapt, ComparisonOperators)
 {
     using FM = TypeParam;
 
-    const char *abc[] = {"", "a", "b", "c"};
+    // abc[] is "", "a", "b", "c", but the char pointers themselves are also comparable.
+    const char abc_buffer[] = "\0a\0b\0c";
+    const char *abc[] = {abc_buffer+0, abc_buffer+1, abc_buffer+3, abc_buffer+5};
+
     FM fm1 = {
         {1, abc[2]}, {2, abc[3]},
     };
