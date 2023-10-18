@@ -1,5 +1,5 @@
 # SG14
-[![Build Status](https://travis-ci.org/Quuxplusone/SG14.svg?branch=master)](https://travis-ci.org/Quuxplusone/SG14)
+[![Build Status](https://github.com/Quuxplusone/SG14/actions/workflows/build-and-run-tests.yml/badge.svg?branch=master)](https://github.com/Quuxplusone/SG14/actions/workflows/build-and-run-tests.yml)
 
 A library of containers and algorithms pioneered by the ISO C++ Committee's
 "Low-Latency and Embedded" study group (SG14). For more information on

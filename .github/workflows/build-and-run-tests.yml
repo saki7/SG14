@@ -1,0 +1,49 @@
+name: Build and run tests
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        build_type: [Debug, RelWithDebInfo, Release]
+        cpp_compiler: [g++, clang++]
+        cpp_standard: [14, 17, 20, 23]
+        exclude:
+          - os: ubuntu-latest
+            cpp_compiler: clang++
+            cpp_standard: 20
+          - os: ubuntu-latest
+            cpp_compiler: clang++
+            cpp_standard: 23
+          - os: windows-latest
+            cpp_compiler: clang++
+          - os: windows-latest
+            cpp_compiler: g++
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install Google Test (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get install libgtest-dev
+
+    - name: Build and Test
+      run: |
+        cmake -S ${{ github.workspace }} -B ${{ github.workspace }}/build \
+          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }} \
+          -DCMAKE_CXX_STANDARD=${{ matrix.cpp_standard }} \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        cd ${{ github.workspace }}/build
+        make
+        ./bin/utest
