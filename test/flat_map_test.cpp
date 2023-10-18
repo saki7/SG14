@@ -52,13 +52,13 @@ TEST(flat_map, AmbiguousErase)
     fs.emplace("a", 1);
     fs.emplace("b", 2);
     fs.emplace("c", 3);
-    assert(fs.size() == 3);
+    EXPECT_TRUE(fs.size() == 3);
     fs.erase(AmbiguousEraseWidget("a"));  // calls erase(const Key&)
-    assert(fs.size() == 2);
+    EXPECT_TRUE(fs.size() == 2);
     fs.erase(fs.begin());                 // calls erase(iterator)
-    assert(fs.size() == 1);
+    EXPECT_TRUE(fs.size() == 1);
     fs.erase(fs.cbegin());                // calls erase(const_iterator)
-    assert(fs.size() == 0);
+    EXPECT_TRUE(fs.size() == 0);
 }
 
 TEST(flat_map, ExtractDoesntSwap)
@@ -70,8 +70,8 @@ TEST(flat_map, ExtractDoesntSwap)
         std::pmr::polymorphic_allocator<int> a(&mr);
         sg14::flat_map<int, int, std::less<>, std::pmr::vector<int>, std::pmr::vector<int>> fs({{1, 10}, {2, 20}}, a);
         auto ctrs = std::move(fs).extract();
-        assert(ctrs.keys.get_allocator() == a);
-        assert(ctrs.values.get_allocator() == a);
+        EXPECT_TRUE(ctrs.keys.get_allocator() == a);
+        EXPECT_TRUE(ctrs.values.get_allocator() == a);
     }
 #endif
 
@@ -80,8 +80,8 @@ TEST(flat_map, ExtractDoesntSwap)
         std::allocator<int> a;
         sg14::flat_map<int, int, std::less<>, std::vector<int>, std::vector<int>> fs({{1, 10}, {2, 20}}, a);
         auto ctrs = std::move(fs).extract();
-        assert(ctrs.keys.get_allocator() == a);
-        assert(ctrs.values.get_allocator() == a);
+        EXPECT_TRUE(ctrs.keys.get_allocator() == a);
+        EXPECT_TRUE(ctrs.values.get_allocator() == a);
     }
 }
 
@@ -121,34 +121,34 @@ TEST(flat_map, MoveOperationsPilferOwnership)
     InstrumentedWidget::copy_ctors = 0;
     FS fs;
     fs.insert(std::make_pair(InstrumentedWidget("abc"), 1));
-    assert(InstrumentedWidget::move_ctors == 3);
-    assert(InstrumentedWidget::copy_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 3);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 0);
 
     fs.emplace(InstrumentedWidget("def"), 1); fs.erase("def");  // poor man's reserve()
     InstrumentedWidget::copy_ctors = 0;
     InstrumentedWidget::move_ctors = 0;
 
     fs.emplace("def", 1);  // is still not directly emplaced; a temporary is created to find()
-    assert(InstrumentedWidget::move_ctors == 1);
-    assert(InstrumentedWidget::copy_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 1);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 0);
     InstrumentedWidget::move_ctors = 0;
 
     FS fs2 = std::move(fs);  // should just transfer buffer ownership
-    assert(InstrumentedWidget::move_ctors == 0);
-    assert(InstrumentedWidget::copy_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 0);
 
     fs = std::move(fs2);  // should just transfer buffer ownership
-    assert(InstrumentedWidget::move_ctors == 0);
-    assert(InstrumentedWidget::copy_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 0);
 
     FS fs3(fs, std::allocator<InstrumentedWidget>());
-    assert(InstrumentedWidget::move_ctors == 0);
-    assert(InstrumentedWidget::copy_ctors == 2);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 2);
     InstrumentedWidget::copy_ctors = 0;
 
     FS fs4(std::move(fs), std::allocator<InstrumentedWidget>());  // should just transfer buffer ownership
-    assert(InstrumentedWidget::move_ctors == 0);
-    assert(InstrumentedWidget::copy_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 0);
 }
 
 TEST(flat_map, SortedUniqueConstruction)
@@ -164,7 +164,7 @@ TEST(flat_map, SortedUniqueConstruction)
         bool test(sg14::sorted_unique_t) { return false; }
     };
     explicitness_tester tester;
-    assert(tester.test({}) == true);
+    EXPECT_TRUE(tester.test({}) == true);
 #endif
 }
 
@@ -176,53 +176,53 @@ TEST(flat_map, TryEmplace)
         // try_emplace for a non-existent key does move-from.
         InstrumentedWidget w("abc");
         pair = fm.try_emplace(1, std::move(w));
-        assert(w.is_moved_from);
-        assert(pair.second);
+        EXPECT_TRUE(w.is_moved_from);
+        EXPECT_TRUE(pair.second);
     }
     if (true) {
         // try_emplace over an existing key is a no-op.
         InstrumentedWidget w("def");
         pair = fm.try_emplace(1, std::move(w));
-        assert(!w.is_moved_from);
-        assert(!pair.second);
-        assert(pair.first->first == 1);
-        assert(pair.first->second.str() == "abc");
+        EXPECT_TRUE(!w.is_moved_from);
+        EXPECT_TRUE(!pair.second);
+        EXPECT_TRUE(pair.first->first == 1);
+        EXPECT_TRUE(pair.first->second.str() == "abc");
     }
     if (true) {
         // emplace for a non-existent key does move-from.
         InstrumentedWidget w("abc");
         pair = fm.emplace(2, std::move(w));
-        assert(w.is_moved_from);
-        assert(pair.second);
-        assert(pair.first->first == 2);
-        assert(pair.first->second.str() == "abc");
+        EXPECT_TRUE(w.is_moved_from);
+        EXPECT_TRUE(pair.second);
+        EXPECT_TRUE(pair.first->first == 2);
+        EXPECT_TRUE(pair.first->second.str() == "abc");
     }
     if (true) {
         // emplace over an existing key is a no-op, but does move-from in order to construct the pair.
         InstrumentedWidget w("def");
         pair = fm.emplace(2, std::move(w));
-        assert(w.is_moved_from);
-        assert(!pair.second);
-        assert(pair.first->first == 2);
-        assert(pair.first->second.str() == "abc");
+        EXPECT_TRUE(w.is_moved_from);
+        EXPECT_TRUE(!pair.second);
+        EXPECT_TRUE(pair.first->first == 2);
+        EXPECT_TRUE(pair.first->second.str() == "abc");
     }
     if (true) {
         // insert-or-assign for a non-existent key does move-construct.
         InstrumentedWidget w("abc");
         pair = fm.insert_or_assign(3, std::move(w));
-        assert(w.is_moved_from);
-        assert(pair.second);
-        assert(pair.first->first == 3);
-        assert(pair.first->second.str() == "abc");
+        EXPECT_TRUE(w.is_moved_from);
+        EXPECT_TRUE(pair.second);
+        EXPECT_TRUE(pair.first->first == 3);
+        EXPECT_TRUE(pair.first->second.str() == "abc");
     }
     if (true) {
         // insert-or-assign over an existing key does a move-assign.
         InstrumentedWidget w("def");
         pair = fm.insert_or_assign(3, std::move(w));
-        assert(w.is_moved_from);
-        assert(!pair.second);
-        assert(pair.first->first == 3);
-        assert(pair.first->second.str() == "def");
+        EXPECT_TRUE(w.is_moved_from);
+        EXPECT_TRUE(!pair.second);
+        EXPECT_TRUE(pair.first->first == 3);
+        EXPECT_TRUE(pair.first->second.str() == "def");
     }
 }
 
@@ -231,34 +231,34 @@ TEST(flat_map, VectorBool)
     using FM = sg14::flat_map<bool, bool>;
     FM fm;
     auto it_inserted = fm.emplace(true, false);
-    assert(it_inserted.second);
+    EXPECT_TRUE(it_inserted.second);
     auto it = it_inserted.first;
-    assert(it == fm.begin());
-    assert(it->first == true); assert(it->first);
-    assert(it->second == false); assert(!it->second);
+    EXPECT_TRUE(it == fm.begin());
+    EXPECT_TRUE(it->first == true); EXPECT_TRUE(it->first);
+    EXPECT_TRUE(it->second == false); EXPECT_TRUE(!it->second);
     it->second = false;
-    assert(fm.size() == 1);
+    EXPECT_TRUE(fm.size() == 1);
     it = fm.emplace_hint(it, false, true);
-    assert(it == fm.begin());
-    assert(it->first == false); assert(!it->first);
-    assert(it->second == true); assert(it->second);
+    EXPECT_TRUE(it == fm.begin());
+    EXPECT_TRUE(it->first == false); EXPECT_TRUE(!it->first);
+    EXPECT_TRUE(it->second == true); EXPECT_TRUE(it->second);
     it->second = true;
-    assert(fm.size() == 2);
+    EXPECT_TRUE(fm.size() == 2);
     auto count = fm.erase(false);
-    assert(count == 1);
-    assert(fm.size() == 1);
+    EXPECT_EQ(count, 1u);
+    EXPECT_EQ(fm.size(), 1u);
     it = fm.erase(fm.begin());
-    assert(fm.empty());
-    assert(it == fm.begin());
-    assert(it == fm.end());
+    EXPECT_TRUE(fm.empty());
+    EXPECT_EQ(it, fm.begin());
+    EXPECT_EQ(it, fm.end());
 
-    assert(fm.find(true) == fm.end());
+    EXPECT_EQ(fm.find(true), fm.end());
     fm.try_emplace(true, true);
-    assert(fm.find(true) != fm.end());
-    assert(fm[true] == true);
+    EXPECT_NE(fm.find(true), fm.end());
+    EXPECT_EQ(fm[true], true);
     fm[true] = false;
-    assert(fm.find(true) != fm.end());
-    assert(fm[true] == false);
+    EXPECT_NE(fm.find(true), fm.end());
+    EXPECT_EQ(fm[true], false);
     fm.clear();
 }
 
@@ -305,8 +305,8 @@ TEST(flat_map, DeductionGuides)
         std::initializer_list<std::pair<int, std::string>> il = {{1,"c"}, {5,"b"}, {3,"a"}};
         flat_map fm5(il);
         static_assert(std::is_same_v<decltype(fm5), flat_map<int, std::string>>);
-        assert(fm5.size() == 3);
-        assert(( fm5 == decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
+        EXPECT_EQ(fm5.size(), 3);
+        EXPECT_EQ(fm5, decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}));
     }
     if (true) {
         // flat_map(KeyContainer, MappedContainer)
@@ -314,10 +314,10 @@ TEST(flat_map, DeductionGuides)
         std::vector<std::string> vs {"a","b"};
         flat_map fm1(vi, vs);
         static_assert(std::is_same_v<decltype(fm1), flat_map<int, std::string>>);
-        assert(( fm1 == flat_map<int, std::string>(sg14::sorted_unique, {{1,"b"}, {2,"a"}}) ));
+        EXPECT_EQ(fm1, (flat_map<int, std::string>(sg14::sorted_unique, {{1,"b"}, {2,"a"}})));
         flat_map fm2(std::move(vs), std::move(vi));
         static_assert(std::is_same_v<decltype(fm2), flat_map<std::string, int>>);
-        assert(( fm2 == flat_map<std::string, int>(sg14::sorted_unique, {{"a",2}, {"b",1}}) ));
+        EXPECT_EQ(fm2, (flat_map<std::string, int>(sg14::sorted_unique, {{"a",2}, {"b",1}})));
     }
     if (true) {
         // flat_map(Container, Allocator)
@@ -337,13 +337,13 @@ TEST(flat_map, DeductionGuides)
         std::vector<std::string> vs {"a","b"};
         flat_map fm1(vi, vs, std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm1), flat_map<int, std::string>>);
-        assert(( fm1 == decltype(fm1)(sg14::sorted_unique, {{1,"b"}, {2,"a"}}) ));
+        EXPECT_EQ(fm1, (decltype(fm1)(sg14::sorted_unique, {{1,"b"}, {2,"a"}})));
 #if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<int> pvi {2,1};
         std::pmr::vector<std::pmr::string> pvs {"a","b"};
         flat_map fm2(pvi, pvs, std::pmr::polymorphic_allocator<char>());
         static_assert(std::is_same_v<decltype(fm2), flat_map<int, std::pmr::string, std::less<int>, std::pmr::vector<int>, std::pmr::vector<std::pmr::string>>>);
-        assert(( fm2 == decltype(fm2)(sg14::sorted_unique, {{1,"b"}, {2,"a"}}) ));
+        EXPECT_EQ(fm2, (decltype(fm2)(sg14::sorted_unique, {{1,"b"}, {2,"a"}})));
 #endif
     }
     if (true) {
@@ -364,7 +364,7 @@ TEST(flat_map, DeductionGuides)
         std::initializer_list<std::pair<int, std::string>> il = {{1,"c"}, {3,"b"}, {5,"a"}};
         flat_map fm5(sg14::sorted_unique, il);
         static_assert(std::is_same_v<decltype(fm5), flat_map<int, std::string>>);
-        assert(( fm5 == decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"b"}, {5,"a"}}) ));
+        EXPECT_EQ(fm5, (decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"b"}, {5,"a"}})));
     }
     if (true) {
         // flat_map(sorted_unique_t, KeyContainer, MappedContainer)
@@ -372,10 +372,10 @@ TEST(flat_map, DeductionGuides)
         std::vector<std::string> vs {"a","b"};
         flat_map fm1(sg14::sorted_unique, vi, vs);
         static_assert(std::is_same_v<decltype(fm1), flat_map<int, std::string>>);
-        assert(( fm1 == decltype(fm1)(sg14::sorted_unique, {{1,"a"}, {2,"b"}}) ));
+        EXPECT_EQ(fm1, decltype(fm1)(sg14::sorted_unique, {{1,"a"}, {2,"b"}}));
         flat_map fm2(sg14::sorted_unique, std::move(vs), std::move(vi));
         static_assert(std::is_same_v<decltype(fm2), flat_map<std::string, int>>);
-        assert(( fm2 == decltype(fm2)(sg14::sorted_unique, {{"a",1}, {"b",2}}) ));
+        EXPECT_EQ(fm2, decltype(fm2)(sg14::sorted_unique, {{"a",1}, {"b",2}}));
     }
     if (true) {
         // flat_map(sorted_unique_t, Container, Allocator)
@@ -395,13 +395,13 @@ TEST(flat_map, DeductionGuides)
         std::vector<std::string> vs {"a","b"};
         flat_map fm1(sg14::sorted_unique, vs, vi, std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm1), flat_map<std::string, int>>);
-        assert(( fm1 == decltype(fm1)(sg14::sorted_unique, {{"a",2}, {"b",1}}) ));
+        EXPECT_EQ(fm1, decltype(fm1)(sg14::sorted_unique, {{"a",2}, {"b",1}}));
 #if __cpp_lib_memory_resource >= 201603
         std::pmr::vector<int> pvi {1, 2};
         std::pmr::vector<std::pmr::string> pvs {"b","a"};
         flat_map fm2(sg14::sorted_unique, pvi, pvs, std::pmr::polymorphic_allocator<char>());
         static_assert(std::is_same_v<decltype(fm2), flat_map<int, std::pmr::string, std::less<int>, std::pmr::vector<int>, std::pmr::vector<std::pmr::string>>>);
-        assert(( fm2 == decltype(fm2)(sg14::sorted_unique, {{1,"b"}, {2,"a"}}) ));
+        EXPECT_EQ(fm2, decltype(fm2)(sg14::sorted_unique, {{1,"b"}, {2,"a"}}));
 #endif
     }
     if (true) {
@@ -420,7 +420,7 @@ TEST(flat_map, DeductionGuides)
         std::initializer_list<std::pair<int, std::string>> il = {{1,"c"}, {5,"b"}, {3,"a"}};
         flat_map fm5(il.begin(), il.end());
         static_assert(std::is_same_v<decltype(fm5), flat_map<int, std::string>>);
-        assert(( fm5 == decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
+        EXPECT_EQ(fm5, decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}));
     }
     if (true) {
         // flat_map(InputIterator, InputIterator, Compare = Compare())
@@ -430,11 +430,11 @@ TEST(flat_map, DeductionGuides)
         int x = 3;
         std::pair<int, int> arr[] = {{1,2}, {2,3}, {3,4}, {4,5}};
         flat_map fm2(arr, arr + 4, [&x](int a, int b){ return (a % x) < (b % x); });
-        assert(fm2.key_comp()(2, 4) == false);
+        EXPECT_FALSE(fm2.key_comp()(2, 4));
         x = 10;
-        assert(fm2.key_comp()(2, 4) == true);
+        EXPECT_TRUE(fm2.key_comp()(2, 4));
         x = 3;
-        assert(fm2.begin()[0].first == 3);
+        EXPECT_EQ(fm2.begin()[0].first, 3);
         std::list<std::pair<const int* const, const int*>> lst;
         flat_map fm3(lst.begin(), lst.end(), std::greater<>());
         static_assert(std::is_same_v<decltype(fm3), flat_map<const int*, const int*, std::greater<>>>);
@@ -446,12 +446,12 @@ TEST(flat_map, DeductionGuides)
         std::initializer_list<std::pair<int, std::string>> il = {{1,"c"}, {5,"b"}, {3,"a"}};
         flat_map fm5(il.begin(), il.end(), std::less<int>());
         static_assert(std::is_same_v<decltype(fm5), flat_map<int, std::string>>);
-        assert(( fm5 == decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
+        EXPECT_EQ(fm5, decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}));
 
         flat_map fm6(arr, arr + 4, free_function_less);
         static_assert(std::is_same_v<decltype(fm6), flat_map<int, int, bool(*)(const int&, const int&)>>);
-        assert(fm6.key_comp() == free_function_less);
-        assert(( fm6 == decltype(fm6)(sg14::sorted_unique, {{1,2}, {2,3}, {3,4}, {4,5}}, free_function_less) ));
+        EXPECT_EQ(fm6.key_comp(), free_function_less);
+        EXPECT_EQ(fm6, decltype(fm6)(sg14::sorted_unique, {{1,2}, {2,3}, {3,4}, {4,5}}, free_function_less));
     }
     if (true) {
         // flat_map(InputIterator, InputIterator, Compare, Allocator)
@@ -461,11 +461,11 @@ TEST(flat_map, DeductionGuides)
         int x = 3;
         std::pair<int, int> arr[] = {{1,2}, {2,3}, {3,4}, {4,5}};
         flat_map fm2(arr, arr + 4, [&x](int a, int b){ return (a % x) < (b % x); }, std::allocator<int>());
-        assert(fm2.key_comp()(2, 4) == false);
+        EXPECT_FALSE(fm2.key_comp()(2, 4));
         x = 10;
-        assert(fm2.key_comp()(2, 4) == true);
+        EXPECT_TRUE(fm2.key_comp()(2, 4));
         x = 3;
-        assert(fm2.begin()[0].first == 3);
+        EXPECT_EQ(fm2.begin()[0].first, 3);
         std::list<std::pair<const int* const, const int*>> lst;
         flat_map fm3(lst.begin(), lst.end(), std::greater<>(), std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm3), flat_map<const int*, const int*, std::greater<>>>);
@@ -473,17 +473,17 @@ TEST(flat_map, DeductionGuides)
         std::pmr::vector<std::pair<std::pmr::string, int>> pv;
         flat_map fm4(pv.begin(), pv.end(), std::greater<>(), std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm4), flat_map<std::pmr::string, int, std::greater<>>>);
-        assert(!flatmap_is_ctadable_from(0, pv.begin(), pv.end(), std::greater<int>(), std::pmr::polymorphic_allocator<int>()));
+        EXPECT_TRUE(!flatmap_is_ctadable_from(0, pv.begin(), pv.end(), std::greater<int>(), std::pmr::polymorphic_allocator<int>()));
 #endif
         std::initializer_list<std::pair<int, std::string>> il = {{1,"c"}, {5,"b"}, {3,"a"}};
         flat_map fm5(il.begin(), il.end(), std::less<int>(), std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm5), flat_map<int, std::string>>);
-        assert(( fm5 == decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
+        EXPECT_TRUE(( fm5 == decltype(fm5)(sg14::sorted_unique, {{1,"c"}, {3,"a"}, {5,"b"}}) ));
 
         flat_map fm6(arr, arr + 4, free_function_less, std::allocator<int>());
         static_assert(std::is_same_v<decltype(fm6), flat_map<int, int, bool(*)(const int&, const int&)>>);
-        assert(fm6.key_comp() == free_function_less);
-        assert(( fm6 == decltype(fm6)(sg14::sorted_unique, {{1,2}, {2,3}, {3,4}, {4,5}}, free_function_less) ));
+        EXPECT_TRUE(fm6.key_comp() == free_function_less);
+        EXPECT_TRUE(( fm6 == decltype(fm6)(sg14::sorted_unique, {{1,2}, {2,3}, {3,4}, {4,5}}, free_function_less) ));
     }
     if (true) {
         // flat_map(InputIterator, InputIterator, Allocator)
@@ -541,11 +541,11 @@ TYPED_TEST(flat_mapt, Construction)
             {3, "c"},
             {5, "b"},
         };
-        assert(std::is_sorted(fs.keys().begin(), fs.keys().end(), fs.key_comp()));
-        assert(std::is_sorted(fs.begin(), fs.end(), fs.value_comp()));
-        assert(fs[1] == Str("a"));
-        assert(fs[3] == Str("c"));
-        assert(fs[5] == Str("b"));
+        EXPECT_TRUE(std::is_sorted(fs.keys().begin(), fs.keys().end(), fs.key_comp()));
+        EXPECT_TRUE(std::is_sorted(fs.begin(), fs.end(), fs.value_comp()));
+        EXPECT_TRUE(fs[1] == Str("a"));
+        EXPECT_TRUE(fs[3] == Str("c"));
+        EXPECT_TRUE(fs[5] == Str("b"));
     }
     for (auto&& fs : {
         FS({{1, "a"}, {3, "c"}, {5, "b"}}),
@@ -556,18 +556,18 @@ TYPED_TEST(flat_mapt, Construction)
         FS(pairs.begin(), pairs.end(), Compare()),
         FS(pairs.rbegin(), pairs.rend(), Compare()),
     }) {
-        assert(std::is_sorted(fs.keys().begin(), fs.keys().end(), fs.key_comp()));
-        assert(std::is_sorted(fs.begin(), fs.end(), fs.value_comp()));
-        assert(fs.find(0) == fs.end());
-        assert(fs.find(1) != fs.end());
-        assert(fs.find(2) == fs.end());
-        assert(fs.find(3) != fs.end());
-        assert(fs.find(4) == fs.end());
-        assert(fs.find(5) != fs.end());
-        assert(fs.find(6) == fs.end());
-        assert(fs.at(1) == Str("a"));
-        assert(fs.at(3) == Str("c"));
-        assert(fs.find(5)->second == Str("b"));
+        EXPECT_TRUE(std::is_sorted(fs.keys().begin(), fs.keys().end(), fs.key_comp()));
+        EXPECT_TRUE(std::is_sorted(fs.begin(), fs.end(), fs.value_comp()));
+        EXPECT_TRUE(fs.find(0) == fs.end());
+        EXPECT_TRUE(fs.find(1) != fs.end());
+        EXPECT_TRUE(fs.find(2) == fs.end());
+        EXPECT_TRUE(fs.find(3) != fs.end());
+        EXPECT_TRUE(fs.find(4) == fs.end());
+        EXPECT_TRUE(fs.find(5) != fs.end());
+        EXPECT_TRUE(fs.find(6) == fs.end());
+        EXPECT_TRUE(fs.at(1) == Str("a"));
+        EXPECT_TRUE(fs.at(3) == Str("c"));
+        EXPECT_TRUE(fs.find(5)->second == Str("b"));
     }
     if (std::is_sorted(keys.begin(), keys.end(), Compare())) {
         for (auto&& fs : {
@@ -578,11 +578,11 @@ TYPED_TEST(flat_mapt, Construction)
             FS(sg14::sorted_unique, pairs.begin(), pairs.end(), Compare()),
             FS(sg14::sorted_unique, {{1, "a"}, {3, "c"}, {5, "b"}}, Compare()),
         }) {
-            assert(std::is_sorted(fs.keys().begin(), fs.keys().end(), fs.key_comp()));
-            assert(std::is_sorted(fs.begin(), fs.end(), fs.value_comp()));
-            assert(fs.at(1) == Str("a"));
-            assert(fs.at(3) == Str("c"));
-            assert(fs.find(5)->second == Str("b"));
+            EXPECT_TRUE(std::is_sorted(fs.keys().begin(), fs.keys().end(), fs.key_comp()));
+            EXPECT_TRUE(std::is_sorted(fs.begin(), fs.end(), fs.value_comp()));
+            EXPECT_TRUE(fs.at(1) == Str("a"));
+            EXPECT_TRUE(fs.at(3) == Str("c"));
+            EXPECT_TRUE(fs.find(5)->second == Str("b"));
         }
     }
 }
@@ -597,31 +597,31 @@ TYPED_TEST(flat_mapt, InsertOrAssign)
     using Str = std::conditional_t<std::is_same<Mapped, const char *>::value, std::string, Mapped>;
 
     fm.insert_or_assign(1, str);
-    assert(fm.at(1) == Str("a"));
-    assert(fm[1] == Str("a"));
+    EXPECT_TRUE(fm.at(1) == Str("a"));
+    EXPECT_TRUE(fm[1] == Str("a"));
     fm.insert_or_assign(2, std::move(str));
-    assert(fm.at(2) == Str("a"));
-    assert(fm[2] == Str("a"));
+    EXPECT_TRUE(fm.at(2) == Str("a"));
+    EXPECT_TRUE(fm[2] == Str("a"));
     fm.insert_or_assign(2, "b");
-    assert(fm.at(2) == Str("b"));
-    assert(fm[2] == Str("b"));
+    EXPECT_TRUE(fm.at(2) == Str("b"));
+    EXPECT_TRUE(fm[2] == Str("b"));
     fm.insert_or_assign(3, "c");
-    assert(fm.at(3) == Str("c"));
-    assert(fm[3] == Str("c"));
+    EXPECT_TRUE(fm.at(3) == Str("c"));
+    EXPECT_TRUE(fm[3] == Str("c"));
 
     // With hints.
     fm.insert_or_assign(fm.begin(), 1, str);
-    assert(fm.at(1) == Str("a"));
-    assert(fm[1] == Str("a"));
+    EXPECT_TRUE(fm.at(1) == Str("a"));
+    EXPECT_TRUE(fm[1] == Str("a"));
     fm.insert_or_assign(fm.begin()+2, 2, std::move(str));
-    assert(fm.at(2) == Str("a"));
-    assert(fm[2] == Str("a"));
+    EXPECT_TRUE(fm.at(2) == Str("a"));
+    EXPECT_TRUE(fm[2] == Str("a"));
     fm.insert_or_assign(fm.end(), 2, "c");
-    assert(fm.at(2) == Str("c"));
-    assert(fm[2] == Str("c"));
+    EXPECT_TRUE(fm.at(2) == Str("c"));
+    EXPECT_TRUE(fm[2] == Str("c"));
     fm.insert_or_assign(fm.end() - 1, 3, "b");
-    assert(fm.at(3) == Str("b"));
-    assert(fm[3] == Str("b"));
+    EXPECT_TRUE(fm.at(3) == Str("b"));
+    EXPECT_TRUE(fm[3] == Str("b"));
 }
 
 TYPED_TEST(flat_mapt, SpecialMembers)
@@ -658,31 +658,31 @@ TYPED_TEST(flat_mapt, ComparisonOperators)
         {1, abc[2]}, {2, abc[3]},
     };
     // {1b, 2c} is equal to {1b, 2c}.
-    assert(fm1 == fm2);
-    assert(!(fm1 != fm2));
-    assert(!(fm1 < fm2));
-    assert(!(fm1 > fm2));
-    assert(fm1 <= fm2);
-    assert(fm1 >= fm2);
+    EXPECT_TRUE(fm1 == fm2);
+    EXPECT_TRUE(!(fm1 != fm2));
+    EXPECT_TRUE(!(fm1 < fm2));
+    EXPECT_TRUE(!(fm1 > fm2));
+    EXPECT_TRUE(fm1 <= fm2);
+    EXPECT_TRUE(fm1 >= fm2);
 
     fm2[2] = abc[1];
     // {1b, 2c} is greater than {1b, 2a}.
-    assert(!(fm1 == fm2));
-    assert(fm1 != fm2);
-    assert(!(fm1 < fm2));
-    assert(fm1 > fm2);
-    assert(!(fm1 <= fm2));
-    assert(fm1 >= fm2);
+    EXPECT_TRUE(!(fm1 == fm2));
+    EXPECT_TRUE(fm1 != fm2);
+    EXPECT_TRUE(!(fm1 < fm2));
+    EXPECT_TRUE(fm1 > fm2);
+    EXPECT_TRUE(!(fm1 <= fm2));
+    EXPECT_TRUE(fm1 >= fm2);
 
     fm2.erase(2);
     fm2.insert({0, abc[3]});
     // {1b, 2c} is greater than {0c, 1b}.
-    assert(!(fm1 == fm2));
-    assert(fm1 != fm2);
-    assert(!(fm1 < fm2));
-    assert(fm1 > fm2);
-    assert(!(fm1 <= fm2));
-    assert(fm1 >= fm2);
+    EXPECT_TRUE(!(fm1 == fm2));
+    EXPECT_TRUE(fm1 != fm2);
+    EXPECT_TRUE(!(fm1 < fm2));
+    EXPECT_TRUE(fm1 > fm2);
+    EXPECT_TRUE(!(fm1 <= fm2));
+    EXPECT_TRUE(fm1 >= fm2);
 }
 
 TYPED_TEST(flat_mapt, Search)
@@ -692,19 +692,19 @@ TYPED_TEST(flat_mapt, Search)
     FM fm{{1, "a"}, {2, "b"}, {3, "c"}};
     auto it = fm.lower_bound(2);
     auto cit = const_cast<const FM&>(fm).lower_bound(2);
-    assert(it == fm.begin() + 1);
-    assert(cit == it);
+    EXPECT_TRUE(it == fm.begin() + 1);
+    EXPECT_TRUE(cit == it);
 
     it = fm.upper_bound(2);
     cit = const_cast<const FM&>(fm).upper_bound(2);
-    assert(it == fm.begin() + 2);
-    assert(cit == it);
+    EXPECT_TRUE(it == fm.begin() + 2);
+    EXPECT_TRUE(cit == it);
 
     auto itpair = fm.equal_range(2);
     auto citpair = const_cast<const FM&>(fm).equal_range(2);
-    assert(itpair.first == fm.begin() + 1);
-    assert(itpair.second == fm.begin() + 2);
-    assert(citpair == decltype(citpair)(itpair));
+    EXPECT_TRUE(itpair.first == fm.begin() + 1);
+    EXPECT_TRUE(itpair.second == fm.begin() + 2);
+    EXPECT_TRUE(citpair == decltype(citpair)(itpair));
 
     static_assert(std::is_same<decltype(it), typename FM::iterator>::value, "");
     static_assert(std::is_same<decltype(cit), typename FM::const_iterator>::value, "");

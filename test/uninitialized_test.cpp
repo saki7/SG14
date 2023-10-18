@@ -30,9 +30,9 @@ namespace {
             move = 0;
         }
         static void test(uint64_t inconstruct, uint64_t indestruct, uint64_t inmove) {
-            assert(construct == inconstruct);
-            assert(destruct == indestruct);
-            assert(move == inmove);
+            EXPECT_TRUE(construct == inconstruct);
+            EXPECT_TRUE(destruct == indestruct);
+            EXPECT_TRUE(move == inmove);
         }
     };
     uint64_t lifetest::construct = 0;
@@ -61,7 +61,7 @@ TEST(uninitialized_value_construct, Basic)
 
     auto m = (int*)malloc(sizeof(int) * 5);
     sg14::uninitialized_value_construct(m, m + 5);
-    assert(std::all_of(m, m + 5, [](int x) { return x == 0; }));
+    EXPECT_TRUE(std::all_of(m, m + 5, [](int x) { return x == 0; }));
     free(m);
 }
 

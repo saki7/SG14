@@ -17,19 +17,19 @@ struct Functor {
     Functor() {}
     Functor(const Functor&) { copied += 1; }
     Functor(Functor&&) noexcept { moved += 1; }
-    void operator()(int i) { assert(i == expected); called_with = i; }
+    void operator()(int i) { EXPECT_TRUE(i == expected); called_with = i; }
 };
 
 struct ConstFunctor {
     ConstFunctor() {}
     ConstFunctor(const ConstFunctor&) { copied += 1; }
     ConstFunctor(ConstFunctor&&) noexcept { moved += 1; }
-    void operator()(int i) const { assert(i == expected); called_with = i; }
+    void operator()(int i) const { EXPECT_TRUE(i == expected); called_with = i; }
 };
 
 void Foo(int i)
 {
-    assert(i == expected);
+    EXPECT_TRUE(i == expected);
     called_with = i;
 }
 
@@ -380,23 +380,23 @@ TEST(inplace_function, ConvertibleFromNullptr)
     auto nil = nullptr;
     const auto cnil = nullptr;
 
-    IPF f;                    assert(! bool(f));
-    f = nullptr;              assert(! bool(f));
-    f = IPF(nullptr);         assert(! bool(f));
-    f = IPF();                assert(! bool(f));
-    f = IPF{};                assert(! bool(f));
-    f = {};                   assert(! bool(f));
-    f = nil;                  assert(! bool(f));
-    f = IPF(nil);             assert(! bool(f));
-    f = IPF(std::move(nil));  assert(! bool(f));
-    f = cnil;                 assert(! bool(f));
-    f = IPF(cnil);            assert(! bool(f));
-    f = IPF(std::move(cnil)); assert(! bool(f));
+    IPF f;                    EXPECT_TRUE(! bool(f));
+    f = nullptr;              EXPECT_TRUE(! bool(f));
+    f = IPF(nullptr);         EXPECT_TRUE(! bool(f));
+    f = IPF();                EXPECT_TRUE(! bool(f));
+    f = IPF{};                EXPECT_TRUE(! bool(f));
+    f = {};                   EXPECT_TRUE(! bool(f));
+    f = nil;                  EXPECT_TRUE(! bool(f));
+    f = IPF(nil);             EXPECT_TRUE(! bool(f));
+    f = IPF(std::move(nil));  EXPECT_TRUE(! bool(f));
+    f = cnil;                 EXPECT_TRUE(! bool(f));
+    f = IPF(cnil);            EXPECT_TRUE(! bool(f));
+    f = IPF(std::move(cnil)); EXPECT_TRUE(! bool(f));
 
-    assert(!f);
-    assert(f == nullptr);
-    assert(!(f != nullptr));
-    expected = 0; try { f(42); } catch (const std::bad_function_call&) { expected = 1; } assert(expected == 1);
+    EXPECT_TRUE(!f);
+    EXPECT_TRUE(f == nullptr);
+    EXPECT_TRUE(!(f != nullptr));
+    expected = 0; try { f(42); } catch (const std::bad_function_call&) { expected = 1; } EXPECT_TRUE(expected == 1);
 }
 
 namespace {
@@ -570,15 +570,15 @@ TEST(inplace_function, ReturnByMove)
         InstrumentedCopyConstructor::copies = 0;
         InstrumentedCopyConstructor::moves = 0;
         IPF20 f = [cc]() { };
-        assert(InstrumentedCopyConstructor::copies == 1);
-        assert(InstrumentedCopyConstructor::moves == 1);
+        EXPECT_TRUE(InstrumentedCopyConstructor::copies == 1);
+        EXPECT_TRUE(InstrumentedCopyConstructor::moves == 1);
         InstrumentedCopyConstructor::copies = 0;
         InstrumentedCopyConstructor::moves = 0;
         return f;
     };
     IPF40 f = foo();
-    assert(InstrumentedCopyConstructor::copies == 0);
-    assert(InstrumentedCopyConstructor::moves == 1);
+    EXPECT_TRUE(InstrumentedCopyConstructor::copies == 0);
+    EXPECT_TRUE(InstrumentedCopyConstructor::moves == 1);
 }
 
 TEST(inplace_function, IsInvocableTrait)
@@ -679,11 +679,11 @@ TEST(inplace_function, DefaultConstructor)
     using IPF = sg14::inplace_function<void(int)>;
 
     IPF func;
-    assert(!func);
-    assert(!bool(func));
-    assert(func == nullptr);
-    assert(!(func != nullptr));
-    expected = 0; try { func(42); } catch (std::bad_function_call&) { expected = 1; } assert(expected == 1);
+    EXPECT_TRUE(!func);
+    EXPECT_TRUE(!bool(func));
+    EXPECT_TRUE(func == nullptr);
+    EXPECT_TRUE(!(func != nullptr));
+    expected = 0; try { func(42); } catch (std::bad_function_call&) { expected = 1; } EXPECT_TRUE(expected == 1);
 }
 
 TEST(inplace_function, Assignment)
@@ -693,9 +693,9 @@ TEST(inplace_function, Assignment)
     IPF func;
 
     func = Foo;
-    assert(!!func);
-    assert(func);
-    assert(!(func == nullptr));
-    assert(func != nullptr);
-    called_with = 0; expected = 42; func(42); assert(called_with == 42);
+    EXPECT_TRUE(!!func);
+    EXPECT_TRUE(func);
+    EXPECT_TRUE(!(func == nullptr));
+    EXPECT_TRUE(func != nullptr);
+    called_with = 0; expected = 42; func(42); EXPECT_TRUE(called_with == 42);
 }

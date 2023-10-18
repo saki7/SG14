@@ -125,7 +125,7 @@ static void print_slot_map(const sg14::slot_map<T, Key, Container>& sm)
     for (auto&& value : sm) {
         printf(" %d", (int)value);
     }
-    assert(sm.reverse_map_.size() == sm.size());
+    EXPECT_EQ(sm.reverse_map_.size(), sm.size());
     printf("\n%d reverse_map:", (int)sm.reverse_map_.size());
     for (auto&& idx : sm.reverse_map_) {
         printf(" %d", (int)idx);
@@ -140,36 +140,36 @@ template<class SM, class T>
 static void BasicTests(T t1, T t2)
 {
     SM sm;
-    assert(sm.empty());
-    assert(sm.size() == 0);
+    EXPECT_TRUE(sm.empty());
+    EXPECT_EQ(sm.size(), 0u);
     SM sm2 = move_if_necessary(sm);
-    assert(sm2.empty());
-    assert(sm2.size() == 0);
+    EXPECT_TRUE(sm2.empty());
+    EXPECT_EQ(sm2.size(), 0u);
     auto k1 = sm.insert(std::move(t1));
     auto k2 = sm.insert(move_if_necessary(t2));
-    assert(!sm.empty());
-    assert(sm.size() == 2);
-    assert(std::next(sm.begin(), 2) == sm.end());
-    assert(sm.find(k1) == sm.begin());
-    assert(sm.find(k2) == std::next(sm.begin()));
-    assert(sm2.empty());
-    assert(sm2.size() == 0);
+    EXPECT_FALSE(sm.empty());
+    EXPECT_EQ(sm.size(), 2u);
+    EXPECT_EQ(std::next(sm.begin(), 2), sm.end());
+    EXPECT_EQ(sm.find(k1), sm.begin());
+    EXPECT_EQ(sm.find(k2), std::next(sm.begin()));
+    EXPECT_TRUE(sm2.empty());
+    EXPECT_EQ(sm2.size(), 0u);
     auto num_removed = sm.erase(k1);
-    assert(num_removed == 1);
-    assert(sm.size() == 1);
-    assert(sm.find(k1) == sm.end());  // find an expired key
-    try { (void)sm.at(k1); assert(false); } catch (const std::out_of_range&) {}
-    assert(sm.find(k2) == sm.begin());  // find a non-expired key
-    assert(sm.at(k2) == *sm.begin());
-    assert(sm.find_unchecked(k2) == sm.begin());
-    assert(sm[k2] == *sm.begin());
-    assert(sm.erase(k1) == 0);  // erase an expired key
+    EXPECT_EQ(num_removed, 1u);
+    EXPECT_EQ(sm.size(), 1u);
+    EXPECT_EQ(sm.find(k1), sm.end());  // find an expired key
+    ASSERT_THROW(sm.at(k1), std::out_of_range);
+    EXPECT_EQ(sm.find(k2), sm.begin());  // find a non-expired key
+    EXPECT_EQ(sm.at(k2), *sm.begin());
+    EXPECT_EQ(sm.find_unchecked(k2), sm.begin());
+    EXPECT_EQ(sm[k2], *sm.begin());
+    EXPECT_EQ(sm.erase(k1), 0u);  // erase an expired key
     sm.swap(sm2);
-    assert(sm.empty());
-    assert(sm2.size() == 1);
-    assert(sm2.find(k1) == sm2.end());  // find an expired key
-    assert(sm2.find(k2) == sm2.begin());  // find a non-expired key
-    assert(sm2.erase(k1) == 0);  // erase an expired key
+    EXPECT_TRUE(sm.empty());
+    EXPECT_EQ(sm2.size(), 1u);
+    EXPECT_EQ(sm2.find(k1), sm2.end());  // find an expired key
+    EXPECT_EQ(sm2.find(k2), sm2.begin());  // find a non-expired key
+    EXPECT_EQ(sm2.erase(k1), 0u);  // erase an expired key
 }
 
 template<class SM, class TGen>
@@ -182,20 +182,20 @@ static void FullContainerStressTest(TGen t)
         auto k = sm.insert(t());
         keys.push_back(k);
     }
-    assert(sm.size() == total);
+    EXPECT_TRUE(sm.size() == total);
     std::mt19937 g;
     std::shuffle(keys.begin(), keys.end(), g);
     for (int i = 0; i < total; ++i) {
-        assert(sm.size() == static_cast<typename SM::size_type>(total - i));
-        assert(sm.find(keys[i]) != sm.end());
-        assert(sm.find_unchecked(keys[i]) != sm.end());
+        EXPECT_TRUE(sm.size() == static_cast<typename SM::size_type>(total - i));
+        EXPECT_TRUE(sm.find(keys[i]) != sm.end());
+        EXPECT_TRUE(sm.find_unchecked(keys[i]) != sm.end());
         for (int j = 0; j < i; ++j) {
-            assert(sm.find(keys[j]) == sm.end());
+            EXPECT_TRUE(sm.find(keys[j]) == sm.end());
         }
         auto erased = sm.erase(keys[i]);
-        assert(erased == 1);
+        EXPECT_TRUE(erased == 1);
     }
-    assert(sm.empty());
+    EXPECT_TRUE(sm.empty());
 }
 
 template<class SM, class TGen>
@@ -216,10 +216,10 @@ static void InsertEraseStressTest(TGen t)
             auto k = valid_keys.back();
             valid_keys.pop_back();
             auto erased = sm.erase(k);
-            assert(erased == 1);
+            EXPECT_TRUE(erased == 1);
             expired_keys.push_back(k);
             for (auto&& ek : expired_keys) {
-                assert(sm.find(ek) == sm.end());
+                EXPECT_TRUE(sm.find(ek) == sm.end());
             }
         } else {
             auto k = sm.insert(t());
@@ -245,12 +245,12 @@ static void EraseInLoopTest()
             ++it;
         }
     }
-    assert(total == 4950);
+    EXPECT_TRUE(total == 4950);
     int total2 = 0;
     for (auto&& elt : sm) {
         total2 += Monad<T>::value_of(elt);
     }
-    assert(total2 == 1275);
+    EXPECT_TRUE(total2 == 1275);
 }
 
 template<class SM>
@@ -275,16 +275,16 @@ static void EraseRangeTest()
         }
         return (actual_total == expected_total);
     };
-    assert(test(10, 8, 8));
-    assert(test(10, 3, 7));
-    assert(test(10, 0, 10));
-    assert(test(10, 1, 10));
-    assert(test(10, 0, 9));
-    assert(test(10, 1, 9));
+    EXPECT_TRUE(test(10, 8, 8));
+    EXPECT_TRUE(test(10, 3, 7));
+    EXPECT_TRUE(test(10, 0, 10));
+    EXPECT_TRUE(test(10, 1, 10));
+    EXPECT_TRUE(test(10, 0, 9));
+    EXPECT_TRUE(test(10, 1, 9));
     for (int N : { 2, 10, 100 }) {
         for (int i=0; i < N; ++i) {
             for (int j=i; j < N; ++j) {
-                assert(test(N, i, j));
+                EXPECT_TRUE(test(N, i, j));
             }
         }
     }
@@ -308,19 +308,19 @@ static void PartitionTest()
     });
 
     for (auto it = sm.begin(); it != pivot; ++it) {
-        assert(Monad<T>::value_of(*it) >= 5);
+        EXPECT_TRUE(Monad<T>::value_of(*it) >= 5);
     }
     for (auto it = pivot; it != sm.end(); ++it) {
-        assert(Monad<T>::value_of(*it) < 5);
+        EXPECT_TRUE(Monad<T>::value_of(*it) < 5);
     }
 
-    assert(Monad<T>::value_of(*sm.find(key3)) == 3);
-    assert(Monad<T>::value_of(*sm.find(key1)) == 1);
-    assert(Monad<T>::value_of(*sm.find(key4)) == 4);
-    assert(Monad<T>::value_of(*sm.find(key5)) == 5);
-    assert(Monad<T>::value_of(*sm.find(key9)) == 9);
-    assert(Monad<T>::value_of(*sm.find(key2)) == 2);
-    assert(Monad<T>::value_of(*sm.find(key6)) == 6);
+    EXPECT_TRUE(Monad<T>::value_of(*sm.find(key3)) == 3);
+    EXPECT_TRUE(Monad<T>::value_of(*sm.find(key1)) == 1);
+    EXPECT_TRUE(Monad<T>::value_of(*sm.find(key4)) == 4);
+    EXPECT_TRUE(Monad<T>::value_of(*sm.find(key5)) == 5);
+    EXPECT_TRUE(Monad<T>::value_of(*sm.find(key9)) == 9);
+    EXPECT_TRUE(Monad<T>::value_of(*sm.find(key2)) == 2);
+    EXPECT_TRUE(Monad<T>::value_of(*sm.find(key6)) == 6);
 }
 
 template<class SM>
@@ -330,42 +330,42 @@ static void ReserveTest()
     SM sm;
     auto k = sm.emplace(Monad<T>::from_value(1));
     (void)k;
-    assert(sm.size() == 1);
+    EXPECT_TRUE(sm.size() == 1);
 
     auto original_cap = sm.slot_count();
     static_assert(std::is_same<decltype(original_cap), typename SM::size_type>::value, "");
-    assert(original_cap >= 1);
+    EXPECT_TRUE(original_cap >= 1);
 
     sm.reserve_slots(original_cap + 3);
-    assert(sm.slot_count() >= original_cap + 3);
-    assert(sm.size() == 1);
+    EXPECT_TRUE(sm.slot_count() >= original_cap + 3);
+    EXPECT_TRUE(sm.size() == 1);
 
     sm.emplace(Monad<T>::from_value(2));
     sm.emplace(Monad<T>::from_value(3));
     sm.emplace(Monad<T>::from_value(4));
-    assert(sm.size() == 4);
+    EXPECT_TRUE(sm.size() == 4);
 }
 
 template<class SM, class = decltype(std::declval<const SM&>().capacity())>
 static void VerifyCapacityExists(bool expected)
 {
-    assert(expected);
+    EXPECT_TRUE(expected);
     SM sm;
     auto n = sm.capacity();
     static_assert(std::is_same<decltype(n), typename SM::size_type>::value, "");
-    assert(n == 0);
+    EXPECT_TRUE(n == 0);
     sm.reserve(100);
-    assert(sm.capacity() >= 100);
-    assert(sm.slot_count() >= 100);
+    EXPECT_TRUE(sm.capacity() >= 100);
+    EXPECT_TRUE(sm.slot_count() >= 100);
 }
 
 template<class SM, class Bool>
 void VerifyCapacityExists(Bool expected)
 {
-    assert(!expected);
+    EXPECT_TRUE(!expected);
     SM sm;
     sm.reserve(100);
-    assert(sm.slot_count() >= 100);
+    EXPECT_TRUE(sm.slot_count() >= 100);
 }
 
 TEST(slot_map, MemberTypedefs)
@@ -476,10 +476,10 @@ void BoundsCheckingTest()
     sm.clear();
 
     typename SM::iterator it = sm.find(k);
-    assert(it == sm.end());
+    EXPECT_TRUE(it == sm.end());
 
     typename SM::const_iterator cit = csm.find(k);
-    assert(cit == sm.end());
+    EXPECT_TRUE(cit == sm.end());
 }
 
 template<class SM>
@@ -492,20 +492,20 @@ static void GenerationsDontSkipTest()
     for (int i=1; i < original_cap; ++i) {
         sm.emplace(Monad<T>::from_value(i));
     }
-    assert(sm.size() == sm.slot_count());
+    EXPECT_TRUE(sm.size() == sm.slot_count());
 
     sm.erase(k1);
     auto k2 = sm.emplace(Monad<T>::from_value(2));
 
 #if __cplusplus < 201703L
     using std::get;
-    assert(get<0>(k2) == get<0>(k1));
-    assert(get<1>(k2) == get<1>(k1) + 1);
+    EXPECT_TRUE(get<0>(k2) == get<0>(k1));
+    EXPECT_TRUE(get<1>(k2) == get<1>(k1) + 1);
 #else
     auto [idx1, gen1] = k1;
     auto [idx2, gen2] = k2;
-    assert(idx2 == idx1);
-    assert(gen2 == gen1 + 1);
+    EXPECT_TRUE(idx2 == idx1);
+    EXPECT_TRUE(gen2 == gen1 + 1);
 #endif
 }
 
@@ -520,11 +520,11 @@ static void IndexesAreUsedEvenlyTest()
     for (int i=2; i < original_cap; ++i) {
         sm.emplace(Monad<T>::from_value(i));
     }
-    assert(sm.size() == sm.slot_count());
+    EXPECT_TRUE(sm.size() == sm.slot_count());
 
     sm.erase(k1);
     sm.erase(k2);
-    assert(sm.size() == sm.slot_count() - 2);
+    EXPECT_TRUE(sm.size() == sm.slot_count() - 2);
 
     // There are now two slots available.
     // So consecutive insertions should prefer to
@@ -537,11 +537,11 @@ static void IndexesAreUsedEvenlyTest()
 
 #if __cplusplus < 201703L
     using std::get;
-    assert(get<0>(k2) != get<0>(k1));
+    EXPECT_TRUE(get<0>(k2) != get<0>(k1));
 #else
     auto [idx1, gen1] = k1;
     auto [idx2, gen2] = k2;
-    assert(idx2 != idx1);
+    EXPECT_TRUE(idx2 != idx1);
 #endif
 }
 

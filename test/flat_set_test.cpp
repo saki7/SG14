@@ -53,14 +53,14 @@ TEST(flat_set, AmbiguousErase)
     fs.emplace("a");
     fs.emplace("b");
     fs.emplace("c");
-    assert(fs.size() == 3);
+    EXPECT_TRUE(fs.size() == 3);
     fs.erase(AmbiguousEraseWidget("a"));  // calls erase(const Key&)
-    assert(fs.size() == 2);
+    EXPECT_TRUE(fs.size() == 2);
     fs.erase(fs.cbegin());                // calls erase(const_iterator)
-    assert(fs.size() == 1);
+    EXPECT_TRUE(fs.size() == 1);
 #if __cplusplus >= 201703L
     fs.erase(fs.begin());                 // calls erase(iterator)
-    assert(fs.size() == 0);
+    EXPECT_TRUE(fs.size() == 0);
 #endif
 }
 
@@ -73,8 +73,8 @@ TEST(flat_set, ExtractDoesntSwap)
         std::pmr::polymorphic_allocator<int> a(&mr);
         sg14::flat_set<int, std::less<int>, std::pmr::vector<int>> fs({1, 2}, a);
         std::pmr::vector<int> v = std::move(fs).extract();
-        assert(v.get_allocator() == a);
-        assert(fs.empty());
+        EXPECT_TRUE(v.get_allocator() == a);
+        EXPECT_TRUE(fs.empty());
     }
 #endif
 
@@ -83,8 +83,8 @@ TEST(flat_set, ExtractDoesntSwap)
         std::allocator<int> a;
         sg14::flat_set<int, std::less<int>, std::vector<int>> fs({1, 2}, a);
         std::vector<int> v = std::move(fs).extract();
-        assert(v.get_allocator() == a);
-        assert(fs.empty());
+        EXPECT_TRUE(v.get_allocator() == a);
+        EXPECT_TRUE(fs.empty());
     }
 }
 
@@ -122,10 +122,10 @@ TEST(flat_set, ThrowingSwapDoesntBreakInvariants)
         fsy.insert(8);
         std::vector<int> expected_fsx = {7, 6, 5, 4};
         std::vector<int> expected_fsy = {1, 2, 3, 8};
-        assert(expected_fsx.size() == fsx.size());
-        assert(std::equal(expected_fsx.begin(), expected_fsx.end(), fsx.begin()));
-        assert(expected_fsy.size() == fsy.size());
-        assert(std::equal(expected_fsy.begin(), expected_fsy.end(), fsy.begin()));
+        EXPECT_TRUE(expected_fsx.size() == fsx.size());
+        EXPECT_TRUE(std::equal(expected_fsx.begin(), expected_fsx.end(), fsx.begin()));
+        EXPECT_TRUE(expected_fsy.size() == fsy.size());
+        EXPECT_TRUE(std::equal(expected_fsy.begin(), expected_fsy.end(), fsy.begin()));
     }
 
     // However, if ComparatorWithThrowingSwap::please_throw were
@@ -138,20 +138,20 @@ TEST(flat_set, VectorBool)
     using FS = sg14::flat_set<bool>;
     FS fs;
     auto it_inserted = fs.emplace(true);
-    assert(it_inserted.second);
+    EXPECT_TRUE(it_inserted.second);
     auto it = it_inserted.first;
-    assert(it == fs.begin());
-    assert(fs.size() == 1);
+    EXPECT_TRUE(it == fs.begin());
+    EXPECT_TRUE(fs.size() == 1);
     it = fs.emplace_hint(it, false);
-    assert(it == fs.begin());
-    assert(fs.size() == 2);
+    EXPECT_TRUE(it == fs.begin());
+    EXPECT_TRUE(fs.size() == 2);
     auto count = fs.erase(false);
-    assert(count == 1);
-    assert(fs.size() == 1);
+    EXPECT_TRUE(count == 1);
+    EXPECT_TRUE(fs.size() == 1);
     it = fs.erase(fs.begin());
-    assert(fs.empty());
-    assert(it == fs.begin());
-    assert(it == fs.end());
+    EXPECT_TRUE(fs.empty());
+    EXPECT_TRUE(it == fs.begin());
+    EXPECT_TRUE(it == fs.end());
 #endif
 }
 
@@ -212,34 +212,34 @@ TEST(flat_set, MoveOperationsPilferOwnership)
     InstrumentedWidget::copy_ctors = 0;
     FS fs;
     fs.insert(InstrumentedWidget("abc"));
-    assert(InstrumentedWidget::move_ctors == 1);
-    assert(InstrumentedWidget::copy_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 1);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 0);
 
     fs.emplace(InstrumentedWidget("def")); fs.erase("def");  // poor man's reserve()
     InstrumentedWidget::copy_ctors = 0;
     InstrumentedWidget::move_ctors = 0;
 
     fs.emplace("def");  // is still not directly emplaced; a temporary is created to find()
-    assert(InstrumentedWidget::move_ctors == 1);
-    assert(InstrumentedWidget::copy_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 1);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 0);
     InstrumentedWidget::move_ctors = 0;
 
     FS fs2 = std::move(fs);  // should just transfer buffer ownership
-    assert(InstrumentedWidget::move_ctors == 0);
-    assert(InstrumentedWidget::copy_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 0);
 
     fs = std::move(fs2);  // should just transfer buffer ownership
-    assert(InstrumentedWidget::move_ctors == 0);
-    assert(InstrumentedWidget::copy_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 0);
 
     FS fs3(fs, std::allocator<InstrumentedWidget>());
-    assert(InstrumentedWidget::move_ctors == 0);
-    assert(InstrumentedWidget::copy_ctors == 2);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 2);
     InstrumentedWidget::copy_ctors = 0;
 
     FS fs4(std::move(fs), std::allocator<InstrumentedWidget>());  // should just transfer buffer ownership
-    assert(InstrumentedWidget::move_ctors == 0);
-    assert(InstrumentedWidget::copy_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::move_ctors == 0);
+    EXPECT_TRUE(InstrumentedWidget::copy_ctors == 0);
 }
 
 TYPED_TEST(flat_sett, Construction)
@@ -253,14 +253,14 @@ TYPED_TEST(flat_sett, Construction)
     if (true) {
         FS fs;  // default constructor
         fs = {1, 3, 5};  // assignment operator
-        assert(std::is_sorted(fs.begin(), fs.end(), fs.key_comp()));
+        EXPECT_TRUE(std::is_sorted(fs.begin(), fs.end(), fs.key_comp()));
     }
     if (true) {
         FS fs {1, 3, 1, 5, 3};
-        assert(fs.size() == 3);  // assert that uniqueing takes place
+        EXPECT_TRUE(fs.size() == 3);  // assert that uniqueing takes place
         std::vector<int> vec2 = {1, 3, 1, 5, 3};
         FS fs2(vec2);
-        assert(fs2.size() == 3); // assert that uniqueing takes place
+        EXPECT_TRUE(fs2.size() == 3); // assert that uniqueing takes place
     }
     for (auto&& fs : {
         FS(vec),
@@ -273,14 +273,14 @@ TYPED_TEST(flat_sett, Construction)
         FS(vec.rbegin(), vec.rend(), Compare()),
     }) {
         auto cmp = fs.key_comp();
-        assert(std::is_sorted(fs.begin(), fs.end(), cmp));
-        assert(fs.find(0) == fs.end());
-        assert(fs.find(1) != fs.end());
-        assert(fs.find(2) == fs.end());
-        assert(fs.find(3) != fs.end());
-        assert(fs.find(4) == fs.end());
-        assert(fs.find(5) != fs.end());
-        assert(fs.find(6) == fs.end());
+        EXPECT_TRUE(std::is_sorted(fs.begin(), fs.end(), cmp));
+        EXPECT_TRUE(fs.find(0) == fs.end());
+        EXPECT_TRUE(fs.find(1) != fs.end());
+        EXPECT_TRUE(fs.find(2) == fs.end());
+        EXPECT_TRUE(fs.find(3) != fs.end());
+        EXPECT_TRUE(fs.find(4) == fs.end());
+        EXPECT_TRUE(fs.find(5) != fs.end());
+        EXPECT_TRUE(fs.find(6) == fs.end());
     }
     if (std::is_sorted(vec.begin(), vec.end(), Compare())) {
         for (auto&& fs : {
@@ -292,7 +292,7 @@ TYPED_TEST(flat_sett, Construction)
             FS(sg14::sorted_unique, {1, 3, 5}, Compare()),
         }) {
             auto cmp = fs.key_comp();
-            assert(std::is_sorted(fs.begin(), fs.end(), cmp));
+            EXPECT_TRUE(std::is_sorted(fs.begin(), fs.end(), cmp));
         }
     }
 }

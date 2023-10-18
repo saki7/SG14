@@ -1681,7 +1681,7 @@ TEST(hive, RegressionTestIssue8)
     h.erase(h.begin());
     h.erase(h.begin());
     h.insert(6);
-    assert(h.size() == 4);  // {6,3,4,5}
+    EXPECT_EQ(h.size(), 4u);  // {6,3,4,5}
     EXPECT_INVARIANTS(h);
 
     auto it = h.begin();
