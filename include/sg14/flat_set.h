@@ -494,6 +494,10 @@ public:
         swap(c_, m.c_);
     }
 
+    friend void swap(flat_set& a, flat_set& b) noexcept(noexcept(a.swap(b))) {
+        a.swap(b);
+    }
+
     void clear() noexcept {
         c_.clear();
     }
@@ -661,6 +665,24 @@ public:
         return { lo, hi };
     }
 
+    friend bool operator==(const flat_set& a, const flat_set& b) {
+        return std::equal(a.begin(), a.end(), b.begin(), b.end());
+    }
+
+#if __cplusplus >= 202002L
+    friend auto operator<=>(const flat_set& a, const flat_set& b) {
+        return std::lexicographical_compare_three_way(a.begin(), a.end(), b.begin(), b.end());
+    }
+#else
+    friend bool operator<(const flat_set& a, const flat_set& b) {
+        return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end());
+    }
+    friend bool operator>(const flat_set& a, const flat_set& b) { return (b < a); }
+    friend bool operator<=(const flat_set& a, const flat_set& b) { return !(b < a); }
+    friend bool operator>=(const flat_set& a, const flat_set& b) { return !(a < b); }
+    friend bool operator!=(const flat_set& a, const flat_set& b) { return !(a == b); }
+#endif
+
 private:
     void sort_and_unique_impl() {
         std::sort(c_.begin(), c_.end(), compare_);
@@ -671,49 +693,6 @@ private:
     KeyContainer c_;
     Compare compare_;
 };
-
-// TODO: all six comparison operators should be invisible friends
-template<class Key, class Compare, class KeyContainer>
-bool operator==(const flat_set<Key, Compare, KeyContainer>& x, const flat_set<Key, Compare, KeyContainer>& y)
-{
-    return std::equal(x.begin(), x.end(), y.begin(), y.end());
-}
-
-template<class Key, class Compare, class KeyContainer>
-bool operator!=(const flat_set<Key, Compare, KeyContainer>& x, const flat_set<Key, Compare, KeyContainer>& y)
-{
-    return !(x == y);
-}
-
-template<class Key, class Compare, class KeyContainer>
-bool operator<(const flat_set<Key, Compare, KeyContainer>& x, const flat_set<Key, Compare, KeyContainer>& y)
-{
-    return std::lexicographical_compare(x.begin(), x.end(), y.begin(), y.end());
-}
-
-template<class Key, class Compare, class KeyContainer>
-bool operator>(const flat_set<Key, Compare, KeyContainer>& x, const flat_set<Key, Compare, KeyContainer>& y)
-{
-    return (y < x);
-}
-
-template<class Key, class Compare, class KeyContainer>
-bool operator<=(const flat_set<Key, Compare, KeyContainer>& x, const flat_set<Key, Compare, KeyContainer>& y)
-{
-    return !(y < x);
-}
-
-template<class Key, class Compare, class KeyContainer>
-bool operator>=(const flat_set<Key, Compare, KeyContainer>& x, const flat_set<Key, Compare, KeyContainer>& y)
-{
-    return !(x < y);
-}
-
-template<class Key, class Compare, class KeyContainer>
-void swap(flat_set<Key, Compare, KeyContainer>& x, flat_set<Key, Compare, KeyContainer>& y) noexcept(noexcept(x.swap(y)))
-{
-    return x.swap(y);
-}
 
 #if defined(__cpp_deduction_guides)
 

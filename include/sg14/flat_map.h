@@ -26,8 +26,8 @@
 
 #pragma once
 
-// This is an implementation of the proposed "std::flat_map" as specified in
-// http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p0429r6.pdf
+// This is an implementation of C++23 "std::flat_map" as specified in P0429,
+// with some modifications as specified in P2767.
 
 #include <stddef.h>
 #include <algorithm>
@@ -35,6 +35,10 @@
 #include <initializer_list>
 #include <iterator>
 #include <vector>
+
+#if __cplusplus >= 202002L
+#include <compare>
+#endif // __cplusplus >= 202002L
 
 namespace sg14 {
 
@@ -832,6 +836,10 @@ public:
         swap(c_.values, fm.c_.values);
     }
 
+    friend void swap(flat_map& a, flat_map& b) noexcept(noexcept(a.swap(b))) {
+        a.swap(b);
+    }
+
     void clear() noexcept {
         c_.keys.clear();
         c_.values.clear();
@@ -1049,6 +1057,24 @@ public:
         };
     }
 
+    friend bool operator==(const flat_map& a, const flat_map& b) {
+        return std::equal(a.begin(), a.end(), b.begin(), b.end());
+    }
+
+#if __cplusplus >= 202002L
+    friend auto operator<=>(const flat_map& a, const flat_map& b) {
+        return std::lexicographical_compare_three_way(a.begin(), a.end(), b.begin(), b.end());
+    }
+#else
+    friend bool operator<(const flat_map& a, const flat_map& b) {
+        return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end());
+    }
+    friend bool operator>(const flat_map& a, const flat_map& b) { return (b < a); }
+    friend bool operator<=(const flat_map& a, const flat_map& b) { return !(b < a); }
+    friend bool operator>=(const flat_map& a, const flat_map& b) { return !(a < b); }
+    friend bool operator!=(const flat_map& a, const flat_map& b) { return !(a == b); }
+#endif
+
 private:
     void sort_and_unique_impl() {
         flatmap_detail::sort_together(compare_, c_.keys, c_.values);
@@ -1061,49 +1087,6 @@ private:
     containers c_;
     Compare compare_;
 };
-
-// TODO: all six comparison operators should be invisible friends
-template<class Key, class Mapped, class Compare, class KeyContainer, class MappedContainer>
-bool operator==(const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& x, const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& y)
-{
-    return std::equal(x.begin(), x.end(), y.begin(), y.end());
-}
-
-template<class Key, class Mapped, class Compare, class KeyContainer, class MappedContainer>
-bool operator!=(const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& x, const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& y)
-{
-    return !(x == y);
-}
-
-template<class Key, class Mapped, class Compare, class KeyContainer, class MappedContainer>
-bool operator<(const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& x, const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& y)
-{
-    return std::lexicographical_compare(x.begin(), x.end(), y.begin(), y.end());
-}
-
-template<class Key, class Mapped, class Compare, class KeyContainer, class MappedContainer>
-bool operator>(const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& x, const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& y)
-{
-    return (y < x);
-}
-
-template<class Key, class Mapped, class Compare, class KeyContainer, class MappedContainer>
-bool operator<=(const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& x, const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& y)
-{
-    return !(y < x);
-}
-
-template<class Key, class Mapped, class Compare, class KeyContainer, class MappedContainer>
-bool operator>=(const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& x, const flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& y)
-{
-    return !(x < y);
-}
-
-template<class Key, class Mapped, class Compare, class KeyContainer, class MappedContainer>
-void swap(flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& x, flat_map<Key, Mapped, Compare, KeyContainer, MappedContainer>& y) noexcept(noexcept(x.swap(y)))
-{
-    return x.swap(y);
-}
 
 #if defined(__cpp_deduction_guides)
 
