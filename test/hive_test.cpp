@@ -1990,10 +1990,8 @@ TYPED_TEST(hivet, MoveOnlyInputIterator)
         auto& operator++() { ++p_; return *this; }
         void operator++(int) { ++p_; }
         bool operator==(const MoveOnlyInputIterator& rhs) const { return p_ == rhs.p_; }
-        bool operator==(const Value *p) const { return p_ == p; }
-#if __cplusplus < 202002L
         bool operator!=(const MoveOnlyInputIterator& rhs) const { return p_ != rhs.p_; }
-#endif
+        bool operator==(const Value *p) const { return p_ == p; }
     };
 
     static_assert(std::is_move_constructible<MoveOnlyInputIterator>::value);
