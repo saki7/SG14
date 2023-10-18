@@ -1,10 +1,8 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.22)
 project(sg14 CXX)
 
 include(CheckCXXCompilerFlag)
 include(GNUInstallDirs)
-
-find_package(Threads REQUIRED)
 
 # C++17 by default, but allow the user to override it with -DCMAKE_CXX_STANDARD.
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -17,7 +15,7 @@ if ("${CMAKE_CXX_STANDARD}" EQUAL 14)
   elseif (HAVE_FAKEFLAG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1y")
   elseif (HAVE_MSVCFLAG)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std:c++14 -permissive- -Zc:__cplusplus")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std:c++14 -Zc:__cplusplus -permissive-")
   else()
     message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++14 support. Please use a different C++ compiler.")
   endif()
@@ -30,7 +28,7 @@ elseif ("${CMAKE_CXX_STANDARD}" EQUAL 17)
   elseif (HAVE_FAKEFLAG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
   elseif (HAVE_MSVCFLAG)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std:c++17 -permissive- -Zc:__cplusplus")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std:c++17 -Zc:__cplusplus -permissive-")
   else()
     message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++17 support. Please use a different C++ compiler.")
   endif()
@@ -66,38 +64,50 @@ endif()
 
 set(SG14_INCLUDE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
-# Output binary to predictable location.
-set(BINARY_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/bin)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${BINARY_OUT_DIR})
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${BINARY_OUT_DIR})
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${BINARY_OUT_DIR})
+if (NOT DEFINED ENV{GITHUB_ACTIONS})
+  # Output all binaries to ./bin
+  set(BINARY_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/bin)
+  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${BINARY_OUT_DIR})
+  set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${BINARY_OUT_DIR})
+  set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${BINARY_OUT_DIR})
+  foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${BINARY_OUT_DIR})
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${BINARY_OUT_DIR})
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${BINARY_OUT_DIR})
+  endforeach()
+endif()
 
-foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
-	string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
-	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${BINARY_OUT_DIR})
-	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${BINARY_OUT_DIR})
-	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${BINARY_OUT_DIR})
-endforeach(OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES)
 
-##
-# Project
-##
+## Benchmarks ##
+
+# add_subdirectory(benchmarks)
+
+
+## Tests ##
+
+if (DEFINED ENV{GITHUB_ACTIONS})
+  include(CTest)
+endif()
+add_subdirectory(test)
+
+
+## Packaging ##
+
 add_library(${PROJECT_NAME} INTERFACE)
 
 target_include_directories(${PROJECT_NAME} INTERFACE
-	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-	$<BUILD_INTERFACE:${SG14_INCLUDE_DIRECTORY}>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+  $<BUILD_INTERFACE:${SG14_INCLUDE_DIRECTORY}>
 )
-
-# add_subdirectory(benchmarks)
-add_subdirectory(test)
-
-install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}_targets)
-
+install(TARGETS ${PROJECT_NAME}
+    EXPORT ${PROJECT_NAME}_targets
+)
 install(EXPORT ${PROJECT_NAME}_targets
     NAMESPACE ${PROJECT_NAME}::
     FILE ${PROJECT_NAME}-config.cmake
     DESTINATION "${CMAKE_INSTALL_DATADIR}/cmake/${PROJECT_NAME}"
 )
-
-install(DIRECTORY "${SG14_INCLUDE_DIRECTORY}" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(DIRECTORY "${SG14_INCLUDE_DIRECTORY}"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+)

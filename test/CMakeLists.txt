@@ -1,35 +1,53 @@
 
 find_package(GTest REQUIRED)
+include(GoogleTest)
 
-set(TEST_SOURCE_FILES
-    flat_map_test.cpp
-    flat_set_test.cpp
-    hive_test.cpp
-    inplace_function_test.cpp
-    inplace_vector_test.cpp
-    ring_span_test.cpp
-    slot_map_test.cpp
-    uninitialized_test.cpp
-    unstable_remove_test.cpp
+add_executable(utest
+  flat_map_test.cpp
+  flat_set_test.cpp
+  hive_test.cpp
+  inplace_function_test.cpp
+  inplace_vector_test.cpp
+  ring_span_test.cpp
+  slot_map_test.cpp
+  uninitialized_test.cpp
+  unstable_remove_test.cpp
 )
+target_include_directories(utest PRIVATE ${SG14_INCLUDE_DIRECTORY})
+target_link_libraries(utest PRIVATE GTest::gtest GTest::gtest_main)
 
-set(TEST_NAME utest)
-add_executable(${TEST_NAME} ${TEST_SOURCE_FILES})
-include_directories(${GTEST_INCLUDE_DIRS} ${SG14_INCLUDE_DIRECTORY})
-target_link_libraries(${TEST_NAME} ${CMAKE_THREAD_LIBS_INIT} ${GTEST_LIBRARIES} ${GTEST_MAIN_LIBRARIES})
+if (DEFINED ENV{GITHUB_ACTIONS})
+  if (WIN32)
+    add_custom_command(
+      TARGET utest POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:utest> $<TARGET_FILE_DIR:utest>
+      COMMAND_EXPAND_LISTS
+    )
+  endif()
+  gtest_discover_tests(utest)
+endif()
 
-# Compile options
+## Ad-hoc compiler options ##
+
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-	target_compile_options(${TEST_NAME} PRIVATE -Wall -Wextra -Werror)
+  set_property(TARGET utest APPEND PROPERTY COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-	target_compile_options(${TEST_NAME} PRIVATE -Wall -Wextra -Werror)
-	if (CMAKE_CXX_COMPILER_VERSION MATCHES "^7.*")
-		set_source_files_properties(${SG14_TEST_SOURCE_DIRECTORY}/slot_map_test.cpp PROPERTIES
-			COMPILE_FLAGS "-Wno-error=unused-variable -Wno-error=unused-but-set-variable") # Fix gcc7 issues with structured bindings
-		message("Disabled -Wunused-variable and -Wunused-but-set-variable for gcc ${CMAKE_CXX_COMPILER_VERSION}.")
-	endif()
+  set_property(TARGET utest APPEND PROPERTY COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
+  # GCC 13 gives bogus warnings on local types with typedefs
+  set_property(SOURCE hive_test.cpp APPEND PROPERTY COMPILE_OPTIONS "-Wno-unused-local-typedefs")
+  if (CMAKE_CXX_COMPILER_VERSION MATCHES "^7.*")
+    # GCC 7 gives bogus warnings on structured bindings
+    set_property(SOURCE slot_map_test.cpp APPEND PROPERTY COMPILE_OPTIONS "-Wno-unused-variable;-Wno-unused-but-set-variable")
+  endif()
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-	set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${TEST_NAME})
-	target_compile_options(${TEST_NAME} PRIVATE /Zc:__cplusplus /permissive- /W4 /WX)
-	add_definitions(-DNOMINMAX -D_SCL_SECURE_NO_WARNINGS)
+  set_property(TARGET utest APPEND PROPERTY COMPILE_OPTIONS "-W4;-WX;-DNOMINMAX;-D_SCL_SECURE_NO_WARNINGS")
+  # MSVC gives bogus "conditional expression is constant" warnings
+  set_property(SOURCE hive_test.cpp APPEND PROPERTY COMPILE_OPTIONS "-wd4127")
+  set_property(SOURCE inplace_vector_test.cpp APPEND PROPERTY COMPILE_OPTIONS "-wd4127")
+  # MSVC gives bogus "possible loss of data" warnings
+  set_property(SOURCE hive_test.cpp APPEND PROPERTY COMPILE_OPTIONS "-wd4244;-wd4267")
+  # MSVC gives bogus "unreachable code" warnings
+  set_property(SOURCE hive_test.cpp APPEND PROPERTY COMPILE_OPTIONS "-wd4702")
+  # std::aligned_storage_t is deprecated in C++23
+  set_property(SOURCE inplace_function_test.cpp APPEND PROPERTY COMPILE_OPTIONS "-D_SILENCE_ALL_CXX23_DEPRECATION_WARNINGS")
 endif()

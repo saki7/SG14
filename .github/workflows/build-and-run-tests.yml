@@ -1,49 +1,42 @@
 name: Build and run tests
-
-on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
-
+on: [ 'push' ]
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  build:
-    strategy:
-      fail-fast: true
-
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        build_type: [Debug, RelWithDebInfo, Release]
-        cpp_compiler: [g++, clang++]
-        cpp_standard: [14, 17, 20, 23]
-        exclude:
-          - os: ubuntu-latest
-            cpp_compiler: clang++
-            cpp_standard: 20
-          - os: ubuntu-latest
-            cpp_compiler: clang++
-            cpp_standard: 23
-          - os: windows-latest
-            cpp_compiler: clang++
-          - os: windows-latest
-            cpp_compiler: g++
-
+  test:
+    name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, macos-latest, ubuntu-latest ]
+        build_type: [Debug]
+        cxx_standard: [14, 17, 20, 23]
+        exclude:
+          - os: macos-latest
+            cxx_standard: 23
+    env:
+      PREFIX: ${{ github.workspace }}/_local
     steps:
-    - uses: actions/checkout@v3
-
-    - name: Install Google Test (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get install libgtest-dev
-
-    - name: Build and Test
-      run: |
-        cmake -S ${{ github.workspace }} -B ${{ github.workspace }}/build \
-          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }} \
-          -DCMAKE_CXX_STANDARD=${{ matrix.cpp_standard }} \
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-        cd ${{ github.workspace }}/build
-        make
-        ./bin/utest
+      # Check out project
+      - uses: actions/checkout@v3
+      # Check out dependencies
+      - uses: actions/checkout@v3
+        with:
+          repository: google/googletest
+          ref: 8d51dc50eb7e7698427fed81b85edad0e032112e
+          path: googletest
+      # Manually install dependencies
+      - name: Install Google Test
+        run: |
+          cmake -S googletest -B build/deps/googletest -DCMAKE_BUILD_TYPE=RelWithDebInfo '-DCMAKE_INSTALL_PREFIX=${{ env.PREFIX }}' -DBUILD_GMOCK=OFF -DBUILD_SHARED_LIBS=ON
+          cmake --build build/deps/googletest --config RelWithDebInfo --target install
+      # Build and test project
+      - name: CMake Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo '-DCMAKE_PREFIX_PATH=${{ env.PREFIX }}' -DCMAKE_CXX_STANDARD=${{ matrix.cxx_standard }}
+      - name: CMake Build
+        run: cmake --build build --config RelWithDebInfo
+      - name: CTest
+        run: ctest --test-dir build --config RelWithDebInfo
