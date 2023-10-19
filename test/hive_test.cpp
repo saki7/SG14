@@ -1,7 +1,7 @@
 // Original source:
 // https://github.com/mattreecebentley/plf_hive/blob/7b7763f/plf_hive_test_suite.cpp
 
-#if __cplusplus >= 201703
+#if __cplusplus >= 201703L
 
 #include <sg14/hive.h>
 
@@ -30,7 +30,7 @@ using hivet_types = testing::Types<
     , sg14::hive<int, std::allocator<int>, sg14::hive_priority::performance>
     , sg14::hive<int, std::allocator<int>, sg14::hive_priority::memory_use>
     , sg14::hive<std::string>            // non-trivial construction/destruction
-#if __cpp_lib_memory_resource >= 201603
+#if __cpp_lib_memory_resource >= 201603L
     , sg14::hive<int, std::pmr::polymorphic_allocator<int>>                            // pmr allocator
     , sg14::hive<std::pmr::string, std::pmr::polymorphic_allocator<std::pmr::string>>  // uses-allocator construction
 #endif
@@ -50,7 +50,7 @@ template<class A, class P> struct hivet_setup<sg14::hive<std::string, A, P>> {
     static std::string value(int i) { return std::string("ensure that a memory allocation happens here") + std::to_string(i); }
     static bool int_eq_t(int i, const std::string& v) { return v == value(i); }
 };
-#if __cpp_lib_memory_resource >= 201603
+#if __cpp_lib_memory_resource >= 201603L
 template<class A, class P> struct hivet_setup<sg14::hive<std::pmr::string, A, P>> {
     static std::pmr::string value(int i) { return hivet_setup<sg14::hive<std::string, A, P>>::value(i).c_str(); }
     static bool int_eq_t(int i, std::string_view v) { return v == hivet_setup<sg14::hive<std::string, A, P>>::value(i); }
@@ -878,7 +878,7 @@ TEST(hive, IteratorCategory)
 #endif
 }
 
-#if __cpp_lib_ranges >= 201911
+#if __cpp_lib_ranges >= 201911L
 TEST(hive, RangeConcepts)
 {
     using H = sg14::hive<int>;
@@ -945,7 +945,7 @@ TYPED_TEST(hivet, IteratorComparison)
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
 
-#if __cpp_impl_three_way_comparison >= 201907
+#if __cpp_impl_three_way_comparison >= 201907L
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
         it2 = it1;
@@ -956,10 +956,10 @@ TYPED_TEST(hivet, IteratorComparison)
     }
 
 #if SG14_HIVE_RELATIONAL_OPERATORS
-#if __cpp_lib_concepts >= 202002
+#if __cpp_lib_concepts >= 202002L
     static_assert(std::totally_ordered<typename Hive::iterator>);
 #endif
-#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
+#if __cpp_lib_three_way_comparison >= 201907L && __cpp_lib_concepts >= 202002L
     static_assert(std::three_way_comparable<typename Hive::iterator>);
 #endif
 #endif
@@ -992,7 +992,7 @@ TYPED_TEST(hivet, ConstIteratorComparison)
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
 
-#if __cpp_impl_three_way_comparison >= 201907
+#if __cpp_impl_three_way_comparison >= 201907L
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
         it2 = it1;
@@ -1003,10 +1003,10 @@ TYPED_TEST(hivet, ConstIteratorComparison)
     }
 
 #if SG14_HIVE_RELATIONAL_OPERATORS
-#if __cpp_lib_concepts >= 202002
+#if __cpp_lib_concepts >= 202002L
     static_assert(std::totally_ordered<typename Hive::const_iterator>);
 #endif
-#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
+#if __cpp_lib_three_way_comparison >= 201907L && __cpp_lib_concepts >= 202002L
     static_assert(std::three_way_comparable<typename Hive::const_iterator>);
 #endif
 #endif
@@ -1039,7 +1039,7 @@ TYPED_TEST(hivet, MixedIteratorComparison)
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
 
-#if __cpp_impl_three_way_comparison >= 201907
+#if __cpp_impl_three_way_comparison >= 201907L
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
         it2 = it1;
@@ -1050,13 +1050,13 @@ TYPED_TEST(hivet, MixedIteratorComparison)
     }
 
 #if SG14_HIVE_RELATIONAL_OPERATORS
-#if __cpp_lib_concepts >= 202002
+#if __cpp_lib_concepts >= 202002L
     static_assert(std::totally_ordered_with<
         typename Hive::iterator,
         typename Hive::const_iterator
     >);
 #endif
-#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
+#if __cpp_lib_three_way_comparison >= 201907L && __cpp_lib_concepts >= 202002L
     static_assert(std::three_way_comparable_with<
         typename Hive::iterator,
         typename Hive::const_iterator
@@ -1092,7 +1092,7 @@ TYPED_TEST(hivet, ReverseIteratorComparison)
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
 
-#if __cpp_impl_three_way_comparison >= 201907
+#if __cpp_impl_three_way_comparison >= 201907L
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
         it2 = it1;
@@ -1103,10 +1103,10 @@ TYPED_TEST(hivet, ReverseIteratorComparison)
     }
 
 #if SG14_HIVE_RELATIONAL_OPERATORS
-#if __cpp_lib_concepts >= 202002
+#if __cpp_lib_concepts >= 202002L
     static_assert(std::totally_ordered<typename Hive::reverse_iterator>);
 #endif
-#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
+#if __cpp_lib_three_way_comparison >= 201907L && __cpp_lib_concepts >= 202002L
     static_assert(std::three_way_comparable<typename Hive::reverse_iterator>);
 #endif
 #endif
@@ -1139,7 +1139,7 @@ TYPED_TEST(hivet, ConstReverseIteratorComparison)
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
 
-#if __cpp_impl_three_way_comparison >= 201907
+#if __cpp_impl_three_way_comparison >= 201907L
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
         it2 = it1;
@@ -1150,10 +1150,10 @@ TYPED_TEST(hivet, ConstReverseIteratorComparison)
     }
 
 #if SG14_HIVE_RELATIONAL_OPERATORS
-#if __cpp_lib_concepts >= 202002
+#if __cpp_lib_concepts >= 202002L
     static_assert(std::totally_ordered<typename Hive::const_reverse_iterator>);
 #endif
-#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
+#if __cpp_lib_three_way_comparison >= 201907L && __cpp_lib_concepts >= 202002L
     static_assert(std::three_way_comparable<typename Hive::const_reverse_iterator>);
 #endif
 #endif
@@ -1186,7 +1186,7 @@ TYPED_TEST(hivet, MixedReverseIteratorComparison)
         EXPECT_EQ((it2 > it1), true);
         EXPECT_EQ((it2 >= it1), true);
 
-#if __cpp_impl_three_way_comparison >= 201907
+#if __cpp_impl_three_way_comparison >= 201907L
         EXPECT_EQ(it1 <=> it2, std::strong_ordering::less);
         EXPECT_EQ(it2 <=> it1, std::strong_ordering::greater);
         it2 = it1;
@@ -1197,13 +1197,13 @@ TYPED_TEST(hivet, MixedReverseIteratorComparison)
     }
 
 #if SG14_HIVE_RELATIONAL_OPERATORS
-#if __cpp_lib_concepts >= 202002
+#if __cpp_lib_concepts >= 202002L
     static_assert(std::totally_ordered_with<
         typename Hive::reverse_iterator,
         typename Hive::const_reverse_iterator
     >);
 #endif
-#if __cpp_impl_three_way_comparison >= 201907 && __cpp_lib_concepts >= 202002
+#if __cpp_lib_three_way_comparison >= 201907L && __cpp_lib_concepts >= 202002L
     static_assert(std::three_way_comparable_with<
         typename Hive::reverse_iterator,
         typename Hive::const_reverse_iterator
@@ -1873,7 +1873,7 @@ TEST(hive, ConstructFromVectorBoolIteratorPair)
     EXPECT_EQ(std::count(h.begin(), h.end(), false), 2);
 }
 
-#if __cpp_lib_ranges >= 201911 && __cpp_lib_ranges_to_container >= 202202
+#if __cpp_lib_ranges_to_container >= 202202L
 TEST(hive, ConstructFromRange)
 {
     sg14::hive<int> v = {1, 2, 3};
@@ -1884,7 +1884,7 @@ TEST(hive, ConstructFromRange)
     EXPECT_EQ(*h.begin(), 1);
     EXPECT_EQ(*std::next(h.begin()), 2);
 }
-#endif
+#endif // __cpp_lib_ranges_to_container
 
 TYPED_TEST(hivet, InsertOverloads)
 {
@@ -1939,7 +1939,7 @@ TYPED_TEST(hivet, InsertOverloads)
     EXPECT_TRUE(std::is_permutation(h.begin(), h.end(), expected.begin(), expected.end()));
 }
 
-#if __cpp_lib_ranges >= 201911
+#if __cpp_lib_ranges >= 201911L
 TYPED_TEST(hivet, InsertOverloadsForRanges)
 {
     using Hive = TypeParam;
@@ -1969,7 +1969,7 @@ TYPED_TEST(hivet, InsertOverloadsForRanges)
     };
     EXPECT_TRUE(std::is_permutation(h.begin(), h.end(), expected.begin(), expected.end()));
 }
-#endif // __cpp_lib_ranges >= 201911
+#endif // __cpp_lib_ranges
 
 TYPED_TEST(hivet, MoveOnlyInputIterator)
 {
@@ -1996,7 +1996,7 @@ TYPED_TEST(hivet, MoveOnlyInputIterator)
 
     static_assert(std::is_move_constructible<MoveOnlyInputIterator>::value);
     static_assert(!std::is_copy_constructible<MoveOnlyInputIterator>::value);
-#if __cpp_lib_concepts >= 202002
+#if __cpp_lib_concepts >= 202002L
     static_assert(std::input_or_output_iterator<MoveOnlyInputIterator>);
     static_assert(!std::forward_iterator<MoveOnlyInputIterator>);
     static_assert(std::sentinel_for<Value*, MoveOnlyInputIterator>);
@@ -2022,7 +2022,7 @@ TYPED_TEST(hivet, MoveOnlyInputIterator)
     EXPECT_INVARIANTS(h);
     EXPECT_TRUE(std::is_permutation(h.begin(), h.end(), a, a+3));
 
-#if __cpp_lib_ranges >= 201911
+#if __cpp_lib_ranges >= 201911L
     // ranges::subrange's second argument requires a copyable sentinel
     h.insert_range(std::ranges::subrange(MoveOnlyInputIterator{a}, a+2));
     EXPECT_EQ(h.size(), 5u);
@@ -2119,7 +2119,7 @@ TEST(hive, AssignOverloads)
     EXPECT_INVARIANTS(h);
 }
 
-#if __cpp_lib_ranges >= 201911
+#if __cpp_lib_ranges >= 201911L
 TYPED_TEST(hivet, AssignOverloadsForRanges)
 {
     using Hive = TypeParam;
@@ -2624,7 +2624,7 @@ TEST(hive, StdEraseIf)
     EXPECT_TRUE(std::all_of(h.begin(), h.end(), [](int i){ return i < 500; }));
 }
 
-#if __cplusplus >= 202002
+#if __cplusplus >= 202002L
 TEST(hive, ConstexprCtor)
 {
     struct S { S() {} };
@@ -2633,7 +2633,7 @@ TEST(hive, ConstexprCtor)
 }
 #endif
 
-#if __cpp_lib_memory_resource >= 201603
+#if __cpp_lib_memory_resource >= 201603L
 struct PmrGuard {
     std::pmr::memory_resource *m_;
     explicit PmrGuard() : m_(std::pmr::set_default_resource(std::pmr::null_memory_resource())) {}
@@ -2745,7 +2745,7 @@ TEST(hive, PmrCorrectness)
     hd.insert(100, 42);
 #endif
 
-#if __cpp_lib_ranges >= 201911 && __cpp_lib_ranges_to_container >= 202202
+#if __cpp_lib_ranges_to_container >= 202202L
     Hive hg(std::from_range, a, &mr);
     Hive hh(std::from_range, a | std::views::take(2), &mr);
 
@@ -2807,7 +2807,7 @@ TEST(hive, PmrCorrectAllocAwareCtors)
     }
     EXPECT_INVARIANTS(h1);
 }
-#endif // __cpp_lib_memory_resource >= 201603
+#endif // __cpp_lib_memory_resource
 
 TEST(hive, RangeInsertRegressionTest)
 {
@@ -2824,4 +2824,4 @@ TEST(hive, RangeInsertRegressionTest)
   EXPECT_EQ(sum, 4200);
 }
 
-#endif // __cplusplus >= 201703
+#endif // __cplusplus >= 201703L

@@ -1066,7 +1066,7 @@ public:
         return std::equal(a.begin(), a.end(), b.begin(), b.end());
     }
 
-#if __cplusplus >= 202002L
+#if __cplusplus >= 202002L && defined(__cpp_lib_three_way_comparison) && __cpp_lib_three_way_comparison >= 201907L
     friend auto operator<=>(const flat_map& a, const flat_map& b) {
         return std::lexicographical_compare_three_way(a.begin(), a.end(), b.begin(), b.end());
     }

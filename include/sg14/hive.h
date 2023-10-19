@@ -77,7 +77,7 @@ template<class T> struct hive_identity { using type = T; };
 template<class T> using hive_identity_t = typename hive_identity<T>::type;
 
 // Polyfill std::forward_iterator
-#if __cpp_lib_ranges >= 201911
+#if __cpp_lib_ranges >= 201911L
 template<class It>
 using hive_fwd_iterator = std::bool_constant<std::forward_iterator<It>>;
 #else
@@ -189,9 +189,9 @@ private:
 
     template <class D, class S>
     static constexpr D bitcast_pointer(S source_pointer) {
-#if __cpp_lib_bit_cast >= 201806 && __cpp_lib_to_address >= 201711
+#if __cpp_lib_bit_cast >= 201806L && __cpp_lib_to_address >= 201711L
         return std::bit_cast<D>(std::to_address(source_pointer));
-#elif __cpp_lib_to_address >= 201711
+#elif __cpp_lib_to_address >= 201711L
         return reinterpret_cast<D>(std::to_address(source_pointer));
 #else
         return reinterpret_cast<D>(source_pointer); // reject fancy pointer types
@@ -352,7 +352,7 @@ private:
             swap(a.idx_, b.idx_);
         }
 
-#if __cpp_impl_three_way_comparison >= 201907
+#if __cpp_impl_three_way_comparison >= 201907L
         friend bool operator==(const hive_iterator&, const hive_iterator&) = default;
 #else
         friend bool operator==(const hive_iterator& a, const hive_iterator& b) { return a.group_ == b.group_ && a.idx_ == b.idx_; }
@@ -360,7 +360,7 @@ private:
 #endif
 
 #if SG14_HIVE_RELATIONAL_OPERATORS
-#if __cpp_impl_three_way_comparison >= 201907
+#if __cpp_impl_three_way_comparison >= 201907L
         friend std::strong_ordering operator<=>(const hive_iterator& a, const hive_iterator& b) {
             return a.group_ == b.group_ ?
                 a.idx_ <=> b.idx_ :
@@ -670,7 +670,7 @@ private:
         explicit hive_reverse_iterator(hive_iterator<IsConst>&& rhs) : it_(std::move(rhs)) {}
         explicit hive_reverse_iterator(const hive_iterator<IsConst>& rhs) : it_(rhs) {}
 
-#if __cpp_impl_three_way_comparison >= 201907
+#if __cpp_impl_three_way_comparison >= 201907L
         friend bool operator==(const hive_reverse_iterator& a, const hive_reverse_iterator& b) = default;
 #else
         friend bool operator==(const hive_reverse_iterator& a, const hive_reverse_iterator& b) { return b.it_ == a.it_; }
@@ -678,7 +678,7 @@ private:
 #endif
 
 #if SG14_HIVE_RELATIONAL_OPERATORS
-#if __cpp_impl_three_way_comparison >= 201907
+#if __cpp_impl_three_way_comparison >= 201907L
         friend std::strong_ordering operator<=>(const hive_reverse_iterator& a, const hive_reverse_iterator& b) { return (b.it_ <=> a.it_); }
 #else
         friend bool operator<(const hive_reverse_iterator& a, const hive_reverse_iterator& b) { return b.it_ < a.it_; }
@@ -1076,7 +1076,7 @@ public:
     }
 #endif
 
-#if __cpp_lib_ranges >= 201911 && __cpp_lib_ranges_to_container >= 202202
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     template<std::ranges::input_range R>
         requires std::convertible_to<std::ranges::range_reference_t<R>, T>
     hive(std::from_range_t, R&& rg)
@@ -1104,7 +1104,7 @@ public:
         assign_range(std::forward<R>(rg));
     }
 #endif // !SG14_HIVE_P2596
-#endif // __cpp_lib_ranges >= 201911 && __cpp_lib_ranges_to_container >= 202202
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 
     ~hive() {
         assert_invariants();
@@ -1317,7 +1317,7 @@ public:
         range_insert_impl(std::move(first), std::move(last));
     }
 
-#if __cpp_lib_ranges >= 201911
+#if __cpp_lib_ranges >= 201911L
     template<std::ranges::input_range R>
         requires std::convertible_to<std::ranges::range_reference_t<R>, T>
     inline void insert_range(R&& rg) {
@@ -1969,7 +1969,7 @@ private:
         } else if (first == last) {
             clear();
         } else {
-#if __cpp_lib_ranges >= 201911
+#if __cpp_lib_ranges >= 201911L
             size_type n = std::ranges::distance(first, last);
 #else
             size_type n = std::distance(first, last);
@@ -1989,7 +1989,7 @@ private:
         } else if (first == last) {
             return;
         } else {
-#if __cpp_lib_ranges >= 201911
+#if __cpp_lib_ranges >= 201911L
             size_type n = std::ranges::distance(first, last);
 #else
             size_type n = std::distance(first, last);
@@ -2052,7 +2052,7 @@ public:
         range_assign_impl(std::move(first), std::move(last));
     }
 
-#if __cpp_lib_ranges >= 201911
+#if __cpp_lib_ranges >= 201911L
     template<std::ranges::input_range R>
         requires std::convertible_to<std::ranges::range_reference_t<R>, T> &&
                  std::assignable_from<T&, std::ranges::range_reference_t<R>>
