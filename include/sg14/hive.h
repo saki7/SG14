@@ -54,7 +54,6 @@
 #include <utility>
 
 #if __cplusplus >= 202002L
-#include <bit>
 #include <compare>
 #include <concepts>
 #include <ranges>
@@ -178,15 +177,13 @@ private:
             NextAndPrev s_;
             T t_;
         };
-        PtrOf<T> t() { return bitcast_pointer<PtrOf<T>>(std::addressof(t_)); }
+        PtrOf<T> t() { return cast_pointer<PtrOf<T>>(std::addressof(t_)); }
         ~overaligned_elt() = delete;
     };
 
     template <class D, class S>
-    static constexpr D bitcast_pointer(S source_pointer) {
-#if __cpp_lib_bit_cast >= 201806L && __cpp_lib_to_address >= 201711L
-        return std::bit_cast<D>(std::to_address(source_pointer));
-#elif __cpp_lib_to_address >= 201711L
+    static D cast_pointer(S source_pointer) {
+#if __cpp_lib_to_address >= 201711L
         return reinterpret_cast<D>(std::to_address(source_pointer));
 #else
         return reinterpret_cast<D>(source_pointer); // reject fancy pointer types
@@ -1135,7 +1132,7 @@ private:
             size_t n = (bytes_for_group + bytes_for_elts + bytes_for_skipfield + sizeof(type) - 1) / sizeof(type);
             PtrOf<type> p = std::allocator_traits<AllocOf<type>>::allocate(ta, n);
             GroupPtr g = PtrOf<group>(p);
-            ::new (bitcast_pointer<void*>(g)) group(cap);
+            ::new (cast_pointer<void*>(g)) group(cap);
             return g;
         }
         static void deallocate_group(allocator_type a, GroupPtr g) {
