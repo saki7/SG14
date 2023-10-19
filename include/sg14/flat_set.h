@@ -36,6 +36,10 @@
 #include <iterator>
 #include <vector>
 
+#if __cplusplus >= 202002L
+#include <compare>
+#endif // __cplusplus >= 202002L
+
 namespace sg14 {
 
 namespace flatset_detail {

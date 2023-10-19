@@ -43,27 +43,22 @@
 
 #include <stddef.h>
 #include <algorithm>
-#if __has_include(<bit>)
-#include <bit>
-#endif
 #include <cassert>
-#if __has_include(<compare>)
-#include <compare>
-#endif
-#if __has_include(<concepts>)
-#include <concepts>
-#endif
 #include <cstring>
 #include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <limits>
 #include <memory>
-#if __has_include(<ranges>)
-#include <ranges>
-#endif
 #include <type_traits>
 #include <utility>
+
+#if __cplusplus >= 202002L
+#include <bit>
+#include <compare>
+#include <concepts>
+#include <ranges>
+#endif // __cplusplus >= 202002L
 
 #ifndef SG14_HIVE_THROW
 #include <stdexcept>
