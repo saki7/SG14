@@ -1606,9 +1606,9 @@ TYPED_TEST(hivet, EraseRandomlyUntilEmpty)
         for (int i = 0; i < 50 && !h.empty(); ++i) {
             auto it1 = h.begin();
             auto it2 = h.begin();
-            size_t n = h.size();
-            size_t offset = g() % (n + 1);
-            size_t len = g() % (n + 1 - offset);
+            int n = h.size();
+            int offset = g() % (n + 1);
+            int len = g() % (n + 1 - offset);
             std::advance(it1, offset);
             std::advance(it2, offset + len);
             EXPECT_DISTANCE(it1, it2, len);
@@ -1637,9 +1637,9 @@ TYPED_TEST(hivet, EraseInsertRandomly)
         for (int i = 0; i < 50 && !h.empty(); ++i) {
             auto it1 = h.begin();
             auto it2 = h.begin();
-            size_t n = h.size();
-            size_t offset = g() % (n + 1);
-            size_t len = g() % (n + 1 - offset);
+            int n = h.size();
+            int offset = g() % (n + 1);
+            int len = g() % (n + 1 - offset);
             std::advance(it1, offset);
             std::advance(it2, offset + len);
             EXPECT_DISTANCE(it1, it2, len);

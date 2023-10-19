@@ -188,7 +188,7 @@ struct ipvbase_trivial {
         char dummy_;
         T data_[N];
     };
-    constexpr explicit ipvbase_trivial() = default;
+    constexpr explicit ipvbase_trivial() {}
     constexpr T *base_data_() { return data_; }
     constexpr const T *base_data_() const { return data_; }
     constexpr void set_size_(size_t n) { size_ = n; }

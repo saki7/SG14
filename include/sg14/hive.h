@@ -170,15 +170,17 @@ private:
     template<class U> using PtrOf = typename std::allocator_traits<AllocOf<U>>::pointer;
 
     struct overaligned_elt {
+        struct NextAndPrev {
+            skipfield_type nextlink_;
+            skipfield_type prevlink_;
+        };
         union {
             char dummy_;
-            struct {
-                skipfield_type nextlink_;
-                skipfield_type prevlink_;
-            };
+            NextAndPrev s_;
             T t_;
         };
         PtrOf<T> t() { return bitcast_pointer<PtrOf<T>>(std::addressof(t_)); }
+        ~overaligned_elt() = delete;
     };
 
     template <class D, class S>
@@ -788,16 +790,16 @@ public:
             }
 #endif
             skipfield_type total_skipped = 0;
-            for (skipfield_type sb = g->free_list_head; sb != std::numeric_limits<skipfield_type>::max(); sb = g->element(sb).nextlink_) {
+            for (skipfield_type sb = g->free_list_head; sb != std::numeric_limits<skipfield_type>::max(); sb = g->element(sb).s_.nextlink_) {
                 skipfield_type skipblock_length = g->skipfield(sb);
                 assert(skipblock_length != 0);
                 assert(g->skipfield(sb + skipblock_length - 1) == skipblock_length);
                 total_skipped += skipblock_length;
                 if (sb == g->free_list_head) {
-                    assert(g->element(sb).prevlink_ == std::numeric_limits<skipfield_type>::max());
+                    assert(g->element(sb).s_.prevlink_ == std::numeric_limits<skipfield_type>::max());
                 }
-                if (g->element(sb).nextlink_ != std::numeric_limits<skipfield_type>::max()) {
-                    assert(g->element(g->element(sb).nextlink_).prevlink_ == sb);
+                if (g->element(sb).s_.nextlink_ != std::numeric_limits<skipfield_type>::max()) {
+                    assert(g->element(g->element(sb).s_.nextlink_).s_.prevlink_ == sb);
                 }
             }
             if (g == end_.group_) {
@@ -1110,6 +1112,7 @@ private:
         union U {
             group g_;
             overaligned_elt elt_;
+            ~U() = delete;
         };
         struct type {
             alignas(U) char dummy;
@@ -1167,8 +1170,8 @@ private:
             if (g->free_list_head == std::numeric_limits<skipfield_type>::max()) {
                 g->next_erasure_ = std::exchange(groups_with_erasures_, g);
             }
-            g->element(sb).nextlink_ = std::exchange(g->free_list_head, sb);
-            g->element(sb).prevlink_ = std::numeric_limits<skipfield_type>::max();
+            g->element(sb).s_.nextlink_ = std::exchange(g->free_list_head, sb);
+            g->element(sb).s_.prevlink_ = std::numeric_limits<skipfield_type>::max();
             g->last_endpoint = g->end_of_elements();
         }
     }
@@ -1227,13 +1230,13 @@ public:
             skipfield_type sb = g->free_list_head;
             assert(sb < g->capacity);
             auto result = iterator(g, sb);
-            skipfield_type nextsb = g->element(sb).nextlink_;
-            assert(g->element(sb).prevlink_ == std::numeric_limits<skipfield_type>::max());
+            skipfield_type nextsb = g->element(sb).s_.nextlink_;
+            assert(g->element(sb).s_.prevlink_ == std::numeric_limits<skipfield_type>::max());
             hive_try_rollback([&]() {
                 std::allocator_traits<allocator_type>::construct(ea, result.operator->(), static_cast<Args&&>(args)...);
             }, [&]() {
-                g->element(sb).prevlink_ = std::numeric_limits<skipfield_type>::max();
-                g->element(sb).nextlink_ = nextsb;
+                g->element(sb).s_.prevlink_ = std::numeric_limits<skipfield_type>::max();
+                g->element(sb).s_.nextlink_ = nextsb;
             });
             g->size += 1;
             size_ += 1;
@@ -1248,16 +1251,16 @@ public:
                 if (nextsb == std::numeric_limits<skipfield_type>::max()) {
                     groups_with_erasures_ = g->next_erasure_;
                 } else {
-                    g->element(nextsb).prevlink_ = std::numeric_limits<skipfield_type>::max();
+                    g->element(nextsb).s_.prevlink_ = std::numeric_limits<skipfield_type>::max();
                 }
             } else {
                 g->skipfield(sb + 1) = new_skipblock_length;
                 g->skipfield(sb + old_skipblock_length - 1) = new_skipblock_length;
                 g->free_list_head = sb + 1;
-                g->element(sb + 1).prevlink_ = std::numeric_limits<skipfield_type>::max();
-                g->element(sb + 1).nextlink_ = nextsb;
+                g->element(sb + 1).s_.prevlink_ = std::numeric_limits<skipfield_type>::max();
+                g->element(sb + 1).s_.nextlink_ = nextsb;
                 if (nextsb != std::numeric_limits<skipfield_type>::max()) {
-                    g->element(nextsb).prevlink_ = sb + 1;
+                    g->element(nextsb).s_.prevlink_ = sb + 1;
                 }
             }
             assert_invariants();
@@ -1351,10 +1354,10 @@ public:
                 if (g->is_packed()) {
                     g->next_erasure_ = std::exchange(groups_with_erasures_, g);
                 } else {
-                    g->element(g->free_list_head).prevlink_ = it.idx_;
+                    g->element(g->free_list_head).s_.prevlink_ = it.idx_;
                 }
-                g->element(it.idx_).nextlink_ = g->free_list_head;
-                g->element(it.idx_).prevlink_ = std::numeric_limits<skipfield_type>::max();
+                g->element(it.idx_).s_.nextlink_ = g->free_list_head;
+                g->element(it.idx_).s_.prevlink_ = std::numeric_limits<skipfield_type>::max();
                 g->free_list_head = it.idx_;
             } else if (prev_skipfield & (!after_skipfield)) {
                 // previous erased consecutive elements, none following
@@ -1367,19 +1370,19 @@ public:
                 g->skipfield(it.idx_) = new_skipblock_length;
                 g->skipfield(it.idx_ + (new_skipblock_length - 1)) = new_skipblock_length;
 
-                const skipfield_type following_previous = g->element(it.idx_ + 1).nextlink_;
-                const skipfield_type following_next = g->element(it.idx_ + 1).prevlink_;
-                g->element(it.idx_).nextlink_ = following_previous;
-                g->element(it.idx_).prevlink_ = following_next;
+                const skipfield_type following_previous = g->element(it.idx_ + 1).s_.nextlink_;
+                const skipfield_type following_next = g->element(it.idx_ + 1).s_.prevlink_;
+                g->element(it.idx_).s_.nextlink_ = following_previous;
+                g->element(it.idx_).s_.prevlink_ = following_next;
 
                 const skipfield_type index = static_cast<skipfield_type>(it.index_in_group());
 
                 if (following_previous != std::numeric_limits<skipfield_type>::max()) {
-                    g->element(following_previous).prevlink_ = index;
+                    g->element(following_previous).s_.prevlink_ = index;
                 }
 
                 if (following_next != std::numeric_limits<skipfield_type>::max()) {
-                    g->element(following_next).nextlink_ = index;
+                    g->element(following_next).s_.nextlink_ = index;
                 } else {
                     g->free_list_head = index;
                 }
@@ -1395,15 +1398,15 @@ public:
                 g->skipfield(it.idx_ + following_value) = new_skipblock_length;
 
                 // Remove the following skipblock's entry from the free list
-                const skipfield_type following_previous = g->element(it.idx_ + 1).nextlink_;
-                const skipfield_type following_next = g->element(it.idx_ + 1).prevlink_;
+                const skipfield_type following_previous = g->element(it.idx_ + 1).s_.nextlink_;
+                const skipfield_type following_next = g->element(it.idx_ + 1).s_.prevlink_;
 
                 if (following_previous != std::numeric_limits<skipfield_type>::max()) {
-                    it.group_->element(following_previous).prevlink_ = following_next;
+                    it.group_->element(following_previous).s_.prevlink_ = following_next;
                 }
 
                 if (following_next != std::numeric_limits<skipfield_type>::max()) {
-                    it.group_->element(following_next).nextlink_ = following_previous;
+                    it.group_->element(following_next).s_.nextlink_ = following_previous;
                 } else {
                     it.group_->free_list_head = following_previous;
                 }
@@ -1468,8 +1471,8 @@ public:
                             ++number_of_group_erasures;
                             ++current.idx_;
                         } else {
-                            const skipfield_type prev_free_list_index = current.group_->element(current.idx_).nextlink_;
-                            const skipfield_type next_free_list_index = current.group_->element(current.idx_).prevlink_;
+                            const skipfield_type prev_free_list_index = current.group_->element(current.idx_).s_.nextlink_;
+                            const skipfield_type next_free_list_index = current.group_->element(current.idx_).s_.prevlink_;
                             current.idx_ += current.group_->skipfield(current.idx_);
                             if (next_free_list_index == std::numeric_limits<skipfield_type>::max() && prev_free_list_index == std::numeric_limits<skipfield_type>::max()) {
                                 remove_from_groups_with_erasures_list(first.group_);
@@ -1484,11 +1487,11 @@ public:
                                 break; // end overall while loop
                             } else if (next_free_list_index == std::numeric_limits<skipfield_type>::max()) {
                                 current.group_->free_list_head = prev_free_list_index; // make free list head equal to next free list node
-                                current.group_->element(prev_free_list_index).prevlink_ = std::numeric_limits<skipfield_type>::max();
+                                current.group_->element(prev_free_list_index).s_.prevlink_ = std::numeric_limits<skipfield_type>::max();
                             } else {
-                                current.group_->element(next_free_list_index).nextlink_ = prev_free_list_index;
+                                current.group_->element(next_free_list_index).s_.nextlink_ = prev_free_list_index;
                                 if (prev_free_list_index != std::numeric_limits<skipfield_type>::max()) {
-                                    current.group_->element(prev_free_list_index).prevlink_ = next_free_list_index;
+                                    current.group_->element(prev_free_list_index).s_.prevlink_ = next_free_list_index;
                                 }
                             }
                         }
@@ -1504,11 +1507,11 @@ public:
                     if (first.group_->is_packed()) {
                         first.group_->next_erasure_ = std::exchange(groups_with_erasures_, first.group_);
                     } else {
-                        first.group_->element(first.group_->free_list_head).prevlink_ = first.idx_;
+                        first.group_->element(first.group_->free_list_head).s_.prevlink_ = first.idx_;
                     }
 
-                    first.group_->element(first.idx_).nextlink_ = first.group_->free_list_head;
-                    first.group_->element(first.idx_).prevlink_ = std::numeric_limits<skipfield_type>::max();
+                    first.group_->element(first.idx_).s_.nextlink_ = first.group_->free_list_head;
+                    first.group_->element(first.idx_).s_.prevlink_ = std::numeric_limits<skipfield_type>::max();
                     first.group_->free_list_head = first.idx_;
                 } else {
                     skipfield_type new_skipblock_length = previous_node_value + distance_to_end;
@@ -1570,8 +1573,8 @@ public:
                         ++number_of_group_erasures;
                         ++current.idx_;
                     } else {
-                        const skipfield_type prev_free_list_index = current.group_->element(current.idx_).nextlink_;
-                        const skipfield_type next_free_list_index = current.group_->element(current.idx_).prevlink_;
+                        const skipfield_type prev_free_list_index = current.group_->element(current.idx_).s_.nextlink_;
+                        const skipfield_type next_free_list_index = current.group_->element(current.idx_).s_.prevlink_;
 
                         current.idx_ += current.group_->skipfield(current.idx_);
 
@@ -1588,11 +1591,11 @@ public:
                             break; // end overall while loop
                         } else if (next_free_list_index == std::numeric_limits<skipfield_type>::max()) {
                             current.group_->free_list_head = prev_free_list_index;
-                            current.group_->element(prev_free_list_index).prevlink_ = std::numeric_limits<skipfield_type>::max();
+                            current.group_->element(prev_free_list_index).s_.prevlink_ = std::numeric_limits<skipfield_type>::max();
                         } else {
-                            current.group_->element(next_free_list_index).nextlink_ = prev_free_list_index;
+                            current.group_->element(next_free_list_index).s_.nextlink_ = prev_free_list_index;
                             if (prev_free_list_index != std::numeric_limits<skipfield_type>::max()) {
-                                current.group_->element(prev_free_list_index).prevlink_ = next_free_list_index;
+                                current.group_->element(prev_free_list_index).s_.prevlink_ = next_free_list_index;
                             }
                         }
                     }
@@ -1609,11 +1612,11 @@ public:
                 if (last.group_->is_packed()) {
                     last.group_->next_erasure_ = std::exchange(groups_with_erasures_, last.group_);
                 } else {
-                    last.group_->element(last.group_->free_list_head).prevlink_ = index;
+                    last.group_->element(last.group_->free_list_head).s_.prevlink_ = index;
                 }
 
-                current_saved.group_->element(current_saved.idx_).nextlink_ = last.group_->free_list_head;
-                current_saved.group_->element(current_saved.idx_).prevlink_ = std::numeric_limits<skipfield_type>::max();
+                current_saved.group_->element(current_saved.idx_).s_.nextlink_ = last.group_->free_list_head;
+                current_saved.group_->element(current_saved.idx_).s_.prevlink_ = std::numeric_limits<skipfield_type>::max();
                 last.group_->free_list_head = index;
             } else {
                 skipfield_type prev_node_value = current_saved.group_->skipfield(current_saved.idx_ - 1);
@@ -1797,7 +1800,7 @@ private:
         skipfield_type sb = g->free_list_head;
         AlignedEltPtr d_first = g->addr_of_element(sb);
         AlignedEltPtr d_last = d_first + n;
-        skipfield_type nextsb = d_first[0].nextlink_;
+        skipfield_type nextsb = d_first[0].s_.nextlink_;
         skipfield_type old_skipblock_length = g->skipfield(sb);
         assert(1 <= n && n <= old_skipblock_length);
         assert(g->skipfield(sb + old_skipblock_length - 1) == old_skipblock_length);
@@ -1824,10 +1827,10 @@ private:
                 g->skipfield(sb + nadded) = new_skipblock_length;
                 g->skipfield(sb + old_skipblock_length - 1) = new_skipblock_length;
                 g->free_list_head = sb + nadded;
-                g->element(sb + nadded).prevlink_ = std::numeric_limits<skipfield_type>::max();
-                g->element(sb + nadded).nextlink_ = nextsb;
+                g->element(sb + nadded).s_.prevlink_ = std::numeric_limits<skipfield_type>::max();
+                g->element(sb + nadded).s_.nextlink_ = nextsb;
                 if (nextsb != std::numeric_limits<skipfield_type>::max()) {
-                    g->element(nextsb).prevlink_ = sb + nadded;
+                    g->element(nextsb).s_.prevlink_ = sb + nadded;
                 }
             }
         });
