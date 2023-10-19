@@ -41,6 +41,7 @@
  #define SG14_HIVE_DEBUGGING 0
 #endif
 
+#include <stddef.h>
 #include <algorithm>
 #if __has_include(<bit>)
 #include <bit>
@@ -52,7 +53,6 @@
 #if __has_include(<concepts>)
 #include <concepts>
 #endif
-#include <cstddef>
 #include <cstring>
 #include <functional>
 #include <initializer_list>
