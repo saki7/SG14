@@ -1371,12 +1371,12 @@ TEST(hive, InsertAndErase2)
     EXPECT_INVARIANTS(h);
 
     while (!h.empty()) {
-        for (auto it = h.begin(); it != h.end(); ) {
+        for (auto jt = h.begin(); jt != h.end(); ) {
             if (g() % 4 == 0) {
-                ++it;
+                ++jt;
                 h.insert(1);
             } else {
-                it = h.erase(it);
+                jt = h.erase(jt);
             }
         }
     }
@@ -1409,8 +1409,8 @@ TEST(hive, InsertAndErase2)
         }
         EXPECT_EQ(it1, it2);
 
-        for (auto it = h.begin(); it != it1; ) {
-            it = h.erase(it);
+        for (auto jt = h.begin(); jt != it1; ) {
+            jt = h.erase(jt);
         }
         EXPECT_EQ(h.size(), 250'000u);
         EXPECT_INVARIANTS(h);
@@ -2787,7 +2787,6 @@ TEST(hive, PmrCorrectShrinkToFit)
 
 TEST(hive, PmrCorrectAllocAwareCtors)
 {
-    std::pmr::monotonic_buffer_resource mr(10'000);
     sg14::hive<int, std::pmr::polymorphic_allocator<int>> h1(10);
     {
         PmrGuard guard;
