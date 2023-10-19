@@ -40,6 +40,11 @@
 #include <compare>
 #endif // __cplusplus >= 202002L
 
+#ifndef SG14_FLAT_MAP_THROW
+#include <stdexcept>
+#define SG14_FLAT_MAP_THROW(x) throw (x)
+#endif
+
 namespace sg14 {
 
 namespace flatmap_detail {
@@ -575,7 +580,7 @@ public:
     mapped_reference at(const Key& k) {
         auto it = this->find(k);
         if (it == end()) {
-            throw std::out_of_range("flat_map::at");
+            SG14_FLAT_MAP_THROW(std::out_of_range("flat_map::at"));
         }
         return it->second;
     }
@@ -583,7 +588,7 @@ public:
     const_mapped_reference at(const Key& k) const {
         auto it = this->find(k);
         if (it == end()) {
-            throw std::out_of_range("flat_map::at");
+            SG14_FLAT_MAP_THROW(std::out_of_range("flat_map::at"));
         }
         return it->second;
     }

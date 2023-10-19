@@ -62,9 +62,13 @@
 #if __has_include(<ranges>)
 #include <ranges>
 #endif
-#include <stdexcept>
 #include <type_traits>
 #include <utility>
+
+#ifndef SG14_HIVE_THROW
+#include <stdexcept>
+#define SG14_HIVE_THROW(x) throw (x)
+#endif
 
 namespace sg14 {
 
@@ -892,7 +896,7 @@ private:
     static inline void check_limits(sg14::hive_limits soft) {
         auto hard = block_capacity_hard_limits();
         if (!(hard.min <= soft.min && soft.min <= soft.max && soft.max <= hard.max)) {
-            throw std::length_error("Supplied limits are outside the allowable range");
+            SG14_HIVE_THROW(std::length_error("Supplied limits are outside the allowable range"));
         }
     }
 #endif
@@ -1723,14 +1727,14 @@ public:
         assert(&source != this);
 
         if (capacity_ + source.capacity_ > max_size()) {
-            throw std::length_error("Result of splice would exceed max_size()");
+            SG14_HIVE_THROW(std::length_error("Result of splice would exceed max_size()"));
         }
 
 #if !SG14_HIVE_P2596
         if (source.min_group_capacity_ < min_group_capacity_ || source.max_group_capacity_ > max_group_capacity_) {
             for (GroupPtr it = source.begin_.group_; it != nullptr; it = it->next_group) {
                 if (it->capacity < min_group_capacity_ || it->capacity > max_group_capacity_) {
-                    throw std::length_error("Cannot splice: source hive contains blocks that do not match the block limits of the destination hive");
+                    SG14_HIVE_THROW(std::length_error("Cannot splice: source hive contains blocks that do not match the block limits of the destination hive"));
                 }
             }
         }
@@ -2115,7 +2119,7 @@ private:
         if (n <= capacity_) {
             return;
         } else if (n > max_size()) {
-            throw std::length_error("n must be at most max_size()");
+            SG14_HIVE_THROW(std::length_error("n must be at most max_size()"));
         }
         size_type needed = n - capacity_;
         while (needed >= max) {
@@ -2195,10 +2199,10 @@ public:
 #if SG14_HIVE_P2596
     bool reshape(size_type min, size_type n = 0) {
         if (n > max_size()) {
-            throw std::length_error("n must be at most max_size()");
+            SG14_HIVE_THROW(std::length_error("n must be at most max_size()"));
         }
         if (min > max_block_size()) {
-            throw std::length_error("min must be at most max_block_size()");
+            SG14_HIVE_THROW(std::length_error("min must be at most max_block_size()"));
         }
         reshape_impl_deallocate_unused_groups(min, std::numeric_limits<size_type>::max());
         size_type oldsize = size();
