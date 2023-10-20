@@ -2,7 +2,6 @@
 
 #include <gtest/gtest.h>
 
-#include <cassert>
 #include <memory>
 #include <string>
 #include <type_traits>

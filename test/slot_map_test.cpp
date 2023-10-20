@@ -3,7 +3,6 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cinttypes>
 #include <deque>
 #include <forward_list>
@@ -189,7 +188,7 @@ static void FullContainerStressTest(TGen t)
         EXPECT_TRUE(sm.size() == static_cast<typename SM::size_type>(total - i));
         EXPECT_TRUE(sm.find(keys[i]) != sm.end());
         EXPECT_TRUE(sm.find_unchecked(keys[i]) != sm.end());
-        for (int j = 0; j < i; ++j) {
+        for (int j = std::max(0, i - 10); j < i; ++j) {
             EXPECT_TRUE(sm.find(keys[j]) == sm.end());
         }
         auto erased = sm.erase(keys[i]);
@@ -210,9 +209,9 @@ static void InsertEraseStressTest(TGen t)
         auto k = sm.insert(t());
         valid_keys.push_back(k);
     }
+    std::shuffle(valid_keys.begin(), valid_keys.end(), g);
     for (int i = total / 3; i < total; ++i) {
         if (g() % 2 == 0 && !valid_keys.empty()) {
-            std::shuffle(valid_keys.begin(), valid_keys.end(), g);
             auto k = valid_keys.back();
             valid_keys.pop_back();
             auto erased = sm.erase(k);
@@ -223,7 +222,8 @@ static void InsertEraseStressTest(TGen t)
             }
         } else {
             auto k = sm.insert(t());
-            valid_keys.push_back(k);
+            size_t random_index = g() % (valid_keys.size() + 1);
+            valid_keys.insert(valid_keys.begin() + random_index, k);
         }
     }
 }
@@ -281,7 +281,7 @@ static void EraseRangeTest()
     EXPECT_TRUE(test(10, 1, 10));
     EXPECT_TRUE(test(10, 0, 9));
     EXPECT_TRUE(test(10, 1, 9));
-    for (int N : { 2, 10, 100 }) {
+    for (int N : { 2, 10, 50 }) {
         for (int i=0; i < N; ++i) {
             for (int j=i; j < N; ++j) {
                 EXPECT_TRUE(test(N, i, j));

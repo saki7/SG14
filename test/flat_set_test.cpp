@@ -3,7 +3,6 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <cassert>
 #include <deque>
 #include <functional>
 #if __has_include(<memory_resource>)
