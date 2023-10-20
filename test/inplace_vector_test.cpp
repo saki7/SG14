@@ -783,6 +783,94 @@ TEST(inplace_vector, InsertMulti)
     }
 }
 
+TEST(inplace_vector, AssignRange)
+{
+#if defined(__cpp_lib_ranges_to_container)
+    {
+        using V = sg14::inplace_vector<int, 5>;
+        V v;
+        v.assign_range(std::vector<int>{1, 2});
+        static_assert(std::is_same_v<decltype(v.assign_range(v)), void>);
+        EXPECT_EQ(v, (V{1, 2}));
+        v.assign_range(std::vector<int>{4, 5, 6, 7});
+        EXPECT_EQ(v, (V{4, 5, 6, 7}));
+        v.assign_range(std::vector<int>{1, 2});
+        EXPECT_EQ(v, (V{1, 2}));
+        ASSERT_THROW(v.assign_range(std::vector<int>(6)), std::bad_alloc);
+        EXPECT_LE(v.size(), 5u);
+    }
+    {
+        using V = sg14::inplace_vector<std::string, 5>;
+        V v;
+        v.assign_range(std::vector<std::string>{"1", "2"});
+        EXPECT_EQ(v, Seq("1", "2"));
+        v.assign_range(std::vector<std::string>{"4", "5", "6", "7"});
+        EXPECT_EQ(v, Seq("4", "5", "6", "7"));
+        v.assign_range(std::vector<std::string>{"1", "2"});
+        EXPECT_EQ(v, Seq("1", "2"));
+        ASSERT_THROW(v.assign_range(std::vector<std::string>(6)), std::bad_alloc);
+        EXPECT_LE(v.size(), 5u);
+    }
+    {
+        using V = sg14::inplace_vector<int, 5>;
+        V v;
+        auto iss = std::istringstream("1 2");
+        v.assign_range(std::views::istream<int>(iss));
+        EXPECT_EQ(v, (V{1, 2}));
+        iss = std::istringstream("4 5 6 7");
+        v.assign_range(std::views::istream<int>(iss));
+        EXPECT_EQ(v, (V{4, 5, 6, 7}));
+        iss = std::istringstream("1 2");
+        v.assign_range(std::views::istream<int>(iss));
+        EXPECT_EQ(v, (V{1, 2}));
+        iss = std::istringstream("1 2 3 4 5 6");
+        ASSERT_THROW(v.assign_range(std::views::istream<int>(iss)), std::bad_alloc);
+        EXPECT_LE(v.size(), 5u);
+    }
+    {
+        using V = sg14::inplace_vector<std::string, 5>;
+        auto iss = std::istringstream("4 5 6 7");
+        V v = {"1", "2"};
+        v.assign_range(std::views::istream<std::string>(iss) | std::views::take(3));
+        EXPECT_EQ(v, Seq("4", "5", "6"));
+        iss = std::istringstream("6 7");
+        v.assign_range(std::views::istream<std::string>(iss) | std::views::take(2));
+        EXPECT_EQ(v, Seq("6", "7"));
+        iss = std::istringstream("6 7 8 9 10 11");
+        ASSERT_THROW(v.assign_range(std::views::istream<std::string>(iss) | std::views::take(6)), std::bad_alloc);
+        EXPECT_LE(v.size(), 5u);
+    }
+    {
+        using V = sg14::inplace_vector<MoveOnly, 5>;
+        const char *a[] = {"1", "2", "3", "4", "5", "6"};
+        V v;
+        v.assign_range(a | std::views::take(2));
+        EXPECT_EQ(v, Seq("1", "2"));
+        v.assign_range(a | std::views::drop(2) | std::views::take(4));
+        EXPECT_EQ(v, Seq("3", "4", "5", "6"));
+        v.assign_range(a | std::views::take(2));
+        EXPECT_EQ(v, Seq("1", "2"));
+        ASSERT_THROW(v.assign_range(a), std::bad_alloc);
+        EXPECT_LE(v.size(), 5u);
+    }
+#if defined(__cpp_lib_ranges_as_rvalue)
+    {
+        using V = sg14::inplace_vector<MoveOnly, 5>;
+        MoveOnly a[] = {"1", "2", "3", "4", "5", "6", "7", "8"};
+        V v;
+        v.assign_range(a | std::views::as_rvalue | std::views::take(2));
+        EXPECT_EQ(v, Seq("1", "2"));
+        v.assign_range(a | std::views::as_rvalue | std::views::drop(2) | std::views::take(4));
+        EXPECT_EQ(v, Seq("3", "4", "5", "6"));
+        v.assign_range(a | std::views::as_rvalue | std::views::drop(6) | std::views::take(2));
+        EXPECT_EQ(v, Seq("7", "8"));
+        ASSERT_THROW(v.assign_range(a | std::views::as_rvalue), std::bad_alloc);
+        EXPECT_LE(v.size(), 5u);
+    }
+#endif // __cpp_lib_ranges_as_rvalue
+#endif // __cpp_lib_ranges_to_container
+}
+
 TEST(inplace_vector, InsertRange)
 {
 #if defined(__cpp_lib_ranges_to_container)
@@ -1118,6 +1206,54 @@ TEST(inplace_vector, AssignFromInitList)
         EXPECT_EQ(v[0].i_, 210);  // assigned from init-list into vector
         EXPECT_EQ(v[1].i_, 301);  // copied from init-list into vector
     }
+}
+
+TEST(inplace_vector, Comparison)
+{
+    sg14::inplace_vector<int, 4> a;
+    sg14::inplace_vector<int, 4> b;
+    EXPECT_TRUE((a == b) && (a <= b) && (a >= b));
+    EXPECT_FALSE((a != b) || (a < b) || (a > b));
+#if __cpp_impl_three_way_comparison >= 201907L
+    EXPECT_EQ(a <=> b, std::strong_ordering::equal);
+#endif
+    a = {1,2,3};
+    b = {1,2,3};
+    EXPECT_TRUE((a == b) && (a <= b) && (a >= b));
+    EXPECT_FALSE((a != b) || (a < b) || (a > b));
+#if __cpp_impl_three_way_comparison >= 201907L
+    EXPECT_EQ(a <=> b, std::strong_ordering::equal);
+#endif
+    a = {1,2,3};
+    b = {1};
+    EXPECT_TRUE((a != b) && (a > b) && (a >= b));
+    EXPECT_TRUE((b != a) && (b < a) && (b <= a));
+    EXPECT_FALSE((a == b) || (a < b) || (a <= b));
+    EXPECT_FALSE((b == a) || (b > a) || (b >= a));
+#if __cpp_impl_three_way_comparison >= 201907L
+    EXPECT_EQ(a <=> b, std::strong_ordering::greater);
+    EXPECT_EQ(b <=> a, std::strong_ordering::less);
+#endif
+    a = {1,3};
+    b = {1,2,3};
+    EXPECT_TRUE((a != b) && (a > b) && (a >= b));
+    EXPECT_TRUE((b != a) && (b < a) && (b <= a));
+    EXPECT_FALSE((a == b) || (a < b) || (a <= b));
+    EXPECT_FALSE((b == a) || (b > a) || (b >= a));
+#if __cpp_impl_three_way_comparison >= 201907L
+    EXPECT_EQ(a <=> b, std::strong_ordering::greater);
+    EXPECT_EQ(b <=> a, std::strong_ordering::less);
+#endif
+    a = {1,2,4};
+    b = {1,2,3};
+    EXPECT_TRUE((a != b) && (a > b) && (a >= b));
+    EXPECT_TRUE((b != a) && (b < a) && (b <= a));
+    EXPECT_FALSE((a == b) || (a < b) || (a <= b));
+    EXPECT_FALSE((b == a) || (b > a) || (b >= a));
+#if __cpp_impl_three_way_comparison >= 201907L
+    EXPECT_EQ(a <=> b, std::strong_ordering::greater);
+    EXPECT_EQ(b <=> a, std::strong_ordering::less);
+#endif
 }
 
 #endif // __cplusplus >= 201703

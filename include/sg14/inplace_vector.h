@@ -266,7 +266,7 @@ public:
         size_t n = size_;
         for (size_t i = 0; i < n; ++i) {
             if (first == last) {
-                std::destroy(data() + i, data() + size_);
+                std::destroy(data() + i, data() + n);
                 set_size_(i);
                 return;
             }
@@ -293,6 +293,8 @@ public:
         size_t n = size_;
         for (size_t i = 0; i < n; ++i) {
             if (first == last) {
+                std::destroy(data() + i, data() + n);
+                set_size_(i);
                 return;
             }
             (*this)[i] = *first;
@@ -623,7 +625,7 @@ public:
         }
         return true;
     }
-#if __cplusplus >= 202002L
+#if __cpp_impl_three_way_comparison >= 201907L
     constexpr friend auto operator<=>(const inplace_vector& a, const inplace_vector& b) {
         const T *adata = a.data();
         const T *bdata = b.data();
