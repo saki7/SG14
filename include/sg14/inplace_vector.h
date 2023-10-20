@@ -258,7 +258,7 @@ public:
                 (*this)[i] = value;
             }
             for (size_t i = m; i < n; ++i) {
-                unchecked_push_back(value);
+                unchecked_emplace_back(value);
             }
         }
     }
@@ -325,7 +325,8 @@ public:
 
     constexpr void resize(size_type n) {
         if (n < size_) {
-            erase(begin() + n, end());
+            std::destroy(data() + n, data() + size_);
+            set_size_(n);
         } else if (n > N) {
             SG14_INPLACE_VECTOR_THROW(std::bad_alloc());
         } else {
@@ -337,12 +338,13 @@ public:
 
     constexpr void resize(size_type n, const value_type& value) {
         if (n < size_) {
-            erase(begin() + n, end());
+            std::destroy(data() + n, data() + size_);
+            set_size_(n);
         } else if (n > N) {
             SG14_INPLACE_VECTOR_THROW(std::bad_alloc());
         } else {
             for (size_t i = n - size_; i != 0; --i) {
-                unchecked_push_back(value);
+                unchecked_emplace_back(value);
             }
         }
     }
@@ -569,19 +571,19 @@ public:
     iterator erase(const_iterator first, const_iterator last) {
         auto ifirst = iterator(first);
         auto ilast = iterator(last);
-        if (ifirst != ilast) {
+        auto n = ilast - ifirst;
+        if (n != 0) {
             auto oldend = end();
 #if defined(__cpp_lib_trivially_relocatable)
             if constexpr (std::is_trivially_relocatable_v<value_type>) {
                 std::destroy(ifirst, ilast);
-                auto newend = std::uninitialized_relocate(ilast, oldend, ifirst);
-                set_size_(size_ - (oldend - newend));
+                std::uninitialized_relocate(ilast, oldend, ifirst);
+                set_size_(size_ - n);
                 return ifirst;
             }
 #endif // __cpp_lib_trivially_relocatable
-            auto newend = std::move(ilast, oldend, ifirst);
-            std::destroy(newend, oldend);
-            set_size_(size_ - (oldend - newend));
+            std::destroy(std::move(ilast, oldend, ifirst), oldend);
+            set_size_(size_ - n);
         }
         return ifirst;
     }
