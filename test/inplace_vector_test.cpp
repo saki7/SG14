@@ -426,6 +426,32 @@ TEST(inplace_vector, ConstructorsThrow)
     }
 }
 
+TEST(inplace_vector, Copying)
+{
+    {
+        using V = sg14::inplace_vector<int, 5>;
+        V source = {1,2,3};
+        V dest = source;
+        EXPECT_EQ(dest, (V{1,2,3}));
+        dest = {4,5};
+        EXPECT_EQ(dest, (V{4,5}));
+        dest = source;
+        EXPECT_EQ(dest, (V{1,2,3}));
+        EXPECT_EQ(source, (V{1,2,3}));
+    }
+    {
+        using V = sg14::inplace_vector<std::string, 5>;
+        V source = {"1", "2", "3"};
+        V dest = source;
+        EXPECT_EQ(dest, Seq("1", "2", "3"));
+        dest = {"4", "5"};
+        EXPECT_EQ(dest, Seq("4", "5"));
+        dest = source;
+        EXPECT_EQ(dest, Seq("1", "2", "3"));
+        EXPECT_EQ(source, Seq("1", "2", "3"));
+    }
+}
+
 TEST(inplace_vector, TransfersOfOwnership)
 {
     {

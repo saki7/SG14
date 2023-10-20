@@ -99,7 +99,7 @@ struct SG14_INPLACE_VECTOR_TRIVIALLY_RELOCATABLE_IF(std::is_trivially_relocatabl
         if constexpr (std::is_trivially_copy_constructible_v<T>) {
             std::memmove(this, std::addressof(rhs), sizeof(ipvbase));
         } else {
-            std::uninitialized_copy_n(rhs.data_, rhs.data_ + rhs.size_, data_);
+            std::uninitialized_copy_n(rhs.data_, rhs.size_, data_);
             size_ = rhs.size_;
         }
     }
