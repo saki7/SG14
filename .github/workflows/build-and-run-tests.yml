@@ -5,17 +5,13 @@ concurrency:
   cancel-in-progress: true
 jobs:
   test:
-    name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ windows-latest, macos-latest, ubuntu-latest ]
-        build_type: [Debug]
+        build_type: [Debug, Release]
         cxx_standard: [14, 17, 20, 23]
-        exclude:
-          - os: macos-latest
-            cxx_standard: 23
     env:
       PREFIX: ${{ github.workspace }}/_local
     steps:
