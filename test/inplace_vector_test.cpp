@@ -1256,4 +1256,37 @@ TEST(inplace_vector, Comparison)
 #endif
 }
 
+TEST(inplace_vector, Reserve)
+{
+    sg14::inplace_vector<int, 10> v = {1,2,3};
+    v.reserve(0);
+    EXPECT_EQ(v.capacity(), 10u);
+    v.reserve(5);
+    EXPECT_EQ(v.capacity(), 10u);
+    v.reserve(10);
+    EXPECT_EQ(v.capacity(), 10u);
+    ASSERT_THROW(v.reserve(11), std::bad_alloc);
+    v.shrink_to_fit();
+    EXPECT_EQ(v.capacity(), 10u);
+    EXPECT_EQ(v, (sg14::inplace_vector<int, 10>{1,2,3}));
+}
+
+TEST(inplace_vector, Resize)
+{
+    sg14::inplace_vector<std::string, 4> v;
+    v.resize(2);
+    EXPECT_EQ(v, (sg14::inplace_vector<std::string, 4>{"", ""}));
+    v.resize(1, "a");
+    EXPECT_EQ(v, (sg14::inplace_vector<std::string, 4>{""}));
+    v.resize(3, "b");
+    EXPECT_EQ(v, (sg14::inplace_vector<std::string, 4>{"", "b", "b"}));
+    v.resize(4);
+    EXPECT_EQ(v, (sg14::inplace_vector<std::string, 4>{"", "b", "b", ""}));
+    v.resize(2, "c");
+    EXPECT_EQ(v, (sg14::inplace_vector<std::string, 4>{"", "b"}));
+    ASSERT_THROW(v.resize(5), std::bad_alloc);
+    ASSERT_THROW(v.resize(6, "d"), std::bad_alloc);
+    EXPECT_EQ(v, (sg14::inplace_vector<std::string, 4>{"", "b"})); // unchanged
+}
+
 #endif // __cplusplus >= 201703
