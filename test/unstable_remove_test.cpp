@@ -3,30 +3,89 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <array>
-#include <chrono>
 #include <deque>
-#include <iostream>
-#include <iterator>
+#include <list>
 #include <random>
 #include <vector>
 
-struct foo
+TEST(unstable_remove, Remove)
 {
-    std::array<int,16> info;
-    static foo make()
+    int expected[] = {1,2,3};
     {
-        foo result;
-        std::fill(result.info.begin(), result.info.end(), ::rand());
-        return result;
+        std::vector<int> v = {42, 42, 1, 2, 3};
+        auto it = sg14::unstable_remove(v.begin(), v.end(), 42);
+        static_assert(std::is_same<decltype(sg14::unstable_remove(v.begin(), v.end(), 42)), decltype(v.begin())>::value, "");
+        EXPECT_EQ(it, v.begin() + 3);
+        EXPECT_TRUE(std::is_permutation(v.begin(), it, expected));
     }
-};
+    {
+        std::list<int> v = {1, 42, 42, 2, 42, 3, 42, 42, 42};
+        auto it = sg14::unstable_remove(v.begin(), v.end(), 42);
+        EXPECT_EQ(std::distance(v.begin(), it), 3);
+        EXPECT_TRUE(std::is_permutation(v.begin(), it, expected));
+    }
+    {
+        std::vector<int> v = {42, 42};
+        auto it = sg14::unstable_remove(v.begin(), v.end(), 42);
+        EXPECT_EQ(it, v.begin());
+        it = sg14::unstable_remove(v.begin(), v.begin(), 42);
+        EXPECT_EQ(it, v.begin());
+    }
+}
 
-TEST(unstable_remove, deque_examples)
+TEST(unstable_remove, RemoveIf)
+{
+    int expected[] = {1,2,3};
+    auto is42 = [](int x) { return x == 42; };
+    {
+        std::vector<int> v = {42, 42, 1, 2, 3};
+        auto it = sg14::unstable_remove_if(v.begin(), v.end(), is42);
+        static_assert(std::is_same<decltype(sg14::unstable_remove_if(v.begin(), v.end(), is42)), decltype(v.begin())>::value, "");
+        EXPECT_EQ(it, v.begin() + 3);
+        EXPECT_TRUE(std::is_permutation(v.begin(), it, expected));
+    }
+    {
+        std::list<int> v = {1, 42, 42, 2, 42, 3, 42, 42, 42};
+        auto it = sg14::unstable_remove_if(v.begin(), v.end(), is42);
+        EXPECT_EQ(std::distance(v.begin(), it), 3);
+        EXPECT_TRUE(std::is_permutation(v.begin(), it, expected));
+    }
+    {
+        std::vector<int> v = {42, 42};
+        auto it = sg14::unstable_remove_if(v.begin(), v.end(), is42);
+        EXPECT_EQ(it, v.begin());
+        it = sg14::unstable_remove_if(v.begin(), v.begin(), is42);
+        EXPECT_EQ(it, v.begin());
+    }
+}
+
+TEST(unstable_remove, NoUnneededMoves)
+{
+    struct MoveOnly {
+        int i_;
+        explicit MoveOnly(int i) : i_(i) {}
+        MoveOnly(MoveOnly&&) { EXPECT_FALSE(true); }
+        void operator=(MoveOnly&&) { EXPECT_FALSE(true); }
+        bool operator==(const char*) const { return true; }
+        static bool AlwaysTrue(const MoveOnly&) { return true; }
+    };
+    std::vector<MoveOnly> v;
+    v.reserve(100);
+    v.emplace_back(1);
+    v.emplace_back(3);
+    v.emplace_back(5);
+    v.emplace_back(7);
+    auto it = sg14::unstable_remove(v.begin(), v.end(), "always true");
+    EXPECT_EQ(it, v.begin());
+    it = sg14::unstable_remove_if(v.begin(), v.end(), MoveOnly::AlwaysTrue);
+    EXPECT_EQ(it, v.begin());
+}
+
+TEST(unstable_remove, DequeExamples)
 {
     std::mt19937 g;
     std::deque<unsigned int> original;
-    for (int i = 0; i < 10'000; ++i) {
+    for (int i = 0; i < 1000; ++i) {
         original.push_back(g());
     }
     auto pred = [](int x) { return (x % 2) == 0; };
@@ -64,75 +123,4 @@ TEST(unstable_remove, deque_examples)
         EXPECT_EQ(dq.size(), expected.size());
         EXPECT_TRUE(std::is_permutation(dq.begin(), dq.end(), expected.begin(), expected.end()));
     }
-}
-
-TEST(unstable_remove, all)
-{
-    size_t test_runs = 200;
-
-    auto makelist = []
-    {
-        std::vector<foo> list;
-        std::generate_n(std::back_inserter(list), 30000, foo::make);
-        return list;
-    };
-
-    auto cmp = [](foo& f) {return f.info[0] & 1; };
-
-    auto partitionfn = [&](std::vector<foo>& f)
-    {
-        std::partition(f.begin(), f.end(), cmp);
-    };
-    auto unstablefn = [&](std::vector<foo>& f)
-    {
-        (void)sg14::unstable_remove_if(f.begin(), f.end(), cmp);
-    };
-    auto removefn = [&](std::vector<foo>& f)
-    {
-        (void)std::remove_if(f.begin(), f.end(), cmp);
-    };
-    auto time = [&](auto&& f)
-    {
-        auto list = makelist();
-        auto t0 = std::chrono::high_resolution_clock::now();
-        f(list);
-        auto t1 = std::chrono::high_resolution_clock::now();
-        return (t1 - t0).count();
-    };
-
-    using time_lambda_t = decltype(time(removefn));
-
-    auto median = [](std::vector<time_lambda_t>& v)
-    {
-        auto b = v.begin();
-        auto e = v.end();
-        return *(b + ((e - b) / 2));
-    };
-
-    std::vector<time_lambda_t> partition;
-    std::vector<time_lambda_t> unstable_remove_if;
-    std::vector<time_lambda_t> remove_if;
-
-    partition.reserve(test_runs);
-    unstable_remove_if.reserve(test_runs);
-    remove_if.reserve(test_runs);
-
-    for (decltype(test_runs) i = 0; i < test_runs; ++i)
-    {
-        remove_if.push_back(time(removefn));
-        unstable_remove_if.push_back(time(unstablefn));
-        partition.push_back(time(partitionfn));
-    }
-    std::sort(partition.begin(), partition.end());
-    std::sort(unstable_remove_if.begin(), unstable_remove_if.end());
-    std::sort(remove_if.begin(), remove_if.end());
-
-    auto partition_med = median(partition);
-    auto unstable_med = median(unstable_remove_if);
-    auto remove_med = median(remove_if);
-
-
-    std::cout << "partition: " << partition_med << "\n";
-    std::cout << "unstable: " << unstable_med << "\n";
-    std::cout << "remove_if: " << remove_med << "\n";
 }
