@@ -239,7 +239,20 @@ public:
     constexpr explicit inplace_vector(size_t n, const value_type& value) { assign(n, value); }
 
     template<class It, std::enable_if_t<std::is_base_of_v<std::input_iterator_tag, typename std::iterator_traits<It>::iterator_category>, int> = 0>
-    constexpr explicit inplace_vector(It first, It last) { assign(first, last); }
+    constexpr explicit inplace_vector(It first, It last) {
+        if constexpr (std::is_base_of_v<std::random_access_iterator_tag, typename std::iterator_traits<It>::iterator_category>) {
+            size_t n = last - first;
+            if (n > N) {
+                SG14_INPLACE_VECTOR_THROW(std::bad_alloc());
+            }
+            std::uninitialized_copy_n(first, n, data());
+            set_size_(n);
+        } else {
+            for (; first != last; ++first) {
+                emplace_back(*first);
+            }
+        }
+    }
 
     constexpr void assign(std::initializer_list<value_type> il) { assign(il.begin(), il.end()); }
 
@@ -284,7 +297,18 @@ public:
     template<std::ranges::input_range R>
         requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
     constexpr explicit inplace_vector(std::from_range_t, R&& rg) {
-        assign_range(rg);
+        if constexpr (std::ranges::sized_range<R>) {
+            size_t n = std::ranges::size(rg);
+            if (n > N) {
+                SG14_INPLACE_VECTOR_THROW(std::bad_alloc());
+            }
+            std::ranges::uninitialized_copy_n(std::ranges::begin(rg), n, data(), std::unreachable_sentinel);
+            set_size_(n);
+        } else {
+            for (auto&& e : rg) {
+                emplace_back(decltype(e)(e));
+            }
+        }
     }
 
     template<std::ranges::input_range R>

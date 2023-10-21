@@ -426,6 +426,28 @@ TEST(inplace_vector, ConstructorsThrow)
     }
 }
 
+TEST(inplace_vector, IterPairNonAssignable)
+{
+    struct NA {
+        std::string s_;
+        NA(const char *s) : s_(s) {}
+        NA(NA&&) = delete;
+        NA& operator=(NA&&) = delete;
+        bool operator==(const char *s) const { return s_ == s; }
+    };
+    const char *a[] = {"1", "2", "3"};
+    {
+        auto v = sg14::inplace_vector<NA, 10>(a, a+3);
+        EXPECT_EQ(v, Seq("1", "2", "3"));
+    }
+#if defined(__cpp_lib_ranges_to_container)
+    {
+        auto v = sg14::inplace_vector<NA, 10>(std::from_range, a);
+        EXPECT_EQ(v, Seq("1", "2", "3"));
+    }
+#endif
+}
+
 TEST(inplace_vector, Copying)
 {
     {
@@ -805,6 +827,66 @@ TEST(inplace_vector, InsertMulti)
         EXPECT_EQ(it, v.begin() + 2);
         EXPECT_EQ(v, Seq("4", "5", "1", "2"));
         ASSERT_THROW(v.insert(v.begin() + 2, a, a+2), std::bad_alloc);
+        EXPECT_LE(v.size(), 5u);
+    }
+}
+
+TEST(inplace_vector, Assign)
+{
+    {
+        using V = sg14::inplace_vector<int, 5>;
+        V v;
+        int a[] = {1, 2, 3, 4, 5, 6};
+        v.assign(a, a+2);
+        static_assert(std::is_same_v<decltype(v.assign(a, a+2)), void>);
+        EXPECT_EQ(v, (V{1, 2}));
+        v.assign(a+2, a+6);
+        EXPECT_EQ(v, (V{3, 4, 5, 6}));
+        v.assign(a, a+2);
+        EXPECT_EQ(v, (V{1, 2}));
+        ASSERT_THROW(v.assign(a, a+6), std::bad_alloc);
+        EXPECT_LE(v.size(), 5u);
+    }
+    {
+        using V = sg14::inplace_vector<std::string, 5>;
+        V v;
+        const char *a[] = {"1", "2", "3", "4", "5", "6"};
+        v.assign(a, a+2);
+        EXPECT_EQ(v, Seq("1", "2"));
+        v.assign(a+2, a+6);
+        EXPECT_EQ(v, Seq("3", "4", "5", "6"));
+        v.assign(a, a+2);
+        EXPECT_EQ(v, Seq("1", "2"));
+        ASSERT_THROW(v.assign(a, a+6), std::bad_alloc);
+        EXPECT_LE(v.size(), 5u);
+    }
+    {
+        using V = sg14::inplace_vector<int, 5>;
+        V v;
+        auto iss = std::istringstream("1 2");
+        v.assign(std::istream_iterator<int>(iss), {});
+        EXPECT_EQ(v, (V{1, 2}));
+        iss = std::istringstream("4 5 6 7");
+        v.assign(std::istream_iterator<int>(iss), {});
+        EXPECT_EQ(v, (V{4, 5, 6, 7}));
+        iss = std::istringstream("1 2");
+        v.assign(std::istream_iterator<int>(iss), {});
+        EXPECT_EQ(v, (V{1, 2}));
+        iss = std::istringstream("1 2 3 4 5 6");
+        ASSERT_THROW(v.assign(std::istream_iterator<int>(iss), {}), std::bad_alloc);
+        EXPECT_LE(v.size(), 5u);
+    }
+    {
+        using V = sg14::inplace_vector<MoveOnly, 5>;
+        const char *a[] = {"1", "2", "3", "4", "5", "6"};
+        V v;
+        v.assign(a, a+2);
+        EXPECT_EQ(v, Seq("1", "2"));
+        v.assign(a+2, a+6);
+        EXPECT_EQ(v, Seq("3", "4", "5", "6"));
+        v.assign(a, a+2);
+        EXPECT_EQ(v, Seq("1", "2"));
+        ASSERT_THROW(v.assign(a, a+6), std::bad_alloc);
         EXPECT_LE(v.size(), 5u);
     }
 }
