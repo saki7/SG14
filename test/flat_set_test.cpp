@@ -339,3 +339,23 @@ TEST(flat_set, ContainerAccessors)
     EXPECT_EQ(fs.keys(), expected_keys);
     EXPECT_EQ(cfs.keys(), expected_keys);
 }
+
+TEST(flat_set, ExtractReplace)
+{
+    std::vector<int> expected_keys = {1, 2, 7, 8};
+    std::vector<int> rvalue_keys = {2, 7, 1, 8};
+
+    sg14::flat_set<int> fs;
+    fs.replace(std::move(rvalue_keys));
+    EXPECT_TRUE(rvalue_keys.empty());
+    EXPECT_EQ(fs.keys(), expected_keys);
+    fs.replace(expected_keys); // lvalue
+    EXPECT_EQ(fs.keys(), expected_keys);
+
+    rvalue_keys = {1, 2, 7, 8};
+    fs.replace(sg14::sorted_unique, std::move(rvalue_keys));
+    EXPECT_TRUE(rvalue_keys.empty());
+    EXPECT_EQ(fs.keys(), expected_keys);
+    fs.replace(sg14::sorted_unique, expected_keys); // lvalue
+    EXPECT_EQ(fs.keys(), expected_keys);
+}

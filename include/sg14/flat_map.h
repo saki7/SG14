@@ -707,8 +707,18 @@ public:
         }
     }
 
-    // TODO: why by rvalue reference and not by-value?
-    void replace(KeyContainer&& keys, MappedContainer&& values) {
+    void replace(KeyContainer keys, MappedContainer values) {
+        try {
+            keys_ = static_cast<KeyContainer&&>(keys);
+            values_ = static_cast<MappedContainer&&>(values);
+            this->sort_and_unique_impl();
+        } catch (...) {
+            this->clear();
+            throw;
+        }
+    }
+
+    void replace(sorted_unique_t, KeyContainer keys, MappedContainer values) {
         try {
             keys_ = static_cast<KeyContainer&&>(keys);
             values_ = static_cast<MappedContainer&&>(values);

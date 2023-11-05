@@ -750,3 +750,32 @@ TEST(flat_map, ContainerAccessors)
     EXPECT_EQ(cfm.keys(), expected_keys);
     EXPECT_EQ(cfm.values(), expected_values);
 }
+
+TEST(flat_map, ExtractReplace)
+{
+    std::vector<int> expected_keys = {1, 2, 7, 8};
+    std::vector<char> expected_values = {'1', '2', '7', '8'};
+    std::vector<int> rvalue_keys = {2, 7, 1, 8};
+    std::vector<char> rvalue_values = {'2', '7', '1', '8'};
+
+    sg14::flat_map<int, char> fm;
+    fm.replace(std::move(rvalue_keys), std::move(rvalue_values));
+    EXPECT_TRUE(rvalue_keys.empty());
+    EXPECT_TRUE(rvalue_values.empty());
+    EXPECT_EQ(fm.keys(), expected_keys);
+    EXPECT_EQ(fm.values(), expected_values);
+    fm.replace(expected_keys, expected_values); // lvalues
+    EXPECT_EQ(fm.keys(), expected_keys);
+    EXPECT_EQ(fm.values(), expected_values);
+
+    rvalue_keys = {1, 2, 7, 8};
+    rvalue_values = {'1', '2', '7', '8'};
+    fm.replace(sg14::sorted_unique, std::move(rvalue_keys), std::move(rvalue_values));
+    EXPECT_TRUE(rvalue_keys.empty());
+    EXPECT_TRUE(rvalue_values.empty());
+    EXPECT_EQ(fm.keys(), expected_keys);
+    EXPECT_EQ(fm.values(), expected_values);
+    fm.replace(sg14::sorted_unique, expected_keys, expected_values); // lvalues
+    EXPECT_EQ(fm.keys(), expected_keys);
+    EXPECT_EQ(fm.values(), expected_values);
+}

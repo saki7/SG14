@@ -465,7 +465,12 @@ public:
         return result;
     }
 
-    void replace(KeyContainer&& ctr) {
+    void replace(KeyContainer ctr) {
+        c_ = static_cast<KeyContainer&&>(ctr);
+        this->sort_and_unique_impl();
+    }
+
+    void replace(sorted_unique_t, KeyContainer ctr) {
         c_ = static_cast<KeyContainer&&>(ctr);
     }
 
