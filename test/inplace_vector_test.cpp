@@ -9,7 +9,7 @@
 #include <list>
 #include <memory>
 #include <random>
-#if defined(__cpp_lib_ranges_to_container)
+#if __has_include(<ranges>)
 #include <ranges>
 #endif
 #include <sstream>
@@ -393,7 +393,7 @@ TEST(inplace_vector, Constructors)
         auto v7 = V(3, "42");
         EXPECT_EQ(v7, (V{"42", "42", "42"}));
     }
-#if defined(__cpp_lib_ranges_to_container)
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     {
         auto iss = std::istringstream("1 2 3 4");
         auto rg = std::views::istream<int>(iss);
@@ -402,7 +402,7 @@ TEST(inplace_vector, Constructors)
         auto v2 = v1 | std::ranges::to<sg14::inplace_vector<long, 5>>();
         EXPECT_EQ(v2, (sg14::inplace_vector<long, 5>{1,2,3,4}));
     }
-#endif // __cpp_lib_ranges_to_container
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 }
 
 TEST(inplace_vector, ConstructorsThrow)
@@ -418,11 +418,11 @@ TEST(inplace_vector, ConstructorsThrow)
         ASSERT_THROW(V(4, 42), std::bad_alloc);
         ASSERT_NO_THROW(V({1,2,3}));
         ASSERT_THROW(V({1,2,3,4}), std::bad_alloc);
-#if defined(__cpp_lib_ranges_to_container)
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
         auto iss = std::istringstream("1 2 3 4");
         auto rg = std::views::istream<int>(iss);
         ASSERT_THROW(V(std::from_range, rg), std::bad_alloc);
-#endif
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     }
 }
 
@@ -440,12 +440,12 @@ TEST(inplace_vector, IterPairNonAssignable)
         auto v = sg14::inplace_vector<NA, 10>(a, a+3);
         EXPECT_EQ(v, Seq("1", "2", "3"));
     }
-#if defined(__cpp_lib_ranges_to_container)
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     {
         auto v = sg14::inplace_vector<NA, 10>(std::from_range, a);
         EXPECT_EQ(v, Seq("1", "2", "3"));
     }
-#endif
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 }
 
 TEST(inplace_vector, Copying)
@@ -605,11 +605,11 @@ TEST(inplace_vector, Noexceptness)
     static_assert(!noexcept(v.try_push_back(lvalue)));
     static_assert(!noexcept(v.unchecked_emplace_back("abc", 3)));
     static_assert(!noexcept(v.unchecked_push_back(lvalue)));
-#if defined(__cpp_lib_ranges_to_container)
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     static_assert(!noexcept(v.assign_range(il)));
     static_assert(!noexcept(v.append_range(il)));
     static_assert(!noexcept(v.insert_range(v.begin(), il)));
-#endif
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 
     // Lakos rule
     static_assert(!noexcept(v.front()));
@@ -893,7 +893,7 @@ TEST(inplace_vector, Assign)
 
 TEST(inplace_vector, AssignRange)
 {
-#if defined(__cpp_lib_ranges_to_container)
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     {
         using V = sg14::inplace_vector<int, 5>;
         V v;
@@ -976,12 +976,12 @@ TEST(inplace_vector, AssignRange)
         EXPECT_LE(v.size(), 5u);
     }
 #endif // __cpp_lib_ranges_as_rvalue
-#endif // __cpp_lib_ranges_to_container
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 }
 
 TEST(inplace_vector, InsertRange)
 {
-#if defined(__cpp_lib_ranges_to_container)
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     {
         using V = sg14::inplace_vector<int, 5>;
         V v = {1, 2};
@@ -1029,12 +1029,12 @@ TEST(inplace_vector, InsertRange)
         EXPECT_LE(v.size(), 5u);
     }
 #endif // __cpp_lib_ranges_as_rvalue
-#endif // __cpp_lib_ranges_to_container
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 }
 
 TEST(inplace_vector, AppendRange)
 {
-#if defined(__cpp_lib_ranges_to_container)
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     {
         using V = sg14::inplace_vector<int, 5>;
         V v = {1, 2};
@@ -1077,7 +1077,7 @@ TEST(inplace_vector, AppendRange)
         EXPECT_LE(v.size(), 5u);
     }
 #endif // __cpp_lib_ranges_as_rvalue
-#endif // __cpp_lib_ranges_to_container
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 }
 
 TEST(inplace_vector, PushBack)

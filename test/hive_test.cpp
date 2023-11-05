@@ -1873,7 +1873,7 @@ TEST(hive, ConstructFromVectorBoolIteratorPair)
     EXPECT_EQ(std::count(h.begin(), h.end(), false), 2);
 }
 
-#if __cpp_lib_ranges_to_container >= 202202L
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 TEST(hive, ConstructFromRange)
 {
     sg14::hive<int> v = {1, 2, 3};
@@ -1884,7 +1884,7 @@ TEST(hive, ConstructFromRange)
     EXPECT_EQ(*h.begin(), 1);
     EXPECT_EQ(*std::next(h.begin()), 2);
 }
-#endif // __cpp_lib_ranges_to_container
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 
 TYPED_TEST(hivet, InsertOverloads)
 {
@@ -2745,7 +2745,7 @@ TEST(hive, PmrCorrectness)
     hd.insert(100, 42);
 #endif
 
-#if __cpp_lib_ranges_to_container >= 202202L
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     Hive hg(std::from_range, a, &mr);
     Hive hh(std::from_range, a | std::views::take(2), &mr);
 
@@ -2754,7 +2754,7 @@ TEST(hive, PmrCorrectness)
 
     hg.insert(100, 42);
     hh.insert(100, 42);
-#endif
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 }
 
 TEST(hive, PmrCorrectReshape)

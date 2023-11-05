@@ -293,7 +293,7 @@ public:
         }
     }
 
-#if defined(__cpp_lib_ranges_to_container)
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     template<std::ranges::input_range R>
         requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
     constexpr explicit inplace_vector(std::from_range_t, R&& rg) {
@@ -330,7 +330,7 @@ public:
             emplace_back(*first);
         }
     }
-#endif // __cpp_lib_ranges_to_container
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 
     // iterators
 
@@ -441,7 +441,7 @@ public:
     value_type& push_back(const value_type& value) { return emplace_back(value); }
     value_type& push_back(value_type&& value) { return emplace_back(static_cast<value_type&&>(value)); }
 
-#if defined(__cpp_lib_ranges_to_container)
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     template<std::ranges::input_range R>
         requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
     constexpr void append_range(R&& rg) {
@@ -449,7 +449,7 @@ public:
             emplace_back(static_cast<decltype(e)>(e));
         }
     }
-#endif // __cpp_lib_ranges_to_container
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 
     void pop_back() {
         std::destroy_at(data() + size_ - 1);
@@ -530,7 +530,7 @@ public:
         return it;
     }
 
-#if defined(__cpp_lib_ranges_to_container)
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
     template<std::ranges::input_range R>
         requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
     iterator insert_range(const_iterator pos, R&& rg) {
@@ -571,7 +571,7 @@ public:
         }
         return it;
     }
-#endif // __cpp_lib_ranges_to_container
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 
     iterator insert(const_iterator pos, std::initializer_list<value_type> il) { return insert(pos, il.begin(), il.end()); }
 
