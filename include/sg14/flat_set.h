@@ -45,12 +45,6 @@
 namespace sg14 {
 
 namespace flatset_detail {
-    template<class T, class = void> struct qualifies_as_range : std::false_type {};
-    template<class T> struct qualifies_as_range<T, decltype(
-        std::begin( std::declval<T()>()() ), void(),
-        std::end( std::declval<T()>()() ), void()
-    )> : std::true_type {};
-
     template<class It>
     using is_random_access_iterator = std::is_convertible<
         typename std::iterator_traits<It>::iterator_category,
@@ -192,62 +186,41 @@ public:
         this->sort_and_unique_impl();
     }
 
-    template<class Container,
-             typename std::enable_if<flatset_detail::qualifies_as_range<const Container&>::value, int>::type = 0>
-    explicit flat_set(const Container& cont)
-        : flat_set(std::begin(cont), std::end(cont), Compare()) {}
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
+    template<std::ranges::input_range R>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
+    flat_set(std::from_range_t f, R&& rg)
+        : c_(f, static_cast<R&&>(rg))
+    {
+        this->sort_and_unique_impl();
+    }
 
-    template<class Container,
-             class = typename std::enable_if<flatset_detail::qualifies_as_range<const Container&>::value>::type>
-    flat_set(const Container& cont, const Compare& comp)
-        : flat_set(std::begin(cont), std::end(cont), comp) {}
+    template<std::ranges::input_range R>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
+    flat_set(std::from_range_t f, R&& rg, const Compare& comp)
+        : c_(f, static_cast<R&&>(rg)), compare_(comp)
+    {
+        this->sort_and_unique_impl();
+    }
 
-    template<class Container, class Alloc,
-             class = typename std::enable_if<flatset_detail::qualifies_as_range<const Container&>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
-    flat_set(const Container& cont, const Alloc& a)
-        : flat_set(std::begin(cont), std::end(cont), Compare(), a) {}
+    template<std::ranges::input_range R, class Alloc>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type> &&
+                 std::uses_allocator_v<KeyContainer, Alloc>
+    flat_set(std::from_range_t f, R&& rg, const Alloc& a)
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, f, static_cast<R&&>(rg)))
+    {
+        this->sort_and_unique_impl();
+    }
 
-    template<class Container, class Alloc,
-             class = typename std::enable_if<flatset_detail::qualifies_as_range<const Container&>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
-    flat_set(const Container& cont, const Compare& comp, const Alloc& a)
-        : flat_set(std::begin(cont), std::end(cont), comp, a) {}
-
-    flat_set(sorted_unique_t, KeyContainer ctr)
-        : c_(static_cast<KeyContainer&&>(ctr)) {}
-
-    template<class Alloc,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
-    flat_set(sorted_unique_t, KeyContainer&& ctr, const Alloc& a)
-        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, static_cast<KeyContainer&&>(ctr))) {}
-
-    template<class Alloc,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
-    flat_set(sorted_unique_t, const KeyContainer& ctr, const Alloc& a)
-        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, ctr)) {}
-
-    template<class Container,
-             class = typename std::enable_if<flatset_detail::qualifies_as_range<const Container&>::value>::type>
-    flat_set(sorted_unique_t s, const Container& cont)
-        : flat_set(s, std::begin(cont), std::end(cont), Compare()) {}
-
-    template<class Container,
-             class = typename std::enable_if<flatset_detail::qualifies_as_range<const Container&>::value>::type>
-    flat_set(sorted_unique_t s, const Container& cont, const Compare& comp)
-        : flat_set(s, std::begin(cont), std::end(cont), comp) {}
-
-    template<class Container, class Alloc,
-             class = typename std::enable_if<flatset_detail::qualifies_as_range<const Container&>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
-    flat_set(sorted_unique_t s, const Container& cont, const Alloc& a)
-        : flat_set(s, std::begin(cont), std::end(cont), Compare(), a) {}
-
-    template<class Container, class Alloc,
-             class = typename std::enable_if<flatset_detail::qualifies_as_range<const Container&>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
-    flat_set(sorted_unique_t s, const Container& cont, const Compare& comp, const Alloc& a)
-        : flat_set(s, std::begin(cont), std::end(cont), comp, a) {}
+    template<std::ranges::input_range R, class Alloc>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type> &&
+                 std::uses_allocator_v<KeyContainer, Alloc>
+    flat_set(std::from_range_t f, R&& rg, const Compare& comp, const Alloc& a)
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, f, static_cast<R&&>(rg))), compare_(comp)
+    {
+        this->sort_and_unique_impl();
+    }
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 
     explicit flat_set(const Compare& comp)
         : compare_(comp) {}
@@ -717,50 +690,42 @@ private:
 
 #if defined(__cpp_deduction_guides)
 
-// TODO: this deduction guide should maybe be constrained by qualifies_as_range
-template<class Container,
-         class = std::enable_if_t<!flatset_detail::qualifies_as_allocator<Container>::value>>
-flat_set(Container)
-    -> flat_set<flatset_detail::cont_value_type<Container>>;
-
-template<class Container, class Allocator,
-         class = std::enable_if_t<!flatset_detail::qualifies_as_allocator<Container>::value &&
-                                  flatset_detail::qualifies_as_allocator<Allocator>::value &&
-                                  std::uses_allocator<Container, Allocator>::value>>
-flat_set(Container, Allocator)
-    -> flat_set<flatset_detail::cont_value_type<Container>>;
-
-template<class Container,
-         class = std::enable_if_t<!flatset_detail::qualifies_as_allocator<Container>::value>>
-flat_set(sorted_unique_t, Container)
-    -> flat_set<flatset_detail::cont_value_type<Container>>;
-
-template<class Container, class Allocator,
-         class = std::enable_if_t<!flatset_detail::qualifies_as_allocator<Container>::value &&
-                                  flatset_detail::qualifies_as_allocator<Allocator>::value &&
-                                  std::uses_allocator<Container, Allocator>::value>>
-flat_set(sorted_unique_t, Container, Allocator)
-    -> flat_set<flatset_detail::cont_value_type<Container>>;
-
-template<class InputIterator, class Compare = std::less<flatset_detail::iter_value_type<InputIterator>>,
+template<class InputIterator,
+         class Key = flatset_detail::iter_value_type<InputIterator>,
+         class Compare = std::less<Key>,
          class = std::enable_if_t<flatset_detail::qualifies_as_input_iterator<InputIterator>::value &&
                                   !flatset_detail::qualifies_as_allocator<Compare>::value>>
 flat_set(InputIterator, InputIterator, Compare = Compare())
-    -> flat_set<flatset_detail::iter_value_type<InputIterator>, Compare>;
+    -> flat_set<Key, Compare>;
 
-template<class InputIterator, class Compare, class Allocator,
+template<class InputIterator,
+         class Key = flatset_detail::iter_value_type<InputIterator>, 
+         class Compare = std::less<Key>,
          class = std::enable_if_t<flatset_detail::qualifies_as_input_iterator<InputIterator>::value &&
-                                  !flatset_detail::qualifies_as_allocator<Compare>::value &&
-                                  flatset_detail::qualifies_as_allocator<Allocator>::value>>
-flat_set(InputIterator, InputIterator, Compare, Allocator)
-    -> flat_set<flatset_detail::iter_value_type<InputIterator>, Compare>;
+                                  !flatset_detail::qualifies_as_allocator<Compare>::value>>
+flat_set(sorted_unique_t, InputIterator, InputIterator, Compare = Compare())
+    -> flat_set<Key, Compare>;
 
-template<class InputIterator, class Allocator,
-         class = std::enable_if_t<flatset_detail::qualifies_as_input_iterator<InputIterator>::value &&
-                                  flatset_detail::qualifies_as_allocator<Allocator>::value>>
-flat_set(InputIterator, InputIterator, Allocator, int=0/*to please MSVC*/)
-    -> flat_set<flatset_detail::iter_value_type<InputIterator>>;
+template<class Key,
+         class Compare = std::less<Key>,
+         class = std::enable_if_t<!flatset_detail::qualifies_as_allocator<Compare>::value>>
+flat_set(std::initializer_list<Key>, Compare = Compare())
+    -> flat_set<Key, Compare>;
 
-#endif
+template<class Key,
+         class Compare = std::less<Key>,
+         class = std::enable_if_t<!flatset_detail::qualifies_as_allocator<Compare>::value>>
+flat_set(sg14::sorted_unique_t, std::initializer_list<Key>, Compare = Compare())
+    -> flat_set<Key, Compare>;
+
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
+template<std::ranges::input_range R,
+         class Key = std::ranges::range_value_t<R>,
+         class Compare = std::less<Key>>
+flat_set(std::from_range_t, R&&, Compare = Compare())
+    -> flat_set<Key, Compare>;
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
+
+#endif // defined(__cpp_deduction_guides)
 
 } // namespace sg14

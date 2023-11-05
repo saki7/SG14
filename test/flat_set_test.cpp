@@ -260,20 +260,22 @@ TYPED_TEST(flat_sett, Construction)
         EXPECT_TRUE(std::is_sorted(fs.begin(), fs.end(), fs.key_comp()));
     }
     if (true) {
-        FS fs {1, 3, 1, 5, 3};
+        FS fs = {1, 3, 1, 5, 3};
         EXPECT_TRUE(fs.size() == 3);  // assert that uniqueing takes place
         std::vector<int> vec2 = {1, 3, 1, 5, 3};
-        FS fs2(vec2);
+        FS fs2(vec2.begin(), vec2.end());
         EXPECT_TRUE(fs2.size() == 3); // assert that uniqueing takes place
     }
     for (auto&& fs : {
-        FS(vec),
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
+        FS(std::from_range, vec),
+        FS(std::from_range, vec, Compare()),
+#endif
         FS({1, 3, 5}),
-        FS(vec.begin(), vec.end()),
-        FS(vec.rbegin(), vec.rend()),
-        FS(vec, Compare()),
         FS({1, 3, 5}, Compare()),
+        FS(vec.begin(), vec.end()),
         FS(vec.begin(), vec.end(), Compare()),
+        FS(vec.rbegin(), vec.rend()),
         FS(vec.rbegin(), vec.rend(), Compare()),
     }) {
         auto cmp = fs.key_comp();
@@ -288,11 +290,9 @@ TYPED_TEST(flat_sett, Construction)
     }
     if (std::is_sorted(vec.begin(), vec.end(), Compare())) {
         for (auto&& fs : {
-            FS(sg14::sorted_unique, vec),
             FS(sg14::sorted_unique, vec.begin(), vec.end()),
-            FS(sg14::sorted_unique, {1, 3, 5}),
-            FS(sg14::sorted_unique, vec, Compare()),
             FS(sg14::sorted_unique, vec.begin(), vec.end(), Compare()),
+            FS(sg14::sorted_unique, {1, 3, 5}),
             FS(sg14::sorted_unique, {1, 3, 5}, Compare()),
         }) {
             auto cmp = fs.key_comp();
