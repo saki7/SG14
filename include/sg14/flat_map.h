@@ -38,6 +38,8 @@
 
 #if __cplusplus >= 202002L
 #include <compare>
+#include <concepts>
+#include <ranges>
 #endif // __cplusplus >= 202002L
 
 #ifndef SG14_FLAT_MAP_THROW
@@ -350,10 +352,10 @@ public:
 // =========================================================== CONSTRUCTORS
 // This is all one massive overload set!
 
-    flat_map() : flat_map(Compare()) {}
+    flat_map() = default;
 
     flat_map(KeyContainer keys, MappedContainer values)
-        : c_{static_cast<KeyContainer&&>(keys), static_cast<MappedContainer&&>(values)}, compare_()
+        : c_{static_cast<KeyContainer&&>(keys), static_cast<MappedContainer&&>(values)}
     {
         this->sort_and_unique_impl();
     }
@@ -389,7 +391,7 @@ public:
         : flat_map(std::begin(cont), std::end(cont), comp, a) {}
 
     flat_map(sorted_unique_t, KeyContainer keys, MappedContainer values)
-        : c_{static_cast<KeyContainer&&>(keys), static_cast<MappedContainer&&>(values)}, compare_() {}
+        : c_{static_cast<KeyContainer&&>(keys), static_cast<MappedContainer&&>(values)} {}
 
     template<class Alloc,
              typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value && std::uses_allocator<MappedContainer, Alloc>::value, int>::type = 0>
@@ -421,7 +423,7 @@ public:
         : flat_map(s, std::begin(cont), std::end(cont), comp, a) {}
 
     explicit flat_map(const Compare& comp)
-        : c_{}, compare_(comp) {}
+        : compare_(comp) {}
 
     template<class Alloc,
              typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value && std::uses_allocator<MappedContainer, Alloc>::value, int>::type = 0>

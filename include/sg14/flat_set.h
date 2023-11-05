@@ -26,8 +26,8 @@
 
 #pragma once
 
-// This is an implementation of the proposed "std::flat_set" as specified in
-// http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1222r1.pdf
+// This is an implementation of C++23 "std::flat_set" as specified in P1222,
+// with some modifications as specified in P2767.
 
 #include <stddef.h>
 #include <algorithm>
@@ -38,6 +38,8 @@
 
 #if __cplusplus >= 202002L
 #include <compare>
+#include <concepts>
+#include <ranges>
 #endif // __cplusplus >= 202002L
 
 namespace sg14 {
@@ -166,10 +168,10 @@ public:
 // =========================================================== CONSTRUCTORS
 // This is all one massive overload set!
 
-    flat_set() : flat_set(Compare()) {}
+    flat_set() = default;
 
     explicit flat_set(KeyContainer ctr)
-        : c_(static_cast<KeyContainer&&>(ctr)), compare_()
+        : c_(static_cast<KeyContainer&&>(ctr))
     {
         this->sort_and_unique_impl();
     }
@@ -177,7 +179,7 @@ public:
     template<class Alloc,
              class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
     flat_set(KeyContainer&& ctr, const Alloc& a)
-        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, static_cast<KeyContainer&&>(ctr))), compare_()
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, static_cast<KeyContainer&&>(ctr)))
     {
         this->sort_and_unique_impl();
     }
@@ -185,7 +187,7 @@ public:
     template<class Alloc,
              class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
     flat_set(const KeyContainer& ctr, const Alloc& a)
-        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, ctr)), compare_()
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, ctr))
     {
         this->sort_and_unique_impl();
     }
@@ -213,17 +215,17 @@ public:
         : flat_set(std::begin(cont), std::end(cont), comp, a) {}
 
     flat_set(sorted_unique_t, KeyContainer ctr)
-        : c_(static_cast<KeyContainer&&>(ctr)), compare_() {}
+        : c_(static_cast<KeyContainer&&>(ctr)) {}
 
     template<class Alloc,
              class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
     flat_set(sorted_unique_t, KeyContainer&& ctr, const Alloc& a)
-        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, static_cast<KeyContainer&&>(ctr))), compare_() {}
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, static_cast<KeyContainer&&>(ctr))) {}
 
     template<class Alloc,
              class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
     flat_set(sorted_unique_t, const KeyContainer& ctr, const Alloc& a)
-        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, ctr)), compare_() {}
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, ctr)) {}
 
     template<class Container,
              class = typename std::enable_if<flatset_detail::qualifies_as_range<const Container&>::value>::type>
@@ -248,7 +250,7 @@ public:
         : flat_set(s, std::begin(cont), std::end(cont), comp, a) {}
 
     explicit flat_set(const Compare& comp)
-        : c_(), compare_(comp) {}
+        : compare_(comp) {}
 
     template<class Alloc,
              class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
