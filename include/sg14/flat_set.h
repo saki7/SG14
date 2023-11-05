@@ -127,8 +127,8 @@ namespace flatset_detail {
 
 } // namespace flatset_detail
 
-#ifndef STDEXT_HAS_SORTED_UNIQUE
-#define STDEXT_HAS_SORTED_UNIQUE
+#ifndef SG14_HAS_SORTED_UNIQUE
+#define SG14_HAS_SORTED_UNIQUE
 
 struct sorted_unique_t { explicit sorted_unique_t() = default; };
 
@@ -137,7 +137,7 @@ inline
 #endif
 constexpr sorted_unique_t sorted_unique {};
 
-#endif // STDEXT_HAS_SORTED_UNIQUE
+#endif // SG14_HAS_SORTED_UNIQUE
 
 template<
     class Key,
