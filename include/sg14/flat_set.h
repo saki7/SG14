@@ -314,38 +314,48 @@ public:
     template<class Alloc,
              class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
     flat_set(flat_set&& m, const Alloc& a)
-        : c_(static_cast<KeyContainer&&>(m.c_), a), compare_(static_cast<Compare&&>(m.compare_)) {}
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, static_cast<KeyContainer&&>(m.c_))),
+          compare_(static_cast<Compare&&>(m.compare_)) {}
 
     template<class Alloc,
              class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
     flat_set(const flat_set& m, const Alloc& a)
-        : c_(m.c_, a), compare_(m.compare_) {}
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, m.c_)), compare_(m.compare_) {}
 
-    flat_set(std::initializer_list<Key>&& il, const Compare& comp = Compare())
-        : flat_set(il, comp) {}
-
-    template<class Alloc,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
-    flat_set(std::initializer_list<Key>&& il, const Compare& comp, const Alloc& a)
-        : flat_set(il, comp, a) {}
+    flat_set(std::initializer_list<Key> il, const Compare& comp = Compare())
+        : c_(il), compare_(comp)
+    {
+        this->sort_and_unique_impl();
+    }
 
     template<class Alloc,
              class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
-    flat_set(std::initializer_list<Key>&& il, const Alloc& a)
-        : flat_set(il, Compare(), a) {}
-
-    flat_set(sorted_unique_t s, std::initializer_list<Key>&& il, const Compare& comp = Compare())
-        : flat_set(s, il, comp) {}
-
-    template<class Alloc,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
-    flat_set(sorted_unique_t s, std::initializer_list<Key>&& il, const Compare& comp, const Alloc& a)
-        : flat_set(s, il, comp, a) {}
+    flat_set(std::initializer_list<Key> il, const Compare& comp, const Alloc& a)
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, il)), compare_(comp)
+    {
+        this->sort_and_unique_impl();
+    }
 
     template<class Alloc,
              class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
-    flat_set(sorted_unique_t s, std::initializer_list<Key>&& il, const Alloc& a)
-        : flat_set(s, il, Compare(), a) {}
+    flat_set(std::initializer_list<Key> il, const Alloc& a)
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, il))
+    {
+        this->sort_and_unique_impl();
+    }
+
+    flat_set(sorted_unique_t, std::initializer_list<Key> il, const Compare& comp = Compare())
+        : c_(il), compare_(comp) {}
+
+    template<class Alloc,
+             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
+    flat_set(sorted_unique_t, std::initializer_list<Key> il, const Compare& comp, const Alloc& a)
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, il)), compare_(comp) {}
+
+    template<class Alloc,
+             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type>
+    flat_set(sorted_unique_t, std::initializer_list<Key> il, const Alloc& a)
+        : c_(flatset_detail::make_obj_using_allocator<KeyContainer>(a, il)) {}
 
 
 // ========================================================== OTHER MEMBERS
