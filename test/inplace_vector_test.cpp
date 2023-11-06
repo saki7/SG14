@@ -961,7 +961,7 @@ TEST(inplace_vector, AssignRange)
         ASSERT_THROW(v.assign_range(a), std::bad_alloc);
         EXPECT_LE(v.size(), 5u);
     }
-#if defined(__cpp_lib_ranges_as_rvalue)
+#if __cpp_lib_ranges_as_rvalue >= 202207L
     {
         using V = sg14::inplace_vector<MoveOnly, 5>;
         MoveOnly a[] = {"1", "2", "3", "4", "5", "6", "7", "8"};
@@ -975,7 +975,7 @@ TEST(inplace_vector, AssignRange)
         ASSERT_THROW(v.assign_range(a | std::views::as_rvalue), std::bad_alloc);
         EXPECT_LE(v.size(), 5u);
     }
-#endif // __cpp_lib_ranges_as_rvalue
+#endif // __cpp_lib_ranges_as_rvalue >= 202207L
 #endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 }
 
@@ -1015,7 +1015,7 @@ TEST(inplace_vector, InsertRange)
         ASSERT_THROW(v.insert_range(v.begin() + 1, std::views::istream<std::string>(iss) | std::views::take(2)), std::bad_alloc);
         EXPECT_LE(v.size(), 5u);
     }
-#if defined(__cpp_lib_ranges_as_rvalue)
+#if __cpp_lib_ranges_as_rvalue >= 202207L
     {
         using V = sg14::inplace_vector<MoveOnly, 5>;
         MoveOnly a[2] = {"abc", "def"};
@@ -1028,7 +1028,7 @@ TEST(inplace_vector, InsertRange)
         ASSERT_THROW(v.insert_range(v.begin() + 1, a | std::views::as_rvalue), std::bad_alloc);
         EXPECT_LE(v.size(), 5u);
     }
-#endif // __cpp_lib_ranges_as_rvalue
+#endif // __cpp_lib_ranges_as_rvalue >= 202207L
 #endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 }
 
@@ -1064,7 +1064,7 @@ TEST(inplace_vector, AppendRange)
         ASSERT_THROW(v.append_range(std::views::istream<std::string>(iss) | std::views::take(2)), std::bad_alloc);
         EXPECT_LE(v.size(), 5u);
     }
-#if defined(__cpp_lib_ranges_as_rvalue)
+#if __cpp_lib_ranges_as_rvalue >= 202207L
     {
         using V = sg14::inplace_vector<MoveOnly, 5>;
         MoveOnly a[2] = {"abc", "def"};
@@ -1076,7 +1076,7 @@ TEST(inplace_vector, AppendRange)
         ASSERT_THROW(v.append_range(a | std::views::as_rvalue), std::bad_alloc);
         EXPECT_LE(v.size(), 5u);
     }
-#endif // __cpp_lib_ranges_as_rvalue
+#endif // __cpp_lib_ranges_as_rvalue >= 202207L
 #endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 }
 
