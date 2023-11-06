@@ -678,7 +678,7 @@ public:
                 return bool(compare_(elt.first, t.first));
             });
             if (it == this->end() || bool(compare_(t.first, it->first))) {
-                it = this->emplace(it, std::move(t));
+                it = this->emplace_hint(it, std::move(t));
             }
             ++it;
             ++first;
