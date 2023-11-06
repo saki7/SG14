@@ -34,6 +34,7 @@
 #include <functional>
 #include <initializer_list>
 #include <iterator>
+#include <utility>
 #include <vector>
 
 #if __cplusplus >= 202002L
@@ -50,12 +51,6 @@
 namespace sg14 {
 
 namespace flatmap_detail {
-    template<class T, class = void> struct qualifies_as_range : std::false_type {};
-    template<class T> struct qualifies_as_range<T, decltype(
-        std::begin( std::declval<T()>()() ), void(),
-        std::end( std::declval<T()>()() ), void()
-    )> : std::true_type {};
-
     template<class It>
     using is_random_access_iterator = std::is_convertible<
         typename std::iterator_traits<It>::iterator_category,
@@ -92,12 +87,6 @@ namespace flatmap_detail {
     T make_obj_using_allocator(const Alloc& alloc, Args&&... args) {
         return make_obj_using_allocator_<T>(priority_tag<3>(), alloc, static_cast<Args&&>(args)...);
     }
-
-    template<class Container>
-    using cont_key_type = typename std::remove_const<typename Container::value_type::first_type>::type;
-
-    template<class Container>
-    using cont_mapped_type = typename Container::value_type::second_type;
 
     template<class InputIterator>
     using iter_key_type = typename std::remove_const<typename std::iterator_traits<InputIterator>::value_type::first_type>::type;
@@ -176,7 +165,7 @@ namespace flatmap_detail {
     }
 
     template<class It, class It2, class Compare>
-    It unique_helper(It first, It last, It2 mapped, Compare& compare) {
+    It unique_helper(It first, It last, It2 mapped, const Compare& compare) {
         It dfirst = first;
         It2 dmapped = mapped;
         while (first != last) {
@@ -199,6 +188,20 @@ namespace flatmap_detail {
         return dfirst;
     }
 
+    template<class FS>
+    struct InvariantRestoringGuard {
+        FS *self_;
+        explicit InvariantRestoringGuard(FS *self) : self_(self) {}
+        void complete() {
+            self_ = nullptr;
+        }
+        ~InvariantRestoringGuard() {
+            if (self_ != nullptr) {
+                self_->clear();
+            }
+        }
+    };
+
     template<class, class> class iter;
     template<class K, class V> iter<K, V> make_iterator(K, V);
 
@@ -215,7 +218,7 @@ namespace flatmap_detail {
     class iter {
     public:
         using difference_type = ptrdiff_t;
-        using value_type = std::pair<const typename std::iterator_traits<KeyIt>::value_type, typename std::iterator_traits<MappedIt>::value_type>;
+        using value_type = std::pair<typename std::iterator_traits<KeyIt>::value_type, typename std::iterator_traits<MappedIt>::value_type>;
         using reference = std::pair<typename std::iterator_traits<KeyIt>::reference, typename std::iterator_traits<MappedIt>::reference>;
         using pointer = arrow_proxy<reference>;
         using iterator_category = std::random_access_iterator_tag;
@@ -239,6 +242,18 @@ namespace flatmap_detail {
 
         pointer operator->() const {
             return arrow_proxy<reference>{reference{*kit_, *vit_}};
+        }
+
+        friend auto iter_move(const iter& it) {
+#if __cpp_lib_ranges >= 201911L
+            using K = decltype(std::ranges::iter_move(it.kit_));
+            using V = decltype(std::ranges::iter_move(it.vit_));
+            return std::pair<K, V>(std::ranges::iter_move(it.kit_), std::ranges::iter_move(it.vit_));
+#else
+            using K = decltype(std::move(*it.kit_));
+            using V = decltype(std::move(*it.vit_));
+            return std::pair<K, V>(std::move(*it.kit_), std::move(*it.vit_));
+#endif
         }
 
         iter& operator++() { ++kit_; ++vit_; return *this; }
@@ -331,17 +346,13 @@ public:
     using key_container_type = KeyContainer;
     using mapped_container_type = MappedContainer;
 
-    class value_compare {
-        friend class flat_map;
-    protected:
-        // TODO: this should be private
-        Compare comp;
-        // TODO: this constructor should be explicit
-        value_compare(Compare c): comp(c) {}
-    public:
+    struct value_compare {
+        explicit value_compare(Compare c): comp_(std::move(c)) {}
         bool operator()(const_reference x, const_reference y) const {
-            return comp(x.first, y.first);
+            return comp_(x.first, y.first);
         }
+    private:
+        Compare comp_;
     };
 
     struct containers {
@@ -353,77 +364,6 @@ public:
 // This is all one massive overload set!
 
     flat_map() = default;
-
-    flat_map(KeyContainer keys, MappedContainer values)
-        : keys_(static_cast<KeyContainer&&>(keys)), values_(static_cast<MappedContainer&&>(values))
-    {
-        this->sort_and_unique_impl();
-    }
-
-    template<class Alloc,
-             typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value && std::uses_allocator<MappedContainer, Alloc>::value, int>::type = 0>
-    flat_map(KeyContainer keys, MappedContainer values, const Alloc& a)
-        : keys_(flatmap_detail::make_obj_using_allocator<KeyContainer>(a, std::move(keys))), 
-          values_(flatmap_detail::make_obj_using_allocator<MappedContainer>(a, std::move(values)))
-    {
-        this->sort_and_unique_impl();
-    }
-
-    template<class Container,
-             typename std::enable_if<flatmap_detail::qualifies_as_range<const Container&>::value, int>::type = 0>
-    explicit flat_map(const Container& cont)
-        : flat_map(std::begin(cont), std::end(cont), Compare()) {}
-
-    template<class Container,
-             typename std::enable_if<flatmap_detail::qualifies_as_range<const Container&>::value, int>::type = 0>
-    explicit flat_map(const Container& cont, const Compare& comp)
-        : flat_map(std::begin(cont), std::end(cont), comp) {}
-
-    template<class Container, class Alloc,
-             class = typename std::enable_if<flatmap_detail::qualifies_as_range<const Container&>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<MappedContainer, Alloc>::value>::type>
-    flat_map(const Container& cont, const Alloc& a)
-        : flat_map(std::begin(cont), std::end(cont), Compare(), a) {}
-
-    template<class Container, class Alloc,
-             class = typename std::enable_if<flatmap_detail::qualifies_as_range<const Container&>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<MappedContainer, Alloc>::value>::type>
-    flat_map(const Container& cont, const Compare& comp, const Alloc& a)
-        : flat_map(std::begin(cont), std::end(cont), comp, a) {}
-
-    flat_map(sorted_unique_t, KeyContainer keys, MappedContainer values)
-        : keys_(static_cast<KeyContainer&&>(keys)), values_(static_cast<MappedContainer&&>(values)) {}
-
-    template<class Alloc,
-             typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value && std::uses_allocator<MappedContainer, Alloc>::value, int>::type = 0>
-    flat_map(sorted_unique_t s, KeyContainer keys, MappedContainer values, const Alloc& a)
-        : flat_map(s, KeyContainer(static_cast<KeyContainer&&>(keys), a), MappedContainer(static_cast<MappedContainer&&>(values), a)) {}
-
-    template<class Container,
-             class = typename std::enable_if<flatmap_detail::qualifies_as_range<const Container&>::value>::type>
-    flat_map(sorted_unique_t s, const Container& cont)
-        : flat_map(s, std::begin(cont), std::end(cont), Compare()) {}
-
-    template<class Container,
-             class = typename std::enable_if<flatmap_detail::qualifies_as_range<const Container&>::value>::type>
-    flat_map(sorted_unique_t s, const Container& cont, const Compare& comp)
-        : flat_map(s, std::begin(cont), std::end(cont), comp) {}
-
-    template<class Container, class Alloc,
-             class = typename std::enable_if<flatmap_detail::qualifies_as_range<const Container&>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<MappedContainer, Alloc>::value>::type>
-    flat_map(sorted_unique_t s, const Container& cont, const Alloc& a)
-        : flat_map(s, std::begin(cont), std::end(cont), Compare(), a) {}
-
-    template<class Container, class Alloc,
-             class = typename std::enable_if<flatmap_detail::qualifies_as_range<const Container&>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value>::type,
-             class = typename std::enable_if<std::uses_allocator<MappedContainer, Alloc>::value>::type>
-    flat_map(sorted_unique_t s, const Container& cont, const Compare& comp, const Alloc& a)
-        : flat_map(s, std::begin(cont), std::end(cont), comp, a) {}
 
     explicit flat_map(const Compare& comp)
         : compare_(comp) {}
@@ -440,18 +380,52 @@ public:
     explicit flat_map(const Alloc& a)
         : flat_map(Compare(), a) {}
 
-    // TODO: shouldn't InputIterator be constrained to point to something with "first" and "second" members?
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
+    template<std::ranges::input_range R>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
+    flat_map(std::from_range_t, R&& rg)
+    {
+        this->insert_range(static_cast<R&&>(rg));
+    }
+
+    template<std::ranges::input_range R, class Alloc>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type> &&
+                 std::uses_allocator_v<KeyContainer, Alloc> &&
+                 std::uses_allocator_v<MappedContainer, Alloc>
+    flat_map(std::from_range_t, R&& rg, const Alloc& a)
+        : keys_(flatmap_detail::make_obj_using_allocator<KeyContainer>(a)),
+          values_(flatmap_detail::make_obj_using_allocator<MappedContainer>(a))
+    {
+        this->insert_range(static_cast<R&&>(rg));
+    }
+
+    template<std::ranges::input_range R>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
+    flat_map(std::from_range_t, R&& rg, const Compare& comp)
+        : compare_(comp)
+    {
+        this->insert_range(static_cast<R&&>(rg));
+    }
+
+    template<std::ranges::input_range R, class Alloc>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type> &&
+                 std::uses_allocator_v<KeyContainer, Alloc> &&
+                 std::uses_allocator_v<MappedContainer, Alloc>
+    flat_map(std::from_range_t, R&& rg, const Compare& comp, const Alloc& a)
+        : keys_(flatmap_detail::make_obj_using_allocator<KeyContainer>(a)),
+          values_(flatmap_detail::make_obj_using_allocator<MappedContainer>(a)),
+          compare_(comp)
+    {
+        this->insert_range(static_cast<R&&>(rg));
+    }
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
+
     template<class InputIterator,
              class = typename std::enable_if<flatmap_detail::qualifies_as_input_iterator<InputIterator>::value>::type>
     flat_map(InputIterator first, InputIterator last, const Compare& comp = Compare())
         : compare_(comp)
     {
-        for (; first != last; ++first) {
-            keys_.insert(keys_.end(), first->first);
-            // TODO: we must make this exception-safe if the container insert throws
-            values_.insert(values_.end(), first->second);
-        }
-        this->sort_and_unique_impl();
+        this->insert(first, last);
     }
 
     template<class InputIterator, class Alloc,
@@ -463,11 +437,7 @@ public:
           values_(flatmap_detail::make_obj_using_allocator<MappedContainer>(a)),
           compare_(comp)
     {
-        for (; first != last; ++first) {
-            keys_.insert(keys_.end(), first->first);
-            values_.insert(values_.end(), first->second);
-        }
-        this->sort_and_unique_impl();
+        this->insert(first, last);
     }
 
     template<class InputIterator, class Alloc,
@@ -482,10 +452,7 @@ public:
     flat_map(sorted_unique_t, InputIterator first, InputIterator last, const Compare& comp = Compare())
         : compare_(comp)
     {
-        for (; first != last; ++first) {
-            keys_.insert(keys_.end(), first->first);
-            values_.insert(values_.end(), first->second);
-        }
+        this->insert(sorted_unique, first, last);
     }
 
     template<class InputIterator, class Alloc,
@@ -497,10 +464,7 @@ public:
           values_(flatmap_detail::make_obj_using_allocator<MappedContainer>(a)),
           compare_(comp)
     {
-        for (; first != last; ++first) {
-            keys_.insert(keys_.end(), first->first);
-            values_.insert(values_.end(), first->second);
-        }
+        this->insert(sorted_unique, first, last);
     }
 
     template<class InputIterator, class Alloc,
@@ -510,7 +474,6 @@ public:
     flat_map(sorted_unique_t s, InputIterator first, InputIterator last, const Alloc& a)
         : flat_map(s, first, last, Compare(), a) {}
 
-    // TODO: should this be conditionally noexcept?
     template<class Alloc,
              typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value && std::uses_allocator<MappedContainer, Alloc>::value, int>::type = 0>
     flat_map(flat_map&& m, const Alloc& a)
@@ -525,7 +488,10 @@ public:
           values_(flatmap_detail::make_obj_using_allocator<MappedContainer>(a, m.values_)),
           compare_(m.compare_) {}
 
-    flat_map(std::initializer_list<value_type> il, const Compare& comp = Compare())
+    flat_map(std::initializer_list<value_type> il)
+        : flat_map(il.begin(), il.end()) {}
+
+    flat_map(std::initializer_list<value_type> il, const Compare& comp)
         : flat_map(il.begin(), il.end(), comp) {}
 
     template<class Alloc,
@@ -536,7 +502,7 @@ public:
     template<class Alloc,
              typename std::enable_if<std::uses_allocator<KeyContainer, Alloc>::value && std::uses_allocator<MappedContainer, Alloc>::value, int>::type = 0>
     flat_map(std::initializer_list<value_type> il, const Alloc& a)
-        : flat_map(il.begin(), il.end(), a) {}
+        : flat_map(il.begin(), il.end(), Compare(), a) {}
 
     flat_map(sorted_unique_t s, std::initializer_list<value_type> il, const Compare& comp = Compare())
         : flat_map(s, il.begin(), il.end(), comp) {}
@@ -555,7 +521,7 @@ public:
 
     flat_map& operator=(std::initializer_list<value_type> il) {
         this->clear();
-        this->insert(il);
+        this->insert(il.begin(), il.end());
         return *this;
     }
 
@@ -693,39 +659,76 @@ public:
         this->insert(s, il.begin(), il.end());
     }
 
-    containers extract() && {
-        try {
-            containers result{
-                static_cast<KeyContainer&&>(keys_),
-                static_cast<MappedContainer&&>(values_)
-            };
-            this->clear();
-            return result;
-        } catch (...) {
-            this->clear();
-            throw;
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
+    template<std::ranges::input_range R>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
+    void insert_range(R&& rg) {
+        flatmap_detail::InvariantRestoringGuard<flat_map> guard(this);
+        size_type oldsize = keys_.size();
+        for (value_type e : rg) {
+            keys_.emplace_back(std::move(e.first));
+            values_.emplace_back(std::move(e.second));
         }
+        if (keys_.size() != oldsize) {
+            auto begin = flatmap_detail::make_iterator(keys_.begin(), values_.begin());
+            auto mid = begin + oldsize;
+            auto end = flatmap_detail::make_iterator(keys_.end(), values_.end());
+            std::ranges::sort(mid, end, value_comp());
+            std::ranges::inplace_merge(begin, mid, end, value_comp());
+            auto kit = flatmap_detail::unique_helper(keys_.begin(), keys_.end(), values_.begin(), compare_);
+            auto vit = values_.begin() + (kit - keys_.begin());
+            keys_.erase(kit, keys_.end());
+            values_.erase(vit, values_.end());
+        }
+        guard.complete();
+    }
+
+    template<std::ranges::input_range R>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
+    void insert_range(sg14::sorted_unique_t, R&& rg) {
+        flatmap_detail::InvariantRestoringGuard<flat_map> guard(this);
+        size_type oldsize = keys_.size();
+        for (value_type e : rg) {
+            keys_.emplace_back(std::move(e.first));
+            values_.emplace_back(std::move(e.second));
+        }
+        if (keys_.size() != oldsize) {
+            auto begin = flatmap_detail::make_iterator(keys_.begin(), values_.begin());
+            auto mid = begin + oldsize;
+            auto end = flatmap_detail::make_iterator(keys_.end(), values_.end());
+            std::ranges::inplace_merge(begin, mid, end, compare_);
+            auto kit = flatmap_detail::unique_helper(keys_.begin(), keys_.end(), values_.begin(), compare_);
+            auto vit = values_.begin() + (kit - keys_.begin());
+            keys_.erase(kit, keys_.end());
+            values_.erase(vit, values_.end());
+        }
+        guard.complete();
+    }
+#endif
+
+    containers extract() && {
+        flatmap_detail::InvariantRestoringGuard<flat_map> guard(this);
+        containers result{
+            static_cast<KeyContainer&&>(keys_),
+            static_cast<MappedContainer&&>(values_)
+        };
+        // Deliberately do not complete the guard.
+        return result;
     }
 
     void replace(KeyContainer keys, MappedContainer values) {
-        try {
-            keys_ = static_cast<KeyContainer&&>(keys);
-            values_ = static_cast<MappedContainer&&>(values);
-            this->sort_and_unique_impl();
-        } catch (...) {
-            this->clear();
-            throw;
-        }
+        flatmap_detail::InvariantRestoringGuard<flat_map> guard(this);
+        keys_ = static_cast<KeyContainer&&>(keys);
+        values_ = static_cast<MappedContainer&&>(values);
+        this->sort_and_unique_impl();
+        guard.complete();
     }
 
     void replace(sorted_unique_t, KeyContainer keys, MappedContainer values) {
-        try {
-            keys_ = static_cast<KeyContainer&&>(keys);
-            values_ = static_cast<MappedContainer&&>(values);
-        } catch (...) {
-            this->clear();
-            throw;
-        }
+        flatmap_detail::InvariantRestoringGuard<flat_map> guard(this);
+        keys_ = static_cast<KeyContainer&&>(keys);
+        values_ = static_cast<MappedContainer&&>(values);
+        guard.complete();
     }
 
     template<class... Args>
@@ -1118,120 +1121,31 @@ private:
 
 #if defined(__cpp_deduction_guides)
 
-// TODO: this deduction guide should maybe be constrained by qualifies_as_range
-template<class Container,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<Container>::value>>
-flat_map(Container)
-    -> flat_map<flatmap_detail::cont_key_type<Container>, flatmap_detail::cont_mapped_type<Container>>;
-
-template<class KeyContainer, class MappedContainer,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<KeyContainer>::value && !flatmap_detail::qualifies_as_allocator<MappedContainer>::value>>
-flat_map(KeyContainer, MappedContainer)
-    -> flat_map<typename KeyContainer::value_type,
-                typename MappedContainer::value_type,
-                std::less<typename KeyContainer::value_type>,
-                KeyContainer, MappedContainer>;
-
-// TODO: all these deduction guides that ignore the Allocator parameter are wrong, but especially this one
-template<class Container, class Allocator,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<Container>::value && flatmap_detail::qualifies_as_allocator<Allocator>::value && std::uses_allocator<Container, Allocator>::value>>
-flat_map(Container, Allocator, int=0/*to please MSVC*/)
-    -> flat_map<flatmap_detail::cont_key_type<Container>, flatmap_detail::cont_mapped_type<Container>>;
-
-template<class KeyContainer, class MappedContainer, class Allocator,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<KeyContainer>::value && !flatmap_detail::qualifies_as_allocator<MappedContainer>::value && flatmap_detail::qualifies_as_allocator<Allocator>::value && std::uses_allocator<KeyContainer, Allocator>::value && std::uses_allocator<MappedContainer, Allocator>::value>>
-flat_map(KeyContainer, MappedContainer, Allocator)
-    -> flat_map<typename KeyContainer::value_type,
-                typename MappedContainer::value_type,
-                std::less<typename KeyContainer::value_type>,
-                KeyContainer, MappedContainer>;
-
-template<class Container,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<Container>::value>>
-flat_map(sorted_unique_t, Container)
-    -> flat_map<flatmap_detail::cont_key_type<Container>, flatmap_detail::cont_mapped_type<Container>>;
-
-template<class KeyContainer, class MappedContainer,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<KeyContainer>::value && !flatmap_detail::qualifies_as_allocator<MappedContainer>::value>>
-flat_map(sorted_unique_t, KeyContainer, MappedContainer)
-    -> flat_map<typename KeyContainer::value_type,
-                typename MappedContainer::value_type,
-                std::less<typename KeyContainer::value_type>,
-                KeyContainer, MappedContainer>;
-
-template<class Container, class Allocator,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<Container>::value && flatmap_detail::qualifies_as_allocator<Allocator>::value && std::uses_allocator<Container, Allocator>::value>>
-flat_map(sorted_unique_t, Container, Allocator, int=0/*to please MSVC*/)
-    -> flat_map<flatmap_detail::cont_key_type<Container>, flatmap_detail::cont_mapped_type<Container>>;
-
-template<class KeyContainer, class MappedContainer, class Allocator,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<KeyContainer>::value && !flatmap_detail::qualifies_as_allocator<MappedContainer>::value && flatmap_detail::qualifies_as_allocator<Allocator>::value && std::uses_allocator<KeyContainer, Allocator>::value && std::uses_allocator<MappedContainer, Allocator>::value>>
-flat_map(sorted_unique_t, KeyContainer, MappedContainer, Allocator)
-    -> flat_map<typename KeyContainer::value_type,
-                typename MappedContainer::value_type,
-                std::less<typename KeyContainer::value_type>,
-                KeyContainer, MappedContainer>;
-
-template<class InputIterator, class Compare = std::less<flatmap_detail::iter_key_type<InputIterator>>,
+template<class InputIterator,
+         class Key = flatmap_detail::iter_key_type<InputIterator>,
+         class T = flatmap_detail::iter_mapped_type<InputIterator>,
+         class Compare = std::less<Key>,
          class = std::enable_if_t<flatmap_detail::qualifies_as_input_iterator<InputIterator>::value && !flatmap_detail::qualifies_as_allocator<Compare>::value>>
 flat_map(InputIterator, InputIterator, Compare = Compare())
-    -> flat_map<flatmap_detail::iter_key_type<InputIterator>, flatmap_detail::iter_mapped_type<InputIterator>, Compare>;
+    -> flat_map<Key, T, Compare>;
 
-template<class InputIterator, class Compare, class Allocator,
-         class = std::enable_if_t<flatmap_detail::qualifies_as_input_iterator<InputIterator>::value && !flatmap_detail::qualifies_as_allocator<Compare>::value && flatmap_detail::qualifies_as_allocator<Allocator>::value>>
-flat_map(InputIterator, InputIterator, Compare, Allocator)
-    -> flat_map<flatmap_detail::iter_key_type<InputIterator>, flatmap_detail::iter_mapped_type<InputIterator>, Compare>;
-
-template<class InputIterator, class Allocator,
-         class = std::enable_if_t<flatmap_detail::qualifies_as_input_iterator<InputIterator>::value && flatmap_detail::qualifies_as_allocator<Allocator>::value>>
-flat_map(InputIterator, InputIterator, Allocator, int=0/*to please MSVC*/)
-    -> flat_map<flatmap_detail::iter_key_type<InputIterator>, flatmap_detail::iter_mapped_type<InputIterator>>;
-
-template<class InputIterator, class Compare = std::less<flatmap_detail::iter_key_type<InputIterator>>,
+template<class InputIterator,
+         class Key = flatmap_detail::iter_key_type<InputIterator>,
+         class T = flatmap_detail::iter_mapped_type<InputIterator>,
+         class Compare = std::less<Key>,
          class = std::enable_if_t<flatmap_detail::qualifies_as_input_iterator<InputIterator>::value && !flatmap_detail::qualifies_as_allocator<Compare>::value>>
 flat_map(sorted_unique_t, InputIterator, InputIterator, Compare = Compare())
-    -> flat_map<flatmap_detail::iter_key_type<InputIterator>, flatmap_detail::iter_mapped_type<InputIterator>, Compare>;
-
-template<class InputIterator, class Compare, class Allocator,
-         class = std::enable_if_t<flatmap_detail::qualifies_as_input_iterator<InputIterator>::value && !flatmap_detail::qualifies_as_allocator<Compare>::value && flatmap_detail::qualifies_as_allocator<Allocator>::value>>
-flat_map(sorted_unique_t, InputIterator, InputIterator, Compare, Allocator)
-    -> flat_map<flatmap_detail::iter_key_type<InputIterator>, flatmap_detail::iter_mapped_type<InputIterator>, Compare>;
-
-template<class InputIterator, class Allocator,
-         class = std::enable_if_t<flatmap_detail::qualifies_as_input_iterator<InputIterator>::value && flatmap_detail::qualifies_as_allocator<Allocator>::value>>
-flat_map(sorted_unique_t, InputIterator, InputIterator, Allocator, int=0/*to please MSVC*/)
-    -> flat_map<flatmap_detail::iter_key_type<InputIterator>, flatmap_detail::iter_mapped_type<InputIterator>>;
-
-template<class Key, class T, class Compare = std::less<Key>,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<Compare>::value>>
-flat_map(std::initializer_list<std::pair<const Key, T>>, Compare = Compare())
     -> flat_map<Key, T, Compare>;
 
-template<class Key, class T, class Compare, class Allocator,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<Compare>::value && flatmap_detail::qualifies_as_allocator<Allocator>::value>>
-flat_map(std::initializer_list<std::pair<const Key, T>>, Compare, Allocator)
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
+template<std::ranges::input_range R,
+         class Key = flatmap_detail::iter_key_type<std::ranges::iterator_t<R>>,
+         class T = flatmap_detail::iter_mapped_type<std::ranges::iterator_t<R>>,
+         class Compare = std::less<Key>>
+flat_map(std::from_range_t, R&&, Compare = Compare())
     -> flat_map<Key, T, Compare>;
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 
-template<class Key, class T, class Allocator,
-         class = std::enable_if_t<flatmap_detail::qualifies_as_allocator<Allocator>::value>>
-flat_map(std::initializer_list<std::pair<const Key, T>>, Allocator, int=0/*to please MSVC*/)
-    -> flat_map<Key, T>;
-
-template<class Key, class T, class Compare = std::less<Key>,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<Compare>::value>>
-flat_map(sorted_unique_t, std::initializer_list<std::pair<const Key, T>>, Compare = Compare())
-    -> flat_map<Key, T, Compare>;
-
-template<class Key, class T, class Compare, class Allocator,
-         class = std::enable_if_t<!flatmap_detail::qualifies_as_allocator<Compare>::value && flatmap_detail::qualifies_as_allocator<Allocator>::value>>
-flat_map(sorted_unique_t, std::initializer_list<std::pair<const Key, T>>, Compare, Allocator)
-    -> flat_map<Key, T, Compare>;
-
-template<class Key, class T, class Allocator,
-         class = std::enable_if_t<flatmap_detail::qualifies_as_allocator<Allocator>::value>>
-flat_map(sorted_unique_t, std::initializer_list<std::pair<const Key, T>>, Allocator, int=0/*to please MSVC*/)
-    -> flat_map<Key, T>;
-
-#endif
+#endif // __cpp_deduction_guides
 
 } // namespace sg14

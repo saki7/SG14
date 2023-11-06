@@ -9,14 +9,15 @@
 #if __has_include(<memory_resource>)
 #include <memory_resource>
 #endif
-#if __has_include(<ranges>)
-#include <ranges>
-#endif
 #include <string>
 #include <vector>
 
 #if __cplusplus >= 201702L
 #include <sg14/inplace_vector.h>
+#endif
+
+#if __cplusplus >= 202002L
+#include <ranges>
 #endif
 
 template<class T> struct flat_sett : testing::Test {};
