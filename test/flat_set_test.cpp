@@ -4,9 +4,13 @@
 
 #include <algorithm>
 #include <deque>
+#include <forward_list>
 #include <functional>
 #if __has_include(<memory_resource>)
 #include <memory_resource>
+#endif
+#if __has_include(<ranges>)
+#include <ranges>
 #endif
 #include <string>
 #include <vector>
@@ -358,4 +362,52 @@ TEST(flat_set, ExtractReplace)
     EXPECT_EQ(fs.keys(), expected_keys);
     fs.replace(sg14::sorted_unique, expected_keys); // lvalue
     EXPECT_EQ(fs.keys(), expected_keys);
+}
+
+TEST(flat_set, InsertMulti)
+{
+    {
+        sg14::flat_set<int> fs;
+        std::vector<int> v = {3,1,4,1,5};
+        fs.insert(v.begin(), v.end());
+        EXPECT_EQ(fs, (sg14::flat_set<int>{1,3,4,5}));
+        fs = {4, 5};
+        std::forward_list<int> lst = {3,1,4,1,5};
+        fs.insert(lst.begin(), lst.end());
+        EXPECT_EQ(fs, (sg14::flat_set<int>{1,3,4,5}));
+    }
+    {
+        sg14::flat_set<int> fs;
+        std::vector<int> v = {1,3,4,5};
+        fs.insert(sg14::sorted_unique, v.begin(), v.end());
+        EXPECT_EQ(fs, (sg14::flat_set<int>{1,3,4,5}));
+        fs = {4, 5};
+        std::forward_list<int> lst = {3,5,7};
+        fs.insert(sg14::sorted_unique, lst.begin(), lst.end());
+        EXPECT_EQ(fs, (sg14::flat_set<int>{3,4,5,7}));
+    }
+}
+
+TEST(flat_set, InsertRange)
+{
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
+    {
+        sg14::flat_set<int> fs;
+        std::vector<int> v = {3,1,4,1,5};
+        fs.insert_range(v);
+        EXPECT_EQ(fs, (sg14::flat_set<int>{1,3,4,5}));
+        fs = {4, 5};
+        fs.insert_range(v | std::views::take_while([](int x) { return x < 9; }));
+        EXPECT_EQ(fs, (sg14::flat_set<int>{1,3,4,5}));
+    }
+    {
+        sg14::flat_set<int> fs;
+        std::vector<int> v = {1,2,3,4};
+        fs.insert_range(sg14::sorted_unique, v);
+        EXPECT_EQ(fs, (sg14::flat_set<int>{1,2,3,4}));
+        fs = {3, 4};
+        fs.insert_range(sg14::sorted_unique, v | std::views::transform([](int x) { return x * 2; }));
+        EXPECT_EQ(fs, (sg14::flat_set<int>{2,3,4,6,8}));
+    }
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 }

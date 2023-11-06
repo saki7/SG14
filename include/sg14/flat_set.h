@@ -83,7 +83,7 @@ namespace flatset_detail {
     }
 
     template<class It, class Compare>
-    It unique_helper(It first, It last, Compare& compare) {
+    It unique_helper(It first, It last, const Compare& compare) {
         It dfirst = first;
         while (first != last) {
             It next = first;
@@ -102,8 +102,19 @@ namespace flatset_detail {
         return dfirst;
     }
 
-    template<class Container>
-    using cont_value_type = typename Container::value_type;
+    template<class FS>
+    struct InvariantRestoringGuard {
+        FS *self_;
+        explicit InvariantRestoringGuard(FS *self) : self_(self) {}
+        void complete() {
+            self_ = nullptr;
+        }
+        ~InvariantRestoringGuard() {
+            if (self_ != nullptr) {
+                self_->clear();
+            }
+        }
+    };
 
     template<class InputIterator>
     using iter_value_type = typename std::remove_const<typename std::iterator_traits<InputIterator>::value_type>::type;
@@ -441,6 +452,41 @@ public:
     void insert(sorted_unique_t s, std::initializer_list<Key> il) {
         this->insert(s, il.begin(), il.end());
     }
+
+#if __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
+    template<std::ranges::input_range R>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
+    void insert_range(R&& rg) {
+        flatset_detail::InvariantRestoringGuard<flat_set> guard(this);
+        size_type oldsize = c_.size();
+        c_.insert_range(c_.end(), static_cast<R&&>(rg));
+        if (c_.size() != oldsize) {
+            auto begin = c_.begin();
+            auto end = c_.end();
+            auto mid = begin + oldsize;
+            std::sort(mid, end, compare_);
+            std::inplace_merge(begin, mid, end, compare_);
+            c_.erase(flatset_detail::unique_helper(begin, end, compare_), end);
+        }
+        guard.complete();
+    }
+
+    template<std::ranges::input_range R>
+        requires std::convertible_to<std::ranges::range_reference_t<R>, value_type>
+    void insert_range(sg14::sorted_unique_t, R&& rg) {
+        flatset_detail::InvariantRestoringGuard<flat_set> guard(this);
+        size_type oldsize = c_.size();
+        c_.insert_range(c_.end(), static_cast<R&&>(rg));
+        if (c_.size() != oldsize) {
+            auto begin = c_.begin();
+            auto end = c_.end();
+            auto mid = begin + oldsize;
+            std::inplace_merge(begin, mid, end, compare_);
+            c_.erase(flatset_detail::unique_helper(begin, end, compare_), end);
+        }
+        guard.complete();
+    }
+#endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
 
     KeyContainer extract() && {
         KeyContainer result = static_cast<KeyContainer&&>(c_);
