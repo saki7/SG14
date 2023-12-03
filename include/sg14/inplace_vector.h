@@ -562,7 +562,7 @@ public:
         } else {
             auto [rgend, newend] = std::ranges::uninitialized_copy(rg, std::ranges::subrange(oldend, data() + N));
             if (rgend != std::ranges::end(rg)) {
-                set_size_(N);
+                std::destroy(oldend, newend);
                 SG14_INPLACE_VECTOR_THROW(std::bad_alloc());
             } else {
                 set_size_(newend - data());

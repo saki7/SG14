@@ -990,7 +990,7 @@ TEST(inplace_vector, InsertRange)
         EXPECT_EQ(it, v.begin() + 1);
         EXPECT_EQ(v, (V{1, 4, 5, 2}));
         ASSERT_THROW(v.insert_range(v.begin() + 1, std::vector<int>{4, 5}), std::bad_alloc);
-        EXPECT_LE(v.size(), 5u);
+        EXPECT_EQ(v, (V{1, 4, 5, 2}));
     }
     {
         using V = sg14::inplace_vector<int, 5>;
@@ -1002,7 +1002,7 @@ TEST(inplace_vector, InsertRange)
         EXPECT_EQ(v, (V{1, 4, 5, 2, 3}));
         iss = std::istringstream("6 7");
         ASSERT_THROW(v.insert_range(v.begin() + 1, std::views::istream<int>(iss) | std::views::take(2)), std::bad_alloc);
-        EXPECT_LE(v.size(), 5u);
+        EXPECT_EQ(v, (V{1, 4, 5, 2, 3}));
     }
     {
         using V = sg14::inplace_vector<std::string, 5>;
@@ -1013,7 +1013,7 @@ TEST(inplace_vector, InsertRange)
         EXPECT_EQ(v, (V{"1", "4", "5", "2"}));
         iss = std::istringstream("6 7");
         ASSERT_THROW(v.insert_range(v.begin() + 1, std::views::istream<std::string>(iss) | std::views::take(2)), std::bad_alloc);
-        EXPECT_LE(v.size(), 5u);
+        EXPECT_EQ(v, (V{"1", "4", "5", "2"}));
     }
 #if __cpp_lib_ranges_as_rvalue >= 202207L
     {
@@ -1026,7 +1026,7 @@ TEST(inplace_vector, InsertRange)
         EXPECT_EQ(it, v.begin() + 1);
         EXPECT_EQ(v, Seq("wxy", "abc", "def", "xyz"));
         ASSERT_THROW(v.insert_range(v.begin() + 1, a | std::views::as_rvalue), std::bad_alloc);
-        EXPECT_LE(v.size(), 5u);
+        EXPECT_EQ(v, Seq("wxy", "abc", "def", "xyz"));
     }
 #endif // __cpp_lib_ranges_as_rvalue >= 202207L
 #endif // __cpp_lib_ranges >= 201911L && __cpp_lib_ranges_to_container >= 202202L
