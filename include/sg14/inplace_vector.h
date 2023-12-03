@@ -93,17 +93,17 @@ struct SG14_INPLACE_VECTOR_TRIVIALLY_RELOCATABLE_IF(std::is_trivially_relocatabl
     constexpr void set_size_(size_t n) { size_ = n; }
 
     constexpr explicit ipvbase() noexcept {}
-    constexpr ipvbase(const ipvbase& rhs)
+    ipvbase(const ipvbase& rhs)
         noexcept(std::is_nothrow_copy_constructible_v<T>)
     {
         if constexpr (std::is_trivially_copy_constructible_v<T>) {
-            std::memmove(this, std::addressof(rhs), sizeof(ipvbase));
+            std::memmove((void*)this, (const void*)std::addressof(rhs), sizeof(ipvbase));
         } else {
             std::uninitialized_copy_n(rhs.data_, rhs.size_, data_);
             size_ = rhs.size_;
         }
     }
-    constexpr ipvbase(ipvbase&& rhs)
+    ipvbase(ipvbase&& rhs)
         noexcept(std::is_nothrow_move_constructible_v<T>
 #if defined(__cpp_lib_trivially_relocatable)
                                     || std::is_trivially_relocatable_v<T>
@@ -111,7 +111,7 @@ struct SG14_INPLACE_VECTOR_TRIVIALLY_RELOCATABLE_IF(std::is_trivially_relocatabl
                            )
     {
         if constexpr (std::is_trivially_move_constructible_v<T>) {
-            std::memmove(this, std::addressof(rhs), sizeof(ipvbase));
+            std::memmove((void*)this, (const void*)std::addressof(rhs), sizeof(ipvbase));
 #if defined(__cpp_lib_trivially_relocatable)
         } else if constexpr (std::is_trivially_relocatable_v<T>) {
             std::uninitialized_relocate_n(rhs.data_, rhs.size_, data_);
@@ -123,11 +123,11 @@ struct SG14_INPLACE_VECTOR_TRIVIALLY_RELOCATABLE_IF(std::is_trivially_relocatabl
             size_ = rhs.size_;
         }
     }
-    constexpr void operator=(const ipvbase& rhs)
-        noexcept(std::is_nothrow_copy_assignable_v<T>)
+    void operator=(const ipvbase& rhs)
+        noexcept(std::is_nothrow_copy_constructible_v<T> && std::is_nothrow_copy_assignable_v<T>)
     {
-        if constexpr (std::is_trivially_copy_assignable_v<T>) {
-            std::memmove(this, std::addressof(rhs), sizeof(ipvbase));
+        if constexpr (std::is_trivially_copy_constructible_v<T> && std::is_trivially_copy_assignable_v<T> && std::is_trivially_destructible_v<T>) {
+            std::memmove((void*)this, (const void*)std::addressof(rhs), sizeof(ipvbase));
         } else if (this == std::addressof(rhs)) {
             // do nothing
         } else if (rhs.size_ <= size_) {
@@ -140,11 +140,11 @@ struct SG14_INPLACE_VECTOR_TRIVIALLY_RELOCATABLE_IF(std::is_trivially_relocatabl
             size_ = rhs.size_;
         }
     }
-    constexpr void operator=(ipvbase&& rhs)
-        noexcept(std::is_nothrow_move_assignable_v<T>)
+    void operator=(ipvbase&& rhs)
+        noexcept(std::is_nothrow_move_constructible_v<T> && std::is_nothrow_move_assignable_v<T>)
     {
-        if constexpr (std::is_trivially_move_assignable_v<T>) {
-            std::memmove(this, std::addressof(rhs), sizeof(ipvbase));
+        if constexpr (std::is_trivially_move_constructible_v<T> && std::is_trivially_move_assignable_v<T> && std::is_trivially_destructible_v<T>) {
+            std::memmove((void*)this, (const void*)std::addressof(rhs), sizeof(ipvbase));
         } else if (this == std::addressof(rhs)) {
             // do nothing
         } else if (rhs.size_ <= size_) {
@@ -164,6 +164,14 @@ struct SG14_INPLACE_VECTOR_TRIVIALLY_RELOCATABLE_IF(std::is_trivially_relocatabl
             size_ = rhs.size_;
         }
     }
+
+#if __cpp_concepts >= 202002L
+    ipvbase(const ipvbase&) requires std::is_trivially_copy_constructible_v<T> = default;
+    ipvbase(ipvbase&&) requires std::is_trivially_move_constructible_v<T> = default;
+    ipvbase& operator=(const ipvbase&) requires std::is_trivially_copy_constructible_v<T> && std::is_trivially_copy_assignable_v<T> && std::is_trivially_destructible_v<T> = default;
+    ipvbase& operator=(ipvbase&&) requires std::is_trivially_move_constructible_v<T> && std::is_trivially_move_assignable_v<T> && std::is_trivially_destructible_v<T> = default;
+    ~ipvbase() requires std::is_trivially_destructible_v<T> = default;
+#endif // __cpp_concepts >= 202002L
 
 #if __cplusplus >= 202002L
     constexpr
@@ -196,9 +204,12 @@ struct ipvbase_trivial {
 
 template<class T, size_t N>
 using ipvbase_t = std::conditional_t<
-    N == 0, ipvbase_zero<T>,
+    N == 0,
+    ipvbase_zero<T>,
     std::conditional_t<
-        std::is_trivially_copyable_v<T>, ipvbase_trivial<T, N>, ipvbase<T, N>
+        std::is_trivially_copyable_v<T>,
+        ipvbase_trivial<T, N>,
+        ipvbase<T, N>
     >
 >;
 
@@ -221,13 +232,13 @@ public:
 
     // [containers.sequences.inplace_vector.cons]
 
+    inplace_vector() = default;
     inplace_vector(inplace_vector&&) = default;
     inplace_vector(const inplace_vector&) = default;
     inplace_vector& operator=(inplace_vector&&) = default;
     inplace_vector& operator=(const inplace_vector&) = default;
     inplace_vector& operator=(std::initializer_list<value_type> il) { assign(il.begin(), il.end()); return *this; }
 
-    constexpr inplace_vector() = default;
     constexpr inplace_vector(std::initializer_list<value_type> il) : inplace_vector(il.begin(), il.end()) { }
     constexpr explicit inplace_vector(size_t n) {
         if (n > N) {
