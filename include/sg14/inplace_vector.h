@@ -701,4 +701,18 @@ public:
 #endif
 };
 
+
+// https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p0843r8.html#containerssequencesinplace_vectorerasure-Erasure
+// see also: https://github.com/cplusplus/papers/issues/114#issuecomment-1943903538
+
+template<class T, size_t N, class Predicate>
+constexpr typename inplace_vector<T, N>::size_type
+erase_if(inplace_vector<T, N>& c, Predicate pred)
+{
+    auto it = std::remove_if(c.begin(), c.end(), pred);
+    auto r = std::distance(it, c.end());
+    c.erase(it, c.end());
+    return r;
+}
+
 } // namespace sg14
