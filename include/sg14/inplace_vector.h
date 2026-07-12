@@ -705,6 +705,16 @@ public:
 // https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p0843r8.html#containerssequencesinplace_vectorerasure-Erasure
 // see also: https://github.com/cplusplus/papers/issues/114#issuecomment-1943903538
 
+template<class T, size_t N, class U>
+constexpr typename inplace_vector<T, N>::size_type
+erase(inplace_vector<T, N>& c, const U& value)
+{
+    auto it = std::remove(c.begin(), c.end(), value);
+    auto r = std::distance(it, c.end());
+    c.erase(it, c.end());
+    return r;
+}
+
 template<class T, size_t N, class Predicate>
 constexpr typename inplace_vector<T, N>::size_type
 erase_if(inplace_vector<T, N>& c, Predicate pred)
